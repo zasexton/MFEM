@@ -1,1 +1,69 @@
+# ===== Build artefacts =====
+cmake-build-*/
+build/
+out/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+*.pch
+*.pdb
+*.ilk
+*.d
+*.mod
+
+# ===== IDE / editor =====
 .idea/
+.vscode/
+.clangd/
+.ccls-cache/
+*.sublime-*
+.project
+.settings/
+
+# ===== Package managers =====
+vcpkg_installed/
+.conan/
+
+# ===== Testing & coverage =====
+*.gcda
+*.gcno
+*.gcov
+coverage*/
+Testing/
+CTestTestfile.cmake
+CTestCostData.txt
+
+# ===== Logs, temp, backups =====
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+core.*
+*.stackdump
+
+# ===== OS clutter =====
+.DS_Store
+._*
+.Spotlight-V100/
+Thumbs.db
+desktop.ini
+.Trash-*
+.TemporaryItems
+
+# ===== Secrets =====
+.env*
+*.pem
+*.key
+*.crt
+
+# ===== Docs / generated assets =====
+docs/html/
+doxygen/
