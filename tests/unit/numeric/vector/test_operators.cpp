@@ -159,3 +159,10 @@ TEST_CASE("Projection onto plane", "[vector][ops]") {
     REQUIRE( v_perp == SVec{1,2,0} );
 }
 */
+
+TEST_CASE("Dense and sparse arithmetic", "[vector][ops][sparse]") {
+    nv::Vector<int,3,Dense> d{1,2,3};
+    nv::Vector<int,3,Sparse> s{{0,1},{2,2}};
+    auto sum = d + s;
+    REQUIRE(sum == nv::Vector<int,3,Dense>{2,2,5});
+}
