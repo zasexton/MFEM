@@ -474,6 +474,7 @@ namespace numeric::vector {
     class Vector<T, Dynamic, Sparse>
     {
         // ---------- public member types ----------
+    public:
         using value_type      = T;
         using index_type      = std::size_t;
         using size_type       = std::size_t;
