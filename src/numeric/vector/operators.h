@@ -1923,19 +1923,32 @@ namespace numeric::vector {
     template <VectorLike V>
     inline auto log_sum_exp(const V& v)
     {
+        using std::exp;
+        using std::log;
 
+        if (v.empty()) { throw std::out_of_range("log_sum_exp on empty vector"); }
+
+        auto max_val = max(v);
+        typename V::value_type acc{0};
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            acc += exp(v[i] - max_val);
+        }
+        return max_val + log(acc);
     }
 
     template <VectorLike V>
     inline auto squared_l2_norm(const V& v)
     {
-
+        return norm2(v);
     }
+
 
     template <VectorLike V>
     inline auto linf_norm(const V& v)
     {
-
+        auto mag = numeric::scalar::operations::checked_abs(abs_max(v));
+        if (!mag) throw std::overflow_error("Checked abs overflow in linf_norm()");
+        return *mag;
     }
 
     template <VectorLike V>
@@ -1947,31 +1960,108 @@ namespace numeric::vector {
     template <VectorLike V>
     inline auto rms(const V& v)
     {
-
+        using numeric::scalar::operations::checked_sqrt;
+        auto mean_sq = mean(v * v);
+        auto tmp = checked_sqrt(mean_sq);
+        if (tmp) return *tmp;
+        throw std::overflow_error("Checked sqrt overflow in rms()");
     }
 
     template <VectorLike V>
     inline auto variance(const V& v)
     {
-
+        using T = typename V::value_type;
+        if (v.empty()) { throw std::out_of_range("variance of empty vector"); }
+        T mu = mean(v);
+        T acc{};
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            auto diff = v[i] - mu;
+            auto val = numeric::scalar::operations::checked_multiply(diff, diff);
+            if (!val) throw std::overflow_error("Checked multiply overflow in variance()");
+            auto tmp = numeric::scalar::operations::checked_addition(acc, *val);
+            if (!tmp) throw std::overflow_error("Checked addition overflow in variance()");
+            acc = *tmp;
+        }
+        auto div = numeric::scalar::operations::checked_divide(acc, v.size());
+        if (!div) throw std::overflow_error("Checked divide overflow in variance()");
+        return *div;
     }
+
 
     template <VectorLike V>
     inline auto std_dev(const V& v)
     {
-
+        auto tmp = numeric::scalar::operations::checked_sqrt(variance(v));
+        if (tmp) return *tmp;
+        throw std::overflow_error("Checked sqrt overflow in std_dev()");
     }
 
     template <VectorLike V>
     inline auto skewness(const V& v)
     {
+        using numeric::scalar::operations::checked_pow;
+        using numeric::scalar::operations::checked_divide;
 
+        auto mu = mean(v);
+        typename V::value_type m3{};
+        typename V::value_type m2{};
+
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            auto diff = v[i] - mu;
+            auto diff2 = checked_pow(diff, 2);
+            auto diff3 = checked_pow(diff, 3);
+            if (!diff2 || !diff3) throw std::overflow_error("Checked pow overflow in skewness()");
+            auto tmp2 = numeric::scalar::operations::checked_addition(m2, *diff2);
+            auto tmp3 = numeric::scalar::operations::checked_addition(m3, *diff3);
+            if (!tmp2 || !tmp3) throw std::overflow_error("Checked addition overflow in skewness()");
+            m2 = *tmp2;
+            m3 = *tmp3;
+        }
+
+        auto n = static_cast<typename V::value_type>(v.size());
+        auto m2_avg = checked_divide(m2, n);
+        auto m3_avg = checked_divide(m3, n);
+        if (!m2_avg || !m3_avg) throw std::overflow_error("Checked divide overflow in skewness()");
+
+        auto denom_pow = checked_pow(*m2_avg, 1.5);
+        if (!denom_pow) throw std::overflow_error("Checked pow overflow in skewness()");
+        auto result = checked_divide(*m3_avg, *denom_pow);
+        if (!result) throw std::overflow_error("Checked divide overflow in skewness()");
+        return *result;
     }
 
     template <VectorLike V>
     inline auto kurtosis(const V& v)
     {
+        using numeric::scalar::operations::checked_pow;
+        using numeric::scalar::operations::checked_divide;
 
+        auto mu = mean(v);
+        typename V::value_type m2{};
+        typename V::value_type m4{};
+
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            auto diff = v[i] - mu;
+            auto diff2 = checked_pow(diff, 2);
+            auto diff4 = checked_pow(diff, 4);
+            if (!diff2 || !diff4) throw std::overflow_error("Checked pow overflow in kurtosis()");
+            auto tmp2 = numeric::scalar::operations::checked_addition(m2, *diff2);
+            auto tmp4 = numeric::scalar::operations::checked_addition(m4, *diff4);
+            if (!tmp2 || !tmp4) throw std::overflow_error("Checked addition overflow in kurtosis()");
+            m2 = *tmp2;
+            m4 = *tmp4;
+        }
+
+        auto n = static_cast<typename V::value_type>(v.size());
+        auto m2_avg = checked_divide(m2, n);
+        auto m4_avg = checked_divide(m4, n);
+        if (!m2_avg || !m4_avg) throw std::overflow_error("Checked divide overflow in kurtosis()");
+
+        auto denom_pow = checked_pow(*m2_avg, 2);
+        if (!denom_pow) throw std::overflow_error("Checked pow overflow in kurtosis()");
+        auto result = checked_divide(*m4_avg, *denom_pow);
+        if (!result) throw std::overflow_error("Checked divide overflow in kurtosis()");
+        return *result;
     }
     */
     //======================
@@ -1988,7 +2078,7 @@ namespace numeric::vector {
     // Element-wise uary math wrappers (abs, sqrt, exp, ...)
     //===============================
 
-    /*
+
     template<VectorLike V>
     inline auto abs(const V& v)
     {
@@ -2039,7 +2129,7 @@ namespace numeric::vector {
                        [](auto x){ return (x > 0) - (x < 0);});
         return r;
     }
-    */
+
     //=================================
     // Fused BLAS-1 kernels
     //=================================
