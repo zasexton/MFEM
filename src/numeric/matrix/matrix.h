@@ -1,8 +1,6 @@
-//
-// Created by Zack on 7/14/2025.
-//
+#pragma once
 
-#ifndef MFEM_MATRIX_H
-#define MFEM_MATRIX_H
+#ifndef MATRIX_H
+#define MATRIX_H
 
-#endif //MFEM_MATRIX_H
+#endif //MATRIX_H
