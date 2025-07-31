@@ -42,3 +42,12 @@ static_assert( nv::static_size_v<
 
 // rank
 static_assert( nv::rank_v< nv::Vector<float,7> > == 1 );
+
+static_assert( nv::rank_v< nv::Vector<float,7> > == 1 );
+TEST_CASE("extent helper", "[vector][traits]")
+{
+    nv::Vector<int,3> s{1,2,3};
+    nv::Vector<int,nv::Dynamic> d{1,2,3,4};
+    REQUIRE(nv::extent(s) == 3);
+    REQUIRE(nv::extent(d) == 4);
+}
