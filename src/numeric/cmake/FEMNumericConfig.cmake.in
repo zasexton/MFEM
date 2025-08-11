@@ -1,0 +1,32 @@
+@PACKAGE_INIT@
+
+# ============================================================================
+# FEM Numeric Library Configuration
+# ============================================================================
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+# find_dependency(Threads)  # Example: uncomment if threading is required
+
+# Include the exported targets
+include("${CMAKE_CURRENT_LIST_DIR}/FEMNumericTargets.cmake")
+
+# Set variables for compatibility
+set(FEMNumeric_FOUND TRUE)
+set(FEMNumeric_VERSION @PROJECT_VERSION@)
+set(FEMNumeric_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(FEMNumeric_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(FEMNumeric_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+
+# Provide library and include variables for legacy projects
+set(FEMNumeric_LIBRARIES fem::numeric)
+set(FEMNumeric_INCLUDE_DIRS)  # Not needed with modern CMake targets
+
+# Feature detection macros
+set(FEMNumeric_HAS_SIMD @FEM_NUMERIC_ENABLE_SIMD@)
+set(FEMNumeric_HAS_OPENMP @FEM_NUMERIC_ENABLE_OPENMP@)
+set(FEMNumeric_IS_HEADER_ONLY @FEM_NUMERIC_HEADER_ONLY@)
+
+# Check required components
+check_required_components(FEMNumeric)
