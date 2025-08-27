@@ -85,6 +85,8 @@ namespace fem::numeric {
                 : data_(n, value) {}
 
         template<typename InputIt>
+        requires std::input_iterator<InputIt> &&
+                 std::convertible_to<typename std::iterator_traits<InputIt>::value_type, T>
         DynamicStorage(InputIt first, InputIt last)
                 : data_(first, last) {}
 
@@ -104,8 +106,14 @@ namespace fem::numeric {
         pointer data() noexcept override { return data_.data(); }
         const_pointer data() const noexcept override { return data_.data(); }
 
-        reference operator[](size_type i) override { return data_[i]; }
-        const_reference operator[](size_type i) const override { return data_[i]; }
+        reference operator[](size_type i) override {
+            assert(i < size_);
+            return data_[i];
+        }
+        const_reference operator[](size_type i) const override {
+            assert(i < size_);
+            return data_[i];
+        }
 
         void resize(size_type new_size) override { data_.resize(new_size); }
         void resize(size_type new_size, const T& value) override {
@@ -168,23 +176,24 @@ namespace fem::numeric {
         using typename StorageBase<T>::reference;
         using typename StorageBase<T>::const_reference;
 
-        StaticStorage() : size_(0) {
+        StaticStorage() : data_{}, size_(0) {
             // Initialize with default values for IEEE compliance
-            std::fill(data_.begin(), data_.end(), T{});
         }
 
         explicit StaticStorage(size_type n) : size_(n) {
             if (n > N) {
                 throw std::length_error("Size exceeds static storage capacity");
             }
+            size_ = n;
+            data_.fill(T{});
             std::fill(data_.begin(), data_.begin() + n, T{});
         }
 
-        StaticStorage(size_type n, const T& value) : size_(n) {
+        StaticStorage(size_type n, const T& value) : data_{}, size_(n) {
             if (n > N) {
                 throw std::length_error("Size exceeds static storage capacity");
             }
-            std::fill(data_.begin(), data_.begin() + n, value);
+            std::fill_n(data_.begin(), n, value);
         }
 
         // StorageBase interface
@@ -195,8 +204,14 @@ namespace fem::numeric {
         pointer data() noexcept override { return data_.data(); }
         const_pointer data() const noexcept override { return data_.data(); }
 
-        reference operator[](size_type i) override { return data_[i]; }
-        const_reference operator[](size_type i) const override { return data_[i]; }
+        reference operator[](size_type i) override {
+            assert(i < size_);
+            return data_[i];
+        }
+        const_reference operator[](size_type i) const override {
+            assert(i < size_);
+            return data_[i];
+        }
 
         void resize(size_type new_size) override {
             if (new_size > N) {
@@ -259,8 +274,8 @@ namespace fem::numeric {
     public:
         using typename StorageBase<T>::value_type;
         using typename StorageBase<T>::size_type;
-        using typename StorageBase<T>::pointer;
-        using typename StorageBase<T>::const_pointer;
+        using typename StorageBase<T>::pointer; // should be guarunteeded to be aligned
+        using typename StorageBase<T>::const_pointer; // const version of the aligned memory pointer
         using typename StorageBase<T>::reference;
         using typename StorageBase<T>::const_reference;
 
@@ -271,7 +286,7 @@ namespace fem::numeric {
         explicit AlignedStorage(size_type n)
                 : data_(nullptr), size_(n), capacity_(n) {
             allocate(n);
-            std::uninitialized_fill_n(data_, n, T{});
+            std::uninitialized_default_construct_n(data_, n);
         }
 
         AlignedStorage(size_type n, const T& value)
@@ -342,15 +357,21 @@ namespace fem::numeric {
         pointer data() noexcept override { return data_; }
         const_pointer data() const noexcept override { return data_; }
 
-        reference operator[](size_type i) override { return data_[i]; }
-        const_reference operator[](size_type i) const override { return data_[i]; }
+        reference operator[](size_type i) override {
+            assert(i < size_);
+            return data_[i];
+        }
+        const_reference operator[](size_type i) const override {
+            assert(i < size_);
+            return data_[i];
+        }
 
         void resize(size_type new_size) override {
             if (new_size > capacity_) {
                 reallocate(new_size);
             }
             if (new_size > size_) {
-                std::uninitialized_fill(data_ + size_, data_ + new_size, T{});
+                std::uninitialized_default_construct(data_ + size_, data_ + new_size);
             } else if (new_size < size_) {
                 std::destroy(data_ + new_size, data_ + size_);
             }
@@ -384,6 +405,7 @@ namespace fem::numeric {
         Device device() const noexcept override { return Device::CPU; }
         bool is_contiguous() const noexcept override { return true; }
 
+        // TODO: double-check that unique cloned pointer adheres to aligned data
         std::unique_ptr<StorageBase<T>> clone() const override {
             return std::make_unique<AlignedStorage>(*this);
         }
@@ -403,17 +425,23 @@ namespace fem::numeric {
         }
 
     private:
-        pointer data_;
+        pointer data_; // ensure that the pointer is aligned type
         size_type size_;
         size_type capacity_;
+        size_type actual_capacity_;
+
+        //static constexpr size_t alignment = Alignment;
 
         void allocate(size_type n) {
             if (n > 0) {
-                void* ptr = std::aligned_alloc(alignment, n * sizeof(T));
+                size_type bytes = n * sizeof(value_type);
+                size_type aligned_bytes = ((bytes + alignment - 1) / alignment) * alignment;
+                void* ptr = std::aligned_alloc(alignment, aligned_bytes);
                 if (!ptr) {
                     throw std::bad_alloc();
                 }
                 data_ = static_cast<pointer>(ptr);
+                actual_capacity_ = aligned_bytes / sizeof(value_type);
             }
         }
 
@@ -427,15 +455,23 @@ namespace fem::numeric {
         void reallocate(size_type new_capacity) {
             pointer new_data = nullptr;
             if (new_capacity > 0) {
-                void* ptr = std::aligned_alloc(alignment, new_capacity * sizeof(T));
+                size_type bytes = new_capacity * sizeof(value_type);
+                size_type aligned_bytes = ((bytes + alignment - 1) / alignment) * alignment;
+                void* ptr = std::aligned_alloc(alignment, aligned_bytes);
                 if (!ptr) {
                     throw std::bad_alloc();
                 }
                 new_data = static_cast<pointer>(ptr);
+                actual_capacity_ = aligned_bytes / sizeof(value_type);
             }
 
             if (data_ && new_data) {
-                std::uninitialized_move_n(data_, size_, new_data);
+                try {
+                    std::uninitialized_move_n(data_, size_, new_data);
+                } catch (...) {
+                    std::free(new_data);
+                    throw;
+                }
                 std::destroy_n(data_, size_);
             }
 
@@ -443,6 +479,20 @@ namespace fem::numeric {
             data_ = new_data;
             capacity_ = new_capacity;
         }
-    };
 
+        bool is_simd_sized() const noexcept {
+            constexpr size_t simd_width = alignment / sizeof(value_type);
+            return size_ % simd_width == 0;
+        }
+
+        void pad_to_simd_boundary(const T& pad_value = T{}) {
+            constexpr size_t simd_width = alignment / sizeof(value_type);
+            size_type padded_size = ((size_ + simd_width - 1) / simd_width) * simd_width;
+            resize(padded_size, pad_value);
+        }
+
+        // TODO add aligned iterators and span<> for rnages to aligned operations
+
+    };
+}
 #endif //NUMERIC_STORAGE_BASE_H
