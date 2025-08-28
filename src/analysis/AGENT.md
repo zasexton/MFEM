@@ -66,9 +66,9 @@ analysis/
 │   │   ├── post_buckling.hpp       # Post-buckling
 │   │   └── imperfection_analysis.hpp # Imperfections
 │   ├── limit_load/
-│   │   ├── limit_analysis.hpp      # Limit load analysis
-│   │   ├── shakedown.hpp           # Shakedown analysis
-│   │   └── plastic_collapse.hpp    # Plastic collapse
+│   │   ├── limit_analysis.hpp       # Limit load analysis
+│   │   ├── shakedown.hpp            # Shakedown analysis
+│   │   └── plastic_collapse.hpp     # Plastic collapse
 │   └── bifurcation/
 │       ├── bifurcation_tracking.hpp # Bifurcation points
 │       ├── branch_switching.hpp     # Branch following
@@ -76,32 +76,32 @@ analysis/
 │
 ├── continuation/                    # Continuation methods
 │   ├── arc_length/
-│   │   ├── arc_length_method.hpp   # Arc-length control
-│   │   ├── riks_method.hpp         # Riks method
-│   │   ├── crisfield.hpp           # Crisfield method
-│   │   └── modified_riks.hpp       # Modified Riks
+│   │   ├── arc_length_method.hpp    # Arc-length control
+│   │   ├── riks_method.hpp          # Riks method
+│   │   ├── crisfield.hpp            # Crisfield method
+│   │   └── modified_riks.hpp        # Modified Riks
 │   ├── predictor_corrector/
-│   │   ├── predictor_base.hpp      # Predictor interface
-│   │   ├── tangent_predictor.hpp   # Tangent predictor
-│   │   ├ното secant_predictor.hpp  # Secant predictor
+│   │   ├── predictor_base.hpp       # Predictor interface
+│   │   ├── tangent_predictor.hpp    # Tangent predictor
+│   │   ├── secant_predictor.hpp     # Secant predictor
 │   │   └── corrector_iterations.hpp # Corrector schemes
 │   └── path_control/
-│       ├── load_control.hpp        # Load parameter
+│       ├── load_control.hpp         # Load parameter
 │       ├── displacement_control.hpp # Displacement param
-│       └── arc_length_control.hpp  # Arc-length param
+│       └── arc_length_control.hpp   # Arc-length param
 │
 ├── multiphysics/                    # Multiphysics analysis
-│   ├── coupled_analysis.hpp        # Coupled analysis base
+│   ├── coupled_analysis.hpp         # Coupled analysis base
 │   ├── staggered/
-│   │   ├── staggered_scheme.hpp    # Staggered solution
-│   │   ├── isothermal_split.hpp    # Isothermal operator
-│   │   └── adiabatic_split.hpp     # Adiabatic operator
+│   │   ├── staggered_scheme.hpp     # Staggered solution
+│   │   ├── isothermal_split.hpp     # Isothermal operator
+│   │   └── adiabatic_split.hpp      # Adiabatic operator
 │   ├── monolithic/
-│   │   ├── fully_coupled.hpp       # Monolithic solution
-│   │   └── newton_coupled.hpp      # Coupled Newton
+│   │   ├── fully_coupled.hpp        # Monolithic solution
+│   │   └── newton_coupled.hpp       # Coupled Newton
 │   └── partitioned/
-│       ├── weak_coupling.hpp       # Weak coupling
-│       └── strong_coupling.hpp     # Strong coupling
+│       ├── weak_coupling.hpp        # Weak coupling
+│       └── strong_coupling.hpp      # Strong coupling
 │
 ├── optimization/                    # Optimization analysis
 │   ├── sensitivity/

@@ -29,7 +29,8 @@ numeric/
 │   ├── platform.hpp                  # Platform specifics
 │   ├── features.hpp                  # Feature flags
 │   ├── precision.hpp                 # Floating-point settings
-│   └── debug.hpp                     # Debug/assertion macros
+│   ├── debug.hpp                     # Debug/assertion macros
+│   └── ad_config.hpp                 # AD feature flags, tape size configs
 │
 ├── base/                             # Base infrastructure
 │   ├── numeric_base.hpp              # Foundation types
@@ -42,7 +43,8 @@ numeric/
 │   ├── view_base.hpp                 # View interfaces
 │   ├── slice_base.hpp                # Slicing operations
 │   ├── ops_base.hpp                  # Operation functors
-│   └── broadcast_base.hpp            # Broadcasting support
+│   ├── broadcast_base.hpp            # Broadcasting support
+│   └── dual_base.hpp                 # Base for dual number types
 │
 ├── traits/                           # Type traits and concepts
 │   ├── type_traits.hpp               # Basic type traits
@@ -54,7 +56,53 @@ numeric/
 │   ├── iterator_traits.hpp           # Iterator properties
 │   ├── block_traits.hpp              # Block structure traits
 │   ├── concepts.hpp                  # C++20 concepts
-│   └── sfinae_helpers.hpp            # SFINAE utilities
+│   ├── sfinae_helpers.hpp            # SFINAE utilities
+│   └── ad_traits.hpp                 # AD type detection and properties
+│
+├── autodiff/                         # NEW: Automatic differentiation
+│   ├── forward/                      # Forward-mode AD
+│   │   ├── dual.hpp                  # Dual number implementation
+│   │   ├── dual_vector.hpp           # Vector of dual numbers
+│   │   ├── dual_matrix.hpp           # Matrix of dual numbers
+│   │   ├── dual_operations.hpp       # Arithmetic for duals
+│   │   ├── hyperdual.hpp             # Second derivatives
+│   │   └── directional_derivative.hpp # Directional derivatives
+│   │
+│   ├── reverse/                      # Reverse-mode AD (tape-based)
+│   │   ├── tape.hpp                  # Computation tape/graph
+│   │   ├── var.hpp                   # AD variable type
+│   │   ├── expression_tape.hpp       # Expression recording
+│   │   ├── gradient_accumulator.hpp  # Gradient computation
+│   │   ├── checkpointing.hpp         # Memory-efficient taping
+│   │   ├── sparse_jacobian.hpp       # Sparse Jacobian assembly
+│   │   └── tape_optimization.hpp     # Tape compression/reuse
+│   │
+│   ├── mixed/                        # Mixed-mode strategies
+│   │   ├── nested_ad.hpp             # Nested forward/reverse
+│   │   ├── taylor_mode.hpp           # Taylor series mode
+│   │   └── edge_pushing.hpp          # Graph-based AD
+│   │
+│   ├── fem_specific/                 # FEM-oriented AD utilities
+│   │   ├── tangent_operator.hpp      # Consistent tangent matrices
+│   │   ├── material_tangent.hpp      # Material model derivatives
+│   │   ├── sensitivity_assembly.hpp   # Sensitivity matrix assembly
+│   │   ├── shape_derivatives.hpp     # Mesh sensitivity
+│   │   ├── adjoint_system.hpp        # Adjoint problem setup
+│   │   └── energy_derivatives.hpp    # Energy functional gradients
+│   │
+│   ├── operations/                   # AD-aware operations
+│   │   ├── ad_arithmetic.hpp         # Overloaded operators
+│   │   ├── ad_transcendental.hpp     # sin, cos, exp, log
+│   │   ├── ad_linear_algebra.hpp     # Matrix operations
+│   │   ├── ad_norms.hpp              # Differentiable norms
+│   │   └── ad_special_functions.hpp  # Special math functions
+│   │
+│   └── utilities/                    # AD utilities
+│       ├── seed_matrix.hpp           # Seeding strategies
+│       ├── sparsity_detection.hpp    # Jacobian sparsity
+│       ├── coloring_ad.hpp           # Graph coloring for AD
+│       ├── derivative_checker.hpp    # Finite difference validation
+│       └── ad_memory_pool.hpp        # Tape memory management
 │
 ├── core/                             # Core mathematical objects
 │   ├── vector.hpp                    # Dense vector
@@ -66,7 +114,10 @@ numeric/
 │   ├── sparse_vector.hpp             # Sparse vector
 │   ├── sparse_matrix.hpp             # Sparse matrix base
 │   ├── sparse_tensor.hpp             # Sparse tensor
-│   └── complex.hpp                   # Complex number support
+│   ├──  complex.hpp                  # Complex number support
+│   ├── ad_vector.hpp                 # AD-enabled vectors
+│   ├── ad_matrix.hpp                 # AD-enabled matrices
+│   └── ad_tensor.hpp                 # AD-enabled tensors
 │
 ├── storage/                          # Storage implementations
 │   ├── dense_storage.hpp             # Contiguous memory
@@ -78,7 +129,8 @@ numeric/
 │   ├── static_storage.hpp            # Compile-time sized
 │   ├── dynamic_storage.hpp           # Runtime sized
 │   ├── aligned_storage.hpp           # SIMD alignment
-│   └── hybrid_storage.hpp            # Small-buffer optimization
+│   ├── hybrid_storage.hpp            # Small-buffer optimization
+│   └── tape_storage.hpp              # Storage for AD tapes
 │
 ├── allocators/                       # Memory allocators
 │   ├── aligned_allocator.hpp         # Aligned allocation
@@ -86,7 +138,8 @@ numeric/
 │   ├── small_matrix_pool.hpp         # Element matrix pool
 │   ├── arena_allocator.hpp           # Arena allocation
 │   ├── stack_allocator.hpp           # Stack allocation
-│   └── tracking_allocator.hpp        # Memory debugging
+│   ├── tracking_allocator.hpp        # Memory debugging
+│   └── tape_allocator.hpp            # Specialized for AD tapes
 │
 ├── sparse/                           # Sparse matrix support
 │   ├── formats/
@@ -102,13 +155,15 @@ numeric/
 │   │   ├── sparse_blas.hpp          # Sparse BLAS
 │   │   ├── sparse_arithmetic.hpp    # Arithmetic ops
 │   │   ├── sparse_assembly.hpp      # Assembly utilities
-│   │   └── sparse_conversion.hpp    # Format conversion
+│   │   ├── sparse_conversion.hpp    # Format conversion
+│   │   └── sparse_ad_operations.hpp  # AD-aware sparse ops
 │   └── builders/
 │       ├── triplet_builder.hpp      # Build from triplets
 │       ├── concurrent_builder.hpp   # Thread-safe assembly
 │       ├── assembly_cache.hpp       # Pattern reuse
 │       ├── atomic_operations.hpp    # Atomic adds
-│       └── incremental_builder.hpp  # Incremental construction
+│       ├── incremental_builder.hpp  # Incremental construction
+│       └── jacobian_builder.hpp      # Build Jacobians via AD
 │
 ├── block/                           # Block-structured operations
 │   ├── block_operations.hpp         # Block-wise operations
@@ -116,7 +171,8 @@ numeric/
 │   ├── block_assembly.hpp           # Block assembly patterns
 │   ├── block_preconditioners.hpp    # Block Jacobi, etc.
 │   ├── block_solvers.hpp            # Block-aware solvers
-│   └── variable_block.hpp           # Variable-sized blocks
+│   ├── variable_block.hpp           # Variable-sized blocks
+│   └── block_jacobian.hpp           # Block Jacobian assembly
 │
 ├── constrained/                     # Constrained systems
 │   ├── constraint_handler.hpp       # Constraint elimination
@@ -125,7 +181,8 @@ numeric/
 │   ├── null_space.hpp               # Null-space methods
 │   ├── periodic_constraints.hpp     # Periodic BCs
 │   ├── multipoint_constraints.hpp   # MPC handling
-│   └── schur_complement.hpp         # Schur complements
+│   ├── schur_complement.hpp         # Schur complements
+│   └── sensitivity_constraints.hpp   # Constraint sensitivities
 │
 ├── graph/                           # Graph algorithms
 │   ├── adjacency.hpp                # Adjacency structures
@@ -134,7 +191,8 @@ numeric/
 │   ├── bandwidth.hpp                # Bandwidth reduction
 │   ├── partitioning.hpp             # Graph partitioning
 │   ├── connectivity.hpp             # Connected components
-│   └── dependency.hpp               # Dependency analysis
+│   ├── dependency.hpp               # Dependency analysis
+│   └── ad_graph.hpp                 # Computational graph for AD
 │
 ├── polynomial/                      # Polynomial operations
 │   ├── quadrature.hpp               # Gauss quadrature rules
@@ -144,7 +202,8 @@ numeric/
 │   ├── hermite.hpp                  # Hermite polynomials
 │   ├── vandermonde.hpp              # Vandermonde matrices
 │   ├── interpolation.hpp            # Polynomial interpolation
-│   └── integration.hpp              # Numerical integration
+│   ├── integration.hpp              # Numerical integration
+│   └── polynomial_ad.hpp            # AD for polynomial bases
 │
 ├── expressions/                      # Expression templates
 │   ├── expression.hpp               # Expression machinery
@@ -155,7 +214,8 @@ numeric/
 │   ├── block_expressions.hpp        # Block operations
 │   ├── petrov_galerkin.hpp          # Non-symmetric ops
 │   ├── aliasing.hpp                 # Aliasing detection
-│   └── evaluation.hpp               # Evaluation strategies
+│   ├── evaluation.hpp               # Evaluation strategies
+│   └── ad_expressions.hpp           # AD-aware expressions
 │
 ├── operations/                      # Mathematical operations
 │   ├── arithmetic.hpp               # Basic arithmetic
@@ -165,7 +225,8 @@ numeric/
 │   ├── stabilization.hpp            # SUPG/GLS matrices
 │   ├── skew_symmetric.hpp           # Skew operations
 │   ├── reductions.hpp               # Sum, mean, etc.
-│   └── element_wise.hpp             # Element-wise ops
+│   ├── element_wise.hpp             # Element-wise ops
+│   └── differentiation.hpp          # Differentiation operations
 │
 ├── linear_algebra/                  # Linear algebra operations
 │   ├── blas_level1.hpp              # Vector operations
@@ -176,7 +237,8 @@ numeric/
 │   ├── condition_number.hpp         # Condition estimation
 │   ├── iterative_refinement.hpp     # Mixed precision
 │   ├── decompositions.hpp           # LU, QR, SVD
-│   └── norms.hpp                    # Vector/matrix norms
+│   ├── norms.hpp                    # Vector/matrix norms
+│   └── ad_linear_algebra.hpp        # AD-enabled linear algebra
 │
 ├── decompositions/                  # Matrix decompositions
 │   ├── lu.hpp                       # LU decomposition
@@ -186,7 +248,8 @@ numeric/
 │   ├── cholesky.hpp                 # Cholesky
 │   ├── ldlt.hpp                     # LDLT decomposition
 │   ├── schur.hpp                    # Schur decomposition
-│   └── block_lu.hpp                 # Block LU
+│   ├── block_lu.hpp                 # Block LU
+│   └── ad_decompositions.hpp        # AD-aware decompositions
 │
 ├── solvers/                         # Linear system solvers
 │   ├── direct/
@@ -209,6 +272,12 @@ numeric/
 │   │   ├── generalized_eigen.hpp    # K*x = λ*M*x
 │   │   ├── shift_invert.hpp         # Shift-invert
 │   │   └── subspace_iteration.hpp   # Multiple eigenpairs
+│   ├── newton/                      # Newton-type solvers with AD
+│   │   ├── newton_raphson.hpp       # With automatic Jacobian
+│   │   ├── line_search.hpp          # Line search strategies
+│   │   ├── trust_region.hpp         # Trust region methods
+│   │   ├── quasi_newton.hpp         # BFGS, L-BFGS with AD
+│   │   └── continuation.hpp         # Parameter continuation
 │   └── preconditioners/
 │       ├── diagonal.hpp             # Jacobi
 │       ├── ilu.hpp                  # Incomplete LU
@@ -221,15 +290,8 @@ numeric/
 │   ├── sum_factorization.hpp        # Tensor-product kernels
 │   ├── diagonal_approximation.hpp   # Diagonal computation
 │   ├── chebyshev_smoother.hpp       # For multigrid
-│   └── matrix_free_preconditioner.hpp
-│
-├── assembly/                        # FEM assembly support
-│   ├── dof_map.hpp                  # DOF connectivity
-│   ├── local_to_global.hpp          # Index mapping
-│   ├── shape_function_cache.hpp     # Cache evaluations
-│   ├── integration_points.hpp       # Standard rules
-│   ├── element_matrix_pool.hpp      # Memory pool
-│   └── assembly_pattern.hpp         # Sparsity patterns
+│   ├── matrix_free_preconditioner.hpp
+│   └── matrix_free_jacobian.hpp     # Jacobian-vector products
 │
 ├── indexing/                        # Indexing and slicing
 │   ├── index.hpp                    # Basic indexing
@@ -239,13 +301,23 @@ numeric/
 │   ├── dof_indexing.hpp             # DOF-based indexing
 │   └── multi_index.hpp              # Multi-dimensional
 │
+├── optimization/                    # NEW: Optimization with AD
+│   ├── gradient_descent.hpp         # First-order methods
+│   ├── conjugate_gradient_opt.hpp   # Nonlinear CG
+│   ├── lbfgs.hpp                    # Limited-memory BFGS
+│   ├── gauss_newton.hpp             # For least squares
+│   ├── levenberg_marquardt.hpp      # LM algorithm
+│   ├── interior_point.hpp           # Constrained optimization
+│   └── sensitivity_analysis.hpp     # Design sensitivities
+│
 ├── parallel/                        # Parallelization support
 │   ├── parallel_for.hpp             # Parallel loops
 │   ├── parallel_reduce.hpp          # Reductions
 │   ├── parallel_assembly.hpp        # Concurrent assembly
 │   ├── graph_coloring.hpp           # For conflict-free assembly
 │   ├── thread_pool.hpp              # Thread pool
-│   └── simd_operations.hpp          # SIMD vectorization
+│   ├── simd_operations.hpp          # SIMD vectorization
+│   └── parallel_ad.hpp              # Parallel AD evaluation
 │
 ├── io/                              # Input/output
 │   ├── matrix_market.hpp            # Matrix Market format
@@ -253,7 +325,8 @@ numeric/
 │   ├── matlab_io.hpp                # MATLAB .mat
 │   ├── hdf5_io.hpp                  # HDF5 support
 │   ├── vtk_io.hpp                   # VTK matrix output
-│   └── binary_io.hpp                # Binary format
+│   ├── binary_io.hpp                # Binary format
+│   └── tape_io.hpp                  # Save/load AD tapes
 │
 ├── utilities/                       # Utility functions
 │   ├── math_functions.hpp           # Common math
@@ -261,24 +334,21 @@ numeric/
 │   ├── timer.hpp                    # Performance timing
 │   ├── memory_utils.hpp             # Memory utilities
 │   ├── fem_utils.hpp                # FEM-specific utilities
-│   └── error_handling.hpp           # Error handling
-│
-├── adapters/                        # Optional FEM integration
-│   ├── fem_adapter.hpp              # FEM core adapter
-│   ├── fem_matrix_wrapper.hpp       # Wrap as FEM objects
-│   └── fem_solver_interface.hpp     # Solver integration
+│   ├── error_handling.hpp           # Error handling
+│   └── ad_utils.hpp                 # AD helper functions
 │
 ├── backends/                        # External library backends
 │   ├── blas_backend.hpp             # BLAS/LAPACK
 │   ├── mkl_backend.hpp              # Intel MKL
 │   ├── cuda_backend.hpp             # CUDA support
 │   ├── petsc_backend.hpp            # PETSc wrapper
-│   └── trilinos_backend.hpp         # Trilinos wrapper
+│   ├── trilinos_backend.hpp         # Trilinos wrapper
+│   └── adol_c_backend.hpp           # ADOL-C integration
 │
 ├── tests/                           # Comprehensive testing
 │   ├── unit/                        # Unit tests
 │   ├── integration/                 # Integration tests
-│   ├── fem_specific/                # FEM-oriented tests
+│   ├── benchmark/                   # Benchmark tests
 │   └── performance/                 # Performance tests
 │
 └── examples/                        # Usage examples

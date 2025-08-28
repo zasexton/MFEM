@@ -96,38 +96,6 @@ mesh/
 │       ├── boundary_layer.hpp      # Anisotropic BL meshes
 │       └── lattice.hpp             # Lattice structures
 │
-├── refinement/                      # Mesh refinement
-│   ├── refinement_strategy.hpp     # Base strategy
-│   ├── h_refinement/
-│   │   ├── uniform_refinement.hpp  # Uniform h-refinement
-│   │   ├── adaptive_refinement.hpp # Error-based refinement
-│   │   ├── bisection.hpp           # Bisection methods
-│   │   ├── regular_refinement.hpp  # Regular subdivision
-│   │   └── hanging_nodes.hpp       # Hanging node treatment
-│   ├── p_refinement/
-│   │   ├── polynomial_enrichment.hpp
-│   │   ├── order_elevation.hpp
-│   │   └── curved_refinement.hpp   # Curved element p-ref (NEW)
-│   ├── hp_refinement/
-│   │   ├── hp_strategy.hpp         # Combined hp-strategy
-│   │   └── hp_decision.hpp         # h vs p decision
-│   ├── coarsening/
-│   │   ├── edge_collapse.hpp       # Edge collapsing
-│   │   ├── vertex_removal.hpp      # Vertex removal
-│   │   └── agglomeration.hpp       # Cell agglomeration
-│   ├── anisotropic/
-│   │   ├── directional_refinement.hpp
-│   │   └── metric_based.hpp        # Metric-based adaptation
-│   ├── solution_transfer/          # Solution projection (NEW)
-│   │   ├── l2_projection.hpp       # L2 projection
-│   │   ├── conservative_transfer.hpp # Conservative interp
-│   │   ├── hierarchical_transfer.hpp # Hierarchical basis
-│   │   ├── prolongation.hpp        # Fine to coarse
-│   │   └── restriction.hpp         # Coarse to fine
-│   └── multigrid_transfer/         # MG operators (NEW)
-│       ├── geometric_transfer.hpp  # Geometric MG
-│       └── algebraic_transfer.hpp  # AMG transfers
-│
 ├── quality/                         # Mesh quality
 │   ├── quality_metric.hpp          # Quality metric base
 │   ├── metrics/
@@ -168,7 +136,7 @@ mesh/
 │       ├── zoltan_wrapper.hpp      # Zoltan interface
 │       └── parmetis_wrapper.hpp    # ParMETIS (NEW)
 │
-├── motion/                          # Mesh motion (ALE)
+├── motion/                         # Mesh motion (ALE)
 │   ├── mesh_motion_base.hpp        # Motion interface
 │   ├── ale/
 │   │   ├── ale_mesh.hpp            # ALE mesh class
@@ -191,10 +159,10 @@ mesh/
 │       ├── front_tracking.hpp      # Explicit fronts
 │       └── level_set_mesh.hpp      # Level-set based
 │
-├── interpolation/                   # Inter-mesh transfer
+├── interpolation/                  # Inter-mesh transfer
 │   ├── interpolator_base.hpp       # Interpolation interface
-│   ├── conservative_transfer.hpp    # Conservative interpolation
-│   ├── consistent_transfer.hpp      # Consistent interpolation
+│   ├── conservative_transfer.hpp   # Conservative interpolation
+│   ├── consistent_transfer.hpp     # Consistent interpolation
 │   ├── projection.hpp              # L2 projection
 │   ├── nearest_neighbor.hpp        # Nearest point
 │   ├── radial_basis.hpp            # RBF interpolation
@@ -202,7 +170,7 @@ mesh/
 │   ├── nonconforming_interface.hpp # Nonconforming support (NEW)
 │   └── high_order_transfer.hpp     # Curved mesh transfer (NEW)
 │
-├── search/                          # Spatial search structures
+├── search/                         # Spatial search structures
 │   ├── search_tree.hpp             # Base search interface
 │   ├── kdtree.hpp                  # k-d tree
 │   ├── octree.hpp                  # Octree
@@ -210,7 +178,7 @@ mesh/
 │   ├── rtree.hpp                   # R-tree
 │   ├── point_locator.hpp           # Point-in-element
 │   ├── neighbor_search.hpp         # Nearest neighbors
-│   └── gpu_search.hpp              # GPU-accelerated search (NEW)
+│   └── gpu_search.hpp              # GPU-accelerated search
 │
 ├── io/                              # Mesh I/O
 │   ├── mesh_reader.hpp             # Reader interface
@@ -219,19 +187,19 @@ mesh/
 │   │   ├── gmsh_io.hpp             # Gmsh format
 │   │   ├── exodus_io.hpp           # Exodus II
 │   │   ├── vtk_io.hpp              # VTK/VTU format
-│   │   ├── xdmf_io.hpp             # XDMF/HDF5 format (NEW)
-│   │   ├── hdf5_io.hpp             # Native HDF5 (NEW)
+│   │   ├── xdmf_io.hpp             # XDMF/HDF5 format
+│   │   ├── hdf5_io.hpp             # Native HDF5
 │   │   ├── abaqus_io.hpp           # Abaqus input
 │   │   ├── nastran_io.hpp          # Nastran bulk
-│   │   ├── cgns_io.hpp             # CGNS format (NEW)
+│   │   ├── cgns_io.hpp             # CGNS format
 │   │   ├── stl_io.hpp              # STL format
 │   │   └── native_io.hpp           # Native format
 │   └── parallel_io/
 │       ├── distributed_reader.hpp  # Parallel read
 │       ├── distributed_writer.hpp  # Parallel write
-│       └── mpi_hdf5_io.hpp         # Parallel HDF5 (NEW)
+│       └── mpi_hdf5_io.hpp         # Parallel HDF5
 │
-├── parallel/                        # Distributed mesh
+├── parallel/                       # Distributed mesh
 │   ├── distributed_mesh.hpp        # Distributed mesh class
 │   ├── ghost_cells.hpp             # Ghost element layer
 │   ├── halo_exchange.hpp           # Halo communication

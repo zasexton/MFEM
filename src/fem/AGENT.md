@@ -167,15 +167,6 @@ fem/
 │   ├── moving_least_squares.hpp    # MLS interpolation
 │   └── radial_basis.hpp            # RBF interpolation
 │
-├── assembly/                       # Local assembly utilities
-│   ├── element_assembler.hpp       # Element assembly interface
-│   ├── element_matrix.hpp          # Element matrix computation
-│   ├── element_vector.hpp          # Element vector computation
-│   ├── local_assembly.hpp          # Local assembly operations
-│   ├── assembly_kernel.hpp         # Assembly kernels
-│   ├── static_condensation.hpp     # Local elimination tools
-│   └── assembly_traits.hpp         # Assembly type traits
-│
 ├── formulation/                     # FEM formulations
 │   ├── weak_form.hpp               # Weak form interface
 │   ├── galerkin.hpp                # Standard Galerkin
@@ -202,16 +193,6 @@ fem/
 │   ├── goal_oriented.hpp           # Goal-oriented
 │   ├── error_indicator.hpp         # Error indicators
 │   └── effectivity_index.hpp       # Effectivity computation
-│
-├── adaptivity/                      # Adaptive refinement
-│   ├── refinement_strategy.hpp     # Refinement strategies
-│   ├── h_refinement.hpp            # h-refinement
-│   ├── p_refinement.hpp            # p-refinement
-│   ├── hp_refinement.hpp           # hp-refinement
-│   ├── hanging_nodes.hpp           # consistent generation for AMR
-│   ├── marking_strategy.hpp        # Element marking
-│   ├── solution_transfer.hpp       # Solution projection
-│   └── mesh_hierarchy.hpp          # Hierarchical meshes
 │
 ├── special/                         # Special FEM methods
 │   ├── xfem/                       # Extended FEM
