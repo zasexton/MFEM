@@ -67,20 +67,24 @@ adaptation/
 │       └── distributed_marking.hpp   # Distributed decisions
 │
 ├── refinement_strategies/           # Refinement methods
+│   ├── refinement_strategy.hpp      # Base strategy
 │   ├── h_refinement/
-│   │   ├── h_strategy_base.hpp     # h-refinement interface
-│   │   ├── isotropic_refinement.hpp # Uniform subdivision
+│   │   ├── h_strategy_base.hpp        # h-refinement interface
+│   │   ├── isotropic_refinement.hpp   # Uniform subdivision
+│   │   ├── adaptive_refinement.hpp    # Error-based refinement
 │   │   ├── anisotropic_refinement.hpp # Directional refinement
-│   │   ├── bisection_refinement.hpp # Longest edge bisection
-│   │   ├── regular_refinement.hpp  # Regular patterns
-│   │   ├── conforming_refinement.hpp # Maintain conformity
-│   │   └── hanging_node_handler.hpp # Hanging node treatment
+│   │   ├── bisection_refinement.hpp   # Longest edge bisection
+│   │   ├── regular_refinement.hpp     # Regular patterns
+│   │   ├── conforming_refinement.hpp  # Maintain conformity
+│   │   └── hanging_node_handler.hpp   # Hanging node treatment
 │   ├── p_refinement/
-│   │   ├── p_strategy_base.hpp     # p-refinement interface
-│   │   ├── uniform_p_refinement.hpp # Uniform order increase
-│   │   ├── variable_p_refinement.hpp # Variable order
-│   │   ├── modal_enrichment.hpp    # Modal basis enrichment
-│   │   └── spectral_refinement.hpp # Spectral convergence
+│   │   ├── p_strategy_base.hpp        # p-refinement interface
+│   │   ├── polynomial_enrichment.hpp
+│   │   ├── order_elevation.hpp
+│   │   ├── uniform_p_refinement.hpp   # Uniform order increase
+│   │   ├── variable_p_refinement.hpp  # Variable order
+│   │   ├── modal_enrichment.hpp       # Modal basis enrichment
+│   │   └── spectral_refinement.hpp    # Spectral convergence
 │   ├── r_refinement/
 │   │   ├── r_strategy_base.hpp     # r-refinement (moving nodes)
 │   │   ├── spring_analogy.hpp      # Spring-based movement
@@ -126,6 +130,7 @@ adaptation/
 │   │   ├── l2_projection.hpp       # L2 projection
 │   │   ├── h1_projection.hpp       # H1 projection
 │   │   ├── galerkin_projection.hpp # Galerkin projection
+│   │   ├── hierarchical_transfer.hpp # Hierarchical basis
 │   │   └── conservative_projection.hpp # Conservative transfer
 │   ├── restriction_prolongation/
 │   │   ├── injection.hpp           # Simple injection
@@ -137,10 +142,13 @@ adaptation/
 │   │   ├── vector_transfer.hpp     # Vector field transfer
 │   │   ├── tensor_transfer.hpp     # Tensor field transfer
 │   │   └── history_transfer.hpp    # History variable transfer
-│   └── conservation/
-│       ├── mass_conservation.hpp   # Conserve mass
-│       ├── momentum_conservation.hpp # Conserve momentum
-│       └── energy_conservation.hpp # Conserve energy
+│   │── conservation/
+│   │   ├── mass_conservation.hpp   # Conserve mass
+│   │   ├── momentum_conservation.hpp # Conserve momentum
+│   │   └── energy_conservation.hpp # Conserve energy
+│   └── multigrid_transfer/         # MG operators
+│       ├── geometric_transfer.hpp  # Geometric MG
+│       └── algebraic_transfer.hpp  # AMG transfers
 │
 ├── adaptive_loop/                   # Adaptation orchestration
 │   ├── adaptive_solver.hpp         # Main adaptive loop

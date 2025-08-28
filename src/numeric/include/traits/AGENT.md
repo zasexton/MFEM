@@ -1,16 +1,16 @@
 # AGENT.md - Numeric Traits System
 
-## 🎯 Purpose
+## Purpose
 Compile-time type introspection and trait system enabling template metaprogramming, SFINAE-based dispatch, and C++20 concepts for the FEM numeric library. Zero runtime overhead type safety and optimization.
 
-## 🏗️ Architecture Philosophy
+## Architecture Philosophy
 - **Compile-Time Everything**: All decisions made at compile time
 - **Zero Overhead**: Traits compile away to nothing
 - **Composable**: Traits build on each other hierarchically
 - **Detection-Based**: Safe detection over hard requirements
 - **Concept-Driven**: C++20 concepts for clear constraints
 
-## 📁 Files Overview
+## Files Overview
 
 ### Core Type System
 - **type_traits.hpp**: Basic type properties (is_complex, is_pod, real_type)
@@ -27,7 +27,7 @@ Compile-time type introspection and trait system enabling template metaprogrammi
 - **expression_traits.hpp**: Expression template properties (lazy, broadcasting, SIMD)
 - **concepts.hpp**: C++20 concepts combining all traits
 
-## 🔧 Key Patterns & Usage
+## Key Patterns & Usage
 
 ### Detection Idiom Pattern
 ```cpp
@@ -72,7 +72,7 @@ auto compute(T value) -> enable_if_t<!has_simd_v<T>, T> {
 }
 ```
 
-## 🎨 Design Patterns
+## Design Patterns
 
 ### 1. Trait Hierarchy
 ```
@@ -98,7 +98,7 @@ Binary Op: can_operate<Op, T1, T2> → result_type<Op, T1, T2>
 Unary Op:  can_operate<Op, T> → result_type<Op, T>
 ```
 
-## 💡 Quick Reference
+## Quick Reference
 
 ### Type Checks
 ```cpp
@@ -127,7 +127,7 @@ is_broadcastable_v<S1, S2> // Shapes can broadcast
 has_eval_v<T>            // Has eval() method
 ```
 
-## 🚀 Performance Tips
+## Performance Tips
 
 1. **Use `if constexpr`** for compile-time branching
 2. **Prefer concepts** over SFINAE for cleaner code
@@ -135,7 +135,7 @@ has_eval_v<T>            // Has eval() method
 4. **Minimize template depth** to reduce compile time
 5. **Use detection idiom** for optional features
 
-## ⚠️ Common Pitfalls
+## Common Pitfalls
 
 1. **Forgetting constexpr**: Traits must be constexpr
 2. **Circular dependencies**: Traits depending on each other
@@ -143,7 +143,7 @@ has_eval_v<T>            // Has eval() method
 4. **SFINAE failures**: Malformed detection expressions
 5. **Template bloat**: Too many instantiations
 
-## 🔗 Integration Points
+## Integration Points
 
 ### With Base Infrastructure
 - Extends `numeric_traits` from `traits_base.hpp`
@@ -156,7 +156,7 @@ has_eval_v<T>            // Has eval() method
 - Expression templates use expression traits for evaluation
 - Algorithms use operation traits for dispatch
 
-## 📊 Trait Categories
+## Trait Categories
 
 ### Level 1: Basic Types
 - Fundamental properties (size, alignment)
@@ -179,7 +179,7 @@ has_eval_v<T>            // Has eval() method
 - Memory access patterns
 - Broadcasting rules
 
-## 🧪 Testing Traits
+## Testing Traits
 
 ```cpp
 // Compile-time tests
@@ -193,7 +193,7 @@ if constexpr (has_nan_v<T>) {
 }
 ```
 
-## 🔄 Extension Points
+## Extension Points
 
 ### Adding New Traits
 1. Define in appropriate header

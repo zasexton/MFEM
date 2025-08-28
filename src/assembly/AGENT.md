@@ -22,6 +22,7 @@ assembly/
 │   ├── element_assembly.hpp        # Element matrix/vector assembly
 │   ├── local_matrix.hpp            # Local matrix structures
 │   ├── local_vector.hpp            # Local vector structures
+│   ├── local_to_global.hpp         # Index mapping
 │   ├── integration_loop.hpp        # Quadrature loop abstractions
 │   ├── kernel_interface.hpp        # Assembly kernel interface
 │   ├── vectorized_assembly.hpp     # SIMD-optimized assembly
@@ -32,6 +33,7 @@ assembly/
 │
 ├── global/                          # Global system assembly
 │   ├── global_assembler.hpp        # Main assembly orchestrator
+│   ├── global_to_local.hpp         # Index mapping
 │   ├── scatter_operation.hpp       # Local-to-global scatter
 │   ├── gather_operation.hpp        # Global-to-local gather
 │   ├── assembly_strategy.hpp       # Assembly strategy interface
@@ -100,7 +102,7 @@ assembly/
 │   ├── collective_assembly.hpp     # MPI collective operations
 │   └── overlap_assembly.hpp        # Compute-comm overlap
 │
-├── matrix_free/                     # Matrix-free assembly
+├── matrix_free/                    # Matrix-free assembly
 │   ├── matrix_free_operator.hpp    # Operator interface
 │   ├── action_assembly.hpp         # Matrix action assembly
 │   ├── cell_batch.hpp              # Cell batching for vectorization

@@ -24,197 +24,427 @@ physics/
 │   ├── constitutive_model.hpp      # Material model interface
 │   ├── field_variable.hpp          # Physics field definitions
 │   ├── physics_traits.hpp          # Physics type traits
+│   ├── coupling_interface.hpp      # Interface exposed to coupling module
 │   ├── conservation_law.hpp        # Conservation principles
 │   └── physics_factory.hpp         # Physics module factory
 │
 ├── mechanics/                       # Solid/structural mechanics
 │   ├── solid/
-│   │   ├── linear_elasticity.hpp   # Linear elastic
-│   │   ├── finite_strain.hpp       # Large deformation
-│   │   ├── hyperelasticity.hpp     # Hyperelastic models
+│   │   ├── linear/
+│   │   │   ├── linear_elasticity.hpp    # Hooke's law
+│   │   │   ├── anisotropic_elastic.hpp  # Orthotropic/anisotropic
+│   │   │   └── thermal_stress.hpp       # Thermoelastic stress
+│   │   ├── finite_strain/
+│   │   │   ├── total_lagrangian.hpp     # Total Lagrangian
+│   │   │   ├── updated_lagrangian.hpp   # Updated Lagrangian
+│   │   │   └── corotational.hpp         # Corotational formulation
+│   │   ├── hyperelastic/
+│   │   │   ├── neo_hookean.hpp          # Neo-Hookean
+│   │   │   ├── mooney_rivlin.hpp        # Mooney-Rivlin
+│   │   │   ├── ogden.hpp                # Ogden model
+│   │   │   ├── yeoh.hpp                 # Yeoh model
+│   │   │   ├── arruda_boyce.hpp         # Arruda-Boyce
+│   │   │   ├── gent.hpp                 # Gent model
+│   │   │   └── holzapfel_gasser.hpp     # HGO
 │   │   ├── plasticity/
-│   │   │   ├── j2_plasticity.hpp   # Von Mises plasticity
-│   │   │   ├── mohr_coulomb.hpp    # Mohr-Coulomb
-│   │   │   ├── drucker_prager.hpp  # Drucker-Prager
-│   │   │   └── crystal_plasticity.hpp # Crystal plasticity
-│   │   ├── viscoelasticity/
-│   │   │   ├── maxwell.hpp         # Maxwell model
-│   │   │   ├── kelvin_voigt.hpp    # Kelvin-Voigt
-│   │   │   └── generalized_maxwell.hpp
+│   │   │   ├── j2_plasticity.hpp        # Von Mises
+│   │   │   ├── tresca.hpp               # Tresca
+│   │   │   ├── mohr_coulomb.hpp         # Mohr-Coulomb
+│   │   │   ├── drucker_prager.hpp       # Drucker-Prager
+│   │   │   ├── cam_clay.hpp             # Modified Cam-Clay
+│   │   │   ├── crystal_plasticity.hpp   # Crystal plasticity
+│   │   │   ├── johnson_cook.hpp         # Johnson-Cook
+│   │   │   └── gurson_tvergaard.hpp     # Gurson model
+│   │   ├── viscoelastic/
+│   │   │   ├── maxwell.hpp              # Maxwell model
+│   │   │   ├── kelvin_voigt.hpp         # Kelvin-Voigt
+│   │   │   ├── zener.hpp                # Standard linear solid
+│   │   │   ├── generalized_maxwell.hpp  # Prony series
+│   │   │   ├── burgers.hpp              # Burgers model
+│   │   │   └── fractional_derivative.hpp # Fractional viscoelasticity
 │   │   ├── damage/
-│   │   │   ├── scalar_damage.hpp   # Isotropic damage
-│   │   │   ├── anisotropic_damage.hpp
-│   │   │   └── phase_field_fracture.hpp
-│   │   └── constitutive/
-│   │       ├── neo_hookean.hpp     # Neo-Hookean
-│   │       ├── mooney_rivlin.hpp   # Mooney-Rivlin
-│   │       └── ogden.hpp           # Ogden model
+│   │   │   ├── lemaitre.hpp             # Lemaitre damage
+│   │   │   ├── mazars.hpp               # Mazars concrete
+│   │   │   ├── gurson_damage.hpp        # Ductile damage
+│   │   │   ├── cohesive_zone.hpp        # CZM
+│   │   │   └── phase_field_fracture.hpp # Phase field
+│   │   ├── gradient_enhanced/
+│   │   │   ├── strain_gradient.hpp      # Strain gradient elasticity
+│   │   │   ├── micropolar.hpp           # Cosserat continuum
+│   │   │   └── nonlocal.hpp             # Nonlocal models
+│   │   ├── enriched_methods/
+│   │   │   ├── xfem.hpp                 # Extended FEM
+│   │   │   ├── gfem.hpp                 # Generalized FEM
+│   │   │   └── phantom_node.hpp         # Phantom node method
+│   │   └── special/
+│   │       ├── shape_memory.hpp         # Shape memory alloys
+│   │       ├── swelling.hpp             # Swelling materials
+│   │       └── growth.hpp               # Biological growth
+│   │ 
+│   ├── nonlocal/
+│   │   ├── peridynamics/
+│   │   │   ├── bond_based.hpp           # Bond-based PD
+│   │   │   ├── state_based.hpp          # State-based PD
+│   │   │   └── correspondence.hpp       # Correspondence PD
+│   │   └── lattice/
+│   │       ├── lattice_spring.hpp       # Spring networks
+│   │       └── discrete_lattice.hpp     # Discrete models
+│   │ 
 │   ├── structural/
 │   │   ├── beam/
-│   │   │   ├── euler_bernoulli.hpp # Euler-Bernoulli beam
-│   │   │   ├── timoshenko.hpp      # Timoshenko beam
-│   │   │   └── nonlinear_beam.hpp  # Geometrically nonlinear
+│   │   │   ├── euler_bernoulli.hpp      # Euler-Bernoulli
+│   │   │   ├── timoshenko.hpp           # Timoshenko
+│   │   │   ├── geometrically_exact.hpp  # Simo-Reissner
+│   │   │   └── composite_beam.hpp       # Layered beams
 │   │   ├── plate/
-│   │   │   ├── kirchhoff_love.hpp  # Thin plate
-│   │   │   ├── mindlin_reissner.hpp # Thick plate
-│   │   │   └── von_karman.hpp      # Von Karman plate
+│   │   │   ├── kirchhoff_love.hpp       # Thin plate
+│   │   │   ├── mindlin_reissner.hpp     # Thick plate
+│   │   │   ├── von_karman.hpp           # Large deflection
+│   │   │   └── laminated_plate.hpp      # Composite plates
 │   │   ├── shell/
-│   │   │   ├── linear_shell.hpp    # Linear shell
-│   │   │   ├── nonlinear_shell.hpp # Nonlinear shell
-│   │   │   └── composite_shell.hpp # Layered composites
-│   │   └── membrane/
-│   │       └── membrane.hpp        # Membrane elements
+│   │   │   ├── kirchhoff_love_shell.hpp # Thin shell
+│   │   │   ├── reissner_mindlin_shell.hpp # Thick shell
+│   │   │   ├── solid_shell.hpp          # Solid-shell element
+│   │   │   └── isogeometric_shell.hpp   # NURBS-based
+│   │   └── cable/
+│   │       ├── cable_element.hpp        # Cable/rope
+│   │       └── catenary.hpp             # Catenary cables
+│   │ 
 │   ├── contact/
-│   │   ├── contact_mechanics.hpp   # Contact base
-│   │   ├── penalty_contact.hpp     # Penalty method
-│   │   ├── lagrange_contact.hpp    # Lagrange multipliers
-│   │   ├── augmented_lagrange.hpp  # Augmented Lagrangian
-│   │   ├── mortar_contact.hpp      # Mortar methods
-│   │   └── friction/
-│   │       ├── coulomb_friction.hpp # Coulomb friction
-│   │       └── adhesion.hpp        # Adhesive contact
+│   │   ├── frictionless_contact.hpp     # No friction
+│   │   ├── coulomb_friction.hpp         # Coulomb model
+│   │   ├── stick_slip.hpp               # Stick-slip
+│   │   ├── adhesive_contact.hpp         # Adhesion
+│   │   ├── wear.hpp                     # Archard wear
+│   │   └── thermal_contact.hpp          # With heat transfer
+│   │
 │   └── dynamics/
-│       ├── elastodynamics.hpp      # Dynamic elasticity
-│       ├── wave_propagation.hpp    # Wave equations
-│       └── modal_analysis.hpp      # Modal dynamics
+│       ├── explicit_dynamics.hpp        # Central difference
+│       ├── implicit_dynamics.hpp        # Newmark/HHT
+│       ├── modal_dynamics.hpp           # Modal superposition
+│       ├── harmonic_response.hpp        # Frequency domain
+│       └── random_vibration.hpp         # Stochastic dynamics
 │
 ├── thermal/                         # Heat transfer
 │   ├── conduction/
-│   │   ├── steady_heat.hpp         # Steady-state heat
-│   │   ├── transient_heat.hpp      # Transient heat
-│   │   ├── nonlinear_heat.hpp      # Temperature-dependent
-│   │   └── anisotropic_heat.hpp    # Anisotropic conduction
+│   │   ├── fourier.hpp                  # Fourier's law
+│   │   ├── anisotropic_conduction.hpp   # Anisotropic
+│   │   ├── nonlinear_conduction.hpp     # k(T)
+│   │   ├── hyperbolic_heat.hpp          # Non-Fourier
+│   │   └── dual_phase_lag.hpp           # DPL model
 │   ├── convection/
-│   │   ├── forced_convection.hpp   # Forced convection
-│   │   ├── natural_convection.hpp  # Natural convection
-│   │   └── mixed_convection.hpp    # Mixed convection
+│   │   ├── forced_convection.hpp        # Forced
+│   │   ├── natural_convection.hpp       # Natural
+│   │   ├── mixed_convection.hpp         # Mixed
+│   │   └── conjugate_heat.hpp           # CHT
 │   ├── radiation/
-│   │   ├── surface_radiation.hpp   # Surface-to-surface
-│   │   ├── participating_media.hpp # Participating media
-│   │   └── view_factors.hpp        # View factor calculation
-│   └── phase_change/
-│       ├── melting_solidification.hpp # Phase change
-│       └── stefan_problem.hpp      # Stefan problem
+│   │   ├── surface_to_surface.hpp       # View factors
+│   │   ├── participating_media.hpp      # P1, DOM
+│   │   ├── rosseland.hpp                # Rosseland approx
+│   │   └── monte_carlo_radiation.hpp    # MCRT
+│   ├── phase_change/
+│   │   ├── enthalpy_method.hpp          # Enthalpy
+│   │   ├── stefan_problem.hpp           # Stefan
+│   │   ├── level_set_stefan.hpp         # Level set
+│   │   └── solidification.hpp           # Alloy solidification
+│   ├── microscale/
+│   │   ├── phonon_transport.hpp         # BTE for phonons
+│   │   ├── molecular_heat.hpp           # MD heat transfer
+│   │   └── kapitza_resistance.hpp       # Interface resistance
+│   └── interface_thermal/
+│       └── thermal_interface.hpp        # TIM/TBC models
 │
 ├── fluid/                           # Fluid dynamics
 │   ├── incompressible/
-│   │   ├── stokes.hpp              # Stokes flow
-│   │   ├── navier_stokes.hpp       # Incompressible NS
-│   │   ├── stabilized/
-│   │   │   ├── supg.hpp            # SUPG stabilization
-│   │   │   ├── pspg.hpp            # PSPG stabilization
-│   │   │   └── gls.hpp             # GLS method
-│   │   └── turbulence/
-│   │       ├── rans/
-│   │       │   ├── k_epsilon.hpp   # k-epsilon model
-│   │       │   ├── k_omega.hpp     # k-omega model
-│   │       │   └── spalart_allmaras.hpp
-│   │       ├── les/
-│   │       │   ├── smagorinsky.hpp # Smagorinsky
-│   │       │   └── dynamic_les.hpp # Dynamic LES
-│   │       └── dns.hpp             # Direct simulation
+│   │   ├── stokes/
+│   │   │   ├── stokes.hpp               # Stokes flow
+│   │   │   └── brinkman_stokes.hpp      # Brinkman-Stokes
+│   │   ├── navier_stokes/
+│   │   │   ├── steady_ns.hpp            # Steady NS
+│   │   │   ├── unsteady_ns.hpp          # Transient NS
+│   │   │   ├── boussinesq.hpp           # Buoyancy-driven
+│   │   │   └── non_newtonian.hpp        # Non-Newtonian
+│   │   └── stabilized/
+│   │       ├── supg.hpp                 # SUPG
+│   │       ├── pspg.hpp                 # PSPG
+│   │       ├── gls.hpp                  # GLS
+│   │       └── vms.hpp                  # Variational multiscale
+│   │
 │   ├── compressible/
-│   │   ├── euler.hpp               # Euler equations
-│   │   ├── compressible_ns.hpp     # Compressible NS
-│   │   └── shock_capturing.hpp     # Shock capturing
-│   ├── porous/
-│   │   ├── darcy.hpp               # Darcy flow
-│   │   ├── brinkman.hpp            # Brinkman equations
-│   │   └── richards.hpp            # Richards equation
-│   └── multiphase/
-│       ├── level_set.hpp           # Level set method
-│       ├── vof.hpp                 # Volume of fluid
-│       └── phase_field_flow.hpp    # Phase field
+│   │   ├── euler.hpp                    # Euler equations
+│   │   ├── navier_stokes_comp.hpp       # Compressible NS
+│   │   ├── discontinuous_galerkin.hpp   # DG methods
+│   │   └── shock_capturing.hpp          # Shock capturing
+│   │
+│   ├── turbulence/
+│   │   ├── rans/
+│   │   │   ├── k_epsilon.hpp            # k-ε model
+│   │   │   ├── k_omega.hpp              # k-ω model
+│   │   │   ├── k_omega_sst.hpp          # SST model
+│   │   │   ├── spalart_allmaras.hpp     # SA model
+│   │   │   └── reynolds_stress.hpp      # RSM
+│   │   ├── les/
+│   │   │   ├── smagorinsky.hpp          # Smagorinsky
+│   │   │   ├── dynamic_smagorinsky.hpp  # Dynamic model
+│   │   │   ├── wale.hpp                 # WALE model
+│   │   │   └── vreman.hpp               # Vreman model
+│   │   └── hybrid/
+│   │       ├── des.hpp                  # DES
+│   │       └── les_rans.hpp             # Hybrid LES-RANS
+│   │
+│   ├── multiphase/
+│   │   ├── level_set.hpp                # Level set
+│   │   ├── vof.hpp                      # Volume of fluid
+│   │   ├── phase_field_flow.hpp         # Cahn-Hilliard
+│   │   ├── mixture_model.hpp            # Mixture theory
+│   │   └── euler_euler.hpp              # Two-fluid model
+│   │
+│   ├── free_surface/
+│   │   ├── ale_free_surface.hpp         # ALE methods
+│   │   ├── space_time_free.hpp          # Space-time
+│   │   └── moving_mesh.hpp              # Moving mesh
+│   │ 
+│   ├── porous_media/
+│   │   ├── darcy.hpp                    # Darcy's law
+│   │   ├── forchheimer.hpp              # Non-Darcy flow
+│   │   ├── brinkman.hpp                 # Brinkman equation
+│   │   ├── richards.hpp                 # Richards equation
+│   │   └── two_phase_darcy.hpp          # Oil-water
+│   │ 
+│   ├── lattice_boltzmann/
+│   │   ├── bgk_lbm.hpp                  # BGK collision
+│   │   ├── mrt_lbm.hpp                  # Multiple relaxation
+│   │   ├── thermal_lbm.hpp              # Thermal LBM
+│   │   └── multiphase_lbm.hpp           # Multiphase LBM
+│   │
+│   ├── granular/
+│   │   ├── kinetic_theory.hpp           # Kinetic theory
+│   │   ├── frictional_flow.hpp          # Frictional regime
+│   │   └── dense_granular.hpp           # Dense flows
+│   │ 
+│   └── special_flows/
+│       ├── lubrication.hpp              # Thin film
+│       ├── hele_shaw.hpp                # Hele-Shaw
+│       ├── shallow_water.hpp            # Shallow water
+│       └── micropolar.hpp               # Micropolar fluids
 │
 ├── electromagnetic/                 # Electromagnetics
-│   ├── electrostatics/
-│   │   ├── laplace.hpp             # Laplace equation
-│   │   ├── poisson.hpp             # Poisson equation
-│   │   └── dielectric.hpp          # Dielectric materials
-│   ├── magnetostatics/
-│   │   ├── vector_potential.hpp    # Vector potential
-│   │   ├── scalar_potential.hpp    # Scalar potential
-│   │   └── nonlinear_magnetics.hpp # Nonlinear B-H
-│   ├── electrodynamics/
-│   │   ├── maxwell.hpp             # Maxwell's equations
-│   │   ├── eddy_current.hpp        # Eddy currents
-│   │   ├── wave_equation.hpp       # EM waves
-│   │   └── time_harmonic.hpp       # Frequency domain
-│   └── coupled/
-│       ├── magnetohydrodynamics.hpp # MHD
-│       └── electrokinetics.hpp     # Electrokinetic flow
+│   ├── static/
+│   │   ├── electrostatics.hpp           # Laplace/Poisson
+│   │   ├── magnetostatics.hpp           # Vector potential
+│   │   └── current_flow.hpp             # DC current
+│   ├── quasi_static/
+│   │   ├── eddy_current.hpp             # Eddy currents
+│   │   ├── magnetic_diffusion.hpp       # Magnetic diffusion
+│   │   └── darwin_model.hpp             # Darwin approximation
+│   ├── wave/
+│   │   ├── maxwell_time.hpp             # Time domain
+│   │   ├── maxwell_frequency.hpp        # Frequency domain
+│   │   ├── helmholtz_em.hpp             # Helmholtz
+│   │   ├── perfectly_matched_layer.hpp  # PML
+│   │   └── fdtd.hpp                     # FDTD method
+│   └── coupled_em/
+│       ├── joule_heating.hpp            # Resistive heating
+│       ├── lorentz_force.hpp            # EM forces
+│       └── induction_heating.hpp        # Induction
 │
-├── acoustic/                        # Acoustics
-│   ├── helmholtz.hpp               # Helmholtz equation
-│   ├── wave_equation.hpp           # Acoustic waves
-│   ├── aeroacoustics.hpp           # Flow-induced noise
-│   └── vibroacoustics.hpp          # Structure-borne sound
+├── optics/                          # Optical and photonic physics
+│   ├── ray_optics/
+│   │   ├── ray_tracing.hpp              # Geometric optics
+│   │   └── beam_tracing.hpp             # Gaussian beams
+│   ├── wave_optics/
+│   │   ├── beam_propagation.hpp         # BPM
+│   │   ├── finite_difference_bpm.hpp    # FD-BPM
+│   │   └── spectral_methods.hpp         # Spectral propagation
+│   ├── nonlinear_optics/
+│   │   ├── kerr_effect.hpp              # Kerr nonlinearity
+│   │   ├── second_harmonic.hpp          # SHG
+│   │   └── four_wave_mixing.hpp         # FWM
+│   └── photonic_structures/
+│       ├── photonic_crystals.hpp        # Band structure
+│       ├── metamaterials_optical.hpp    # Optical metamaterials
+│       └── plasmonics.hpp               # Surface plasmons
 │
-├── chemical/                        # Chemical/reaction physics
-│   ├── diffusion/
-│   │   ├── ficks_law.hpp           # Fick's diffusion
-│   │   ├── multispecies.hpp        # Multiple species
-│   │   └── cross_diffusion.hpp     # Cross effects
+├── acoustic/                        # Acoustics and vibro-acoustics
+│   ├── linear_acoustics/
+│   │   ├── helmholtz.hpp                # Frequency domain
+│   │   ├── wave_equation.hpp            # Time domain
+│   │   └── boundary_element.hpp         # BEM acoustics
+│   ├── nonlinear_acoustics/
+│   │   ├── westervelt.hpp               # Westervelt equation
+│   │   └── kzk.hpp                      # KZK equation
+│   └── aeroacoustics/
+│       ├── lighthill.hpp                # Lighthill analogy
+│       ├── ffowcs_williams.hpp          # FW-H
+│       └── acoustic_perturbation.hpp    # APE
+│
+├── chemical/                        # Chemical transport and reactions
+│   ├── transport/
+│   │   ├── ficks_diffusion.hpp          # Fick's law
+│   │   ├── stefan_maxwell.hpp           # Multicomponent
+│   │   ├── dusty_gas.hpp                # Dusty gas model
+│   │   └── advection_diffusion.hpp      # ADE
 │   ├── reaction/
-│   │   ├── reaction_kinetics.hpp   # Chemical kinetics
-│   │   ├── combustion.hpp          # Combustion models
-│   │   └── catalysis.hpp           # Surface reactions
-│   └── transport/
-│       ├── advection_diffusion.hpp # Advection-diffusion
-│       └── reactive_transport.hpp  # Reactive transport
+│   │   ├── arrhenius.hpp                # Arrhenius kinetics
+│   │   ├── michaelis_menten.hpp         # Enzyme kinetics
+│   │   ├── langmuir_hinshelwood.hpp     # Surface reactions
+│   │   └── combustion.hpp               # Combustion models
+│   ├── electrochemistry/
+│   │   ├── nernst_planck.hpp            # Ion transport
+│   │   ├── poisson_nernst_planck.hpp    # PNP
+│   │   ├── butler_volmer.hpp            # Electrode kinetics
+│   │   └── corrosion.hpp                # Corrosion models
+│   ├── battery/
+│   │   ├── newman_model.hpp             # Newman P2D
+│   │   ├── single_particle.hpp          # SPM
+│   │   ├── dfn_model.hpp                # Doyle-Fuller-Newman
+│   │   └── solid_electrolyte.hpp        # Solid-state batteries
+│   └── polymer/
+│       ├── polymer_diffusion.hpp        # Polymer transport
+│       ├── reptation.hpp                # Reptation model
+│       └── viscoelastic_polymer.hpp     # Polymer rheology
 │
 ├── quantum/                         # Quantum mechanics
-│   ├── schrodinger.hpp             # Schrödinger equation
-│   ├── density_functional.hpp      # DFT
-│   └── tight_binding.hpp           # Tight-binding
+│   ├── schrodinger/
+│   │   ├── time_independent.hpp         # TISE
+│   │   └── time_dependent.hpp           # TDSE
+│   ├── density_functional/
+│   │   ├── kohn_sham.hpp                # Kohn-Sham DFT
+│   │   └── orbital_free.hpp             # OF-DFT
+│   └── semiclassical/
+│       ├── wkb.hpp                      # WKB approximation
+│       └── quantum_hydrodynamics.hpp    # QHD
+│
+├── plasma/                          # Plasma physics
+│   ├── magnetohydrodynamics/
+│   │   ├── ideal_mhd.hpp                # Ideal MHD
+│   │   ├── resistive_mhd.hpp            # Resistive MHD
+│   │   └── hall_mhd.hpp                 # Hall MHD
+│   ├── kinetic/
+│   │   ├── vlasov.hpp                   # Vlasov equation
+│   │   ├── fokker_planck.hpp            # Fokker-Planck
+│   │   └── particle_in_cell.hpp         # PIC
+│   └── fluid/
+│       ├── two_fluid_plasma.hpp         # Ion-electron
+│       └── drift_diffusion_plasma.hpp   # Drift-diffusion
 │
 ├── biological/                      # Biological physics
 │   ├── biomechanics/
-│   │   ├── soft_tissue.hpp         # Soft tissue mechanics
-│   │   ├── bone_remodeling.hpp     # Bone adaptation
-│   │   └── muscle_contraction.hpp  # Active materials
-│   └── biofluid/
-│       ├── blood_flow.hpp          # Hemodynamics
-│       └── respiratory_flow.hpp    # Lung mechanics
+│   │   ├── soft_tissue/
+│   │   │   ├── neo_hookean_tissue.hpp   # Incompressible
+│   │   │   ├── holzapfel_ogden.hpp      # HGO model
+│   │   │   ├── fung.hpp                 # Fung model
+│   │   │   └── viscoelastic_tissue.hpp  # QLV model
+│   │   ├── hard_tissue/
+│   │   │   ├── bone_remodeling.hpp      # Wolff's law
+│   │   │   ├── bone_damage.hpp          # Fatigue
+│   │   │   └── trabecular_bone.hpp      # Microstructure
+│   │   └── active_materials/
+│   │       ├── muscle_contraction.hpp   # Hill model
+│   │       └── cardiac_mechanics.hpp    # Active stress
+│   ├── biofluid/
+│   │   ├── blood_flow/
+│   │   │   ├── newtonian_blood.hpp      # Newtonian
+│   │   │   ├── carreau_yasuda.hpp       # Non-Newtonian
+│   │   │   └── windkessel.hpp           # 0D models
+│   │   └── respiratory/
+│   │       └── airway_flow.hpp          # Lung mechanics
+│   ├── cell_mechanics/
+│   │   ├── cell_membrane.hpp            # Membrane mechanics
+│   │   └── cytoskeleton.hpp             # Network models
+│   ├── neural/
+│   │   ├── hodgkin_huxley.hpp           # HH model
+│   │   ├── cable_equation.hpp           # Neural cables
+│   │   └── neural_field.hpp             # Field theory
+│   ├── tumor/
+│   │   ├── tumor_growth.hpp             # Growth models
+│   │   ├── angiogenesis.hpp             # Vessel formation
+│   │   └── drug_delivery.hpp            # Drug transport
+│   └── biofilm/
+│       ├── biofilm_growth.hpp           # Biofilm formation
+│       └── biofilm_mechanics.hpp        # Mechanical properties
 │
-├── coupled/                         # Pre-coupled physics
-│   ├── thermomechanical/
-│   │   ├── thermoelasticity.hpp    # Coupled thermo-elastic
-│   │   └── thermoplasticity.hpp    # Thermo-plastic
-│   ├── fluid_structure/
-│   │   ├── fsi_monolithic.hpp      # Monolithic FSI
-│   │   └── fsi_partitioned.hpp     # Partitioned FSI
-│   ├── electromechanical/
-│   │   ├── piezoelectric.hpp       # Piezoelectricity
-│   │   └── magnetostrictive.hpp    # Magnetostriction
-│   └── multiscale/
-│       ├── fe2.hpp                 # FE² method
-│       └── heterogeneous.hpp       # Heterogeneous
+├── geomechanics/                   # Geotechnical and geological
+│   ├── soil_mechanics/
+│   │   ├── cam_clay_soil.hpp            # Cam-Clay
+│   │   ├── hardening_soil.hpp           # HS model
+│   │   ├── hypoplastic.hpp              # Hypoplasticity
+│   │   └── liquefaction.hpp             # Liquefaction
+│   ├── rock_mechanics/
+│   │   ├── hoek_brown.hpp               # Hoek-Brown
+│   │   ├── joint_model.hpp              # Joint elements
+│   │   └── discrete_fracture.hpp        # DFN
+│   └── geodynamics/
+│       ├── mantle_convection.hpp        # Mantle flow
+│       └── fault_mechanics.hpp          # Earthquake
 │
-├── verification/                    # Verification cases
+├── environmental/                   # Environmental physics
+│   ├── atmosphere/
+│   │   ├── weather_dynamics.hpp         # Weather models
+│   │   ├── pollution_dispersion.hpp     # Air quality
+│   │   └── cloud_physics.hpp            # Cloud formation
+│   ├── ocean/
+│   │   ├── ocean_circulation.hpp        # Ocean currents
+│   │   ├── wave_dynamics.hpp            # Ocean waves
+│   │   └── coastal_processes.hpp        # Coastal erosion
+│   ├── ice/
+│   │   ├── glacier_flow.hpp             # Glacier dynamics
+│   │   ├── sea_ice.hpp                  # Sea ice models
+│   │   └── permafrost.hpp               # Permafrost thaw
+│   └── hydrology/
+│       ├── surface_water.hpp            # Rivers/lakes
+│       ├── groundwater.hpp              # Aquifers
+│       └── watershed.hpp                # Watershed models
+│
+├── particle/                        # Particle-based methods
+│   ├── discrete_element/
+│   │   ├── dem_spheres.hpp              # Spherical DEM
+│   │   ├── dem_polyhedra.hpp            # Polyhedral DEM
+│   │   └── dem_deformable.hpp           # Deformable particles
+│   ├── smoothed_particle/
+│   │   ├── sph_fluid.hpp                # Fluid SPH
+│   │   ├── sph_solid.hpp                # Total Lagrangian SPH
+│   │   └── corrected_sph.hpp            # Corrected SPH
+│   ├── material_point/
+│   │   ├── mpm_standard.hpp             # Standard MPM
+│   │   ├── gimp.hpp                     # GIMP
+│   │   └── cpdi.hpp                     # CPDI
+│   └── molecular_dynamics/
+│       ├── lennard_jones.hpp            # LJ potential
+│       ├── embedded_atom.hpp            # EAM
+│       └── coarse_grained.hpp           # CG-MD
+│
+├── intrinsic_coupled/              # Inherently coupled multi-field physics
+│   ├── piezoelectric.hpp          # Electro-mechanical
+│   ├── piezomagnetic.hpp          # Magneto-mechanical
+│   ├── magnetostrictive.hpp       # Magneto-elastic
+│   ├── electrostriction.hpp       # Electro-elastic
+│   ├── poroelasticity.hpp         # Biot's theory
+│   ├── thermoelectric.hpp         # Seebeck/Peltier
+│   ├── magnetohydrodynamics.hpp   # MHD (as single physics)
+│   ├── electrokinetics.hpp        # Electro-osmosis
+│   ├── chemo_mechanics.hpp        # Mechano-chemistry
+│   ├── magnetoelectric.hpp        # ME coupling
+│   └── flexoelectric.hpp          # Flexoelectricity
+│
+├── verification/                    # Verification and benchmarks
 │   ├── manufactured/
-│   │   ├── mms_generator.hpp       # MMS generation
-│   │   └── mms_problems.hpp        # Standard MMS
-│   ├── benchmarks/
-│   │   ├── patch_test.hpp          # Patch tests
-│   │   ├── cook_membrane.hpp       # Cook's membrane
-│   │   ├── lid_driven_cavity.hpp   # Cavity flow
-│   │   └── heat_equation_1d.hpp    # 1D heat
-│   └── analytical/
-│       ├── beam_deflection.hpp     # Analytical beam
-│       └── plate_vibration.hpp     # Plate modes
+│   │   ├── mms_generator.hpp            # MMS tools
+│   │   └── mms_library/                 # MMS solutions by physics
+│   ├── analytical/
+│   │   └── analytical_library/          # Analytical solutions
+│   └── benchmarks/
+│       └── benchmark_suite/             # Standard benchmarks
 │
-├── utilities/                       # Physics utilities
-│   ├── units.hpp                   # Unit system
-│   ├── material_library.hpp        # Material database
-│   ├── dimensionless.hpp           # Dimensionless numbers
-│   └── tensor_operations.hpp       # Tensor utilities
+├── utilities/                      # Physics utilities
+│   ├── units.hpp                   # Unit systems
+│   ├── material_library.hpp        # Material database (should include all relevant physical properties)
+│   └── dimensionless.hpp           # Dimensionless numbers
 │
-└── tests/                          # Testing
+└── tests/                          # Testing infrastructure
     ├── unit/                       # Unit tests per physics
-    ├── verification/               # Verification tests
-    ├── benchmarks/                 # Performance tests
-    └── convergence/                # Convergence studies
+    ├── convergence/                # Convergence studies
+    └── performance/                # Performance benchmarks
 ```
 
 ## Key Components
