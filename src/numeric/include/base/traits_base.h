@@ -8,8 +8,87 @@
 #include <limits>
 
 #include "numeric_base.h"
+#include "dual_base.h"
 
 namespace fem::numeric {
+
+    // ============================================================================
+    // Type detection traits
+    // ============================================================================
+
+    /**
+     * @brief Check if a type is a dual number
+     * This will be specialized when dual_base.h is included
+     */
+    template<typename T>
+    struct is_dual_number : std::false_type {};
+
+    template<typename T>
+    inline constexpr bool is_dual_number_v = is_dual_number<T>::value;
+
+    /**
+     * @brief Check if a type is a complex number
+     */
+    template<typename T>
+    struct is_complex_number : std::false_type {};
+
+    template<typename T>
+    struct is_complex_number<std::complex<T>> : std::true_type {};
+
+    template<typename T>
+    inline constexpr bool is_complex_number_v = is_complex_number<T>::value;
+
+    /**
+     * @brief Concept for types that can be stored in containers
+     * Expanded from NumberLike to support composite types
+     */
+    template<typename T>
+    concept StorableType = NumberLike<T> ||
+                          is_complex_number_v<T> ||
+                          is_dual_number_v<T>;
+
+    /**
+     * @brief Extract the underlying scalar type from composite types
+     */
+    template<typename T>
+    struct scalar_type {
+        using type = T;
+    };
+
+    template<typename T>
+    struct scalar_type<std::complex<T>> {
+        using type = T;
+    };
+
+    // This will be specialized when dual_base.h is included
+    template<typename T>
+    using scalar_type_t = typename scalar_type<T>::type;
+
+    // ============================================================================
+    // Storage optimization traits
+    // ============================================================================
+
+    /**
+     * @brief Traits to determine storage optimization strategies
+     */
+    template<typename T>
+    struct storage_optimization_traits {
+        // Can we use memcpy/memmove for this type?
+        static constexpr bool is_trivially_relocatable =
+            std::is_trivially_copyable_v<T> && !is_dual_number_v<T>;
+
+        // Can we use SIMD operations?
+        static constexpr bool supports_simd =
+            std::is_arithmetic_v<T> && !is_dual_number_v<T>;
+
+        // Should we use aligned allocation for better performance?
+        static constexpr bool prefers_alignment =
+            sizeof(T) >= 16 || is_dual_number_v<T>;
+
+        // Can we use fast fill operations?
+        static constexpr bool supports_fast_fill =
+            std::is_trivially_copyable_v<T> && sizeof(T) <= 16 && !is_dual_number_v<T>;
+    };
 
     /**
      * @brief Base traits for numeric types
@@ -28,6 +107,7 @@ namespace fem::numeric {
         static constexpr bool is_integral = std::is_integral_v<T>;
         static constexpr bool is_signed = std::is_signed_v<T>;
         static constexpr bool is_complex = false;
+        static constexpr bool is_dual = false;
         static constexpr bool has_infinity = std::numeric_limits<T>::has_infinity;
         static constexpr bool has_quiet_nan = std::numeric_limits<T>::has_quiet_NaN;
         static constexpr bool has_signaling_nan = std::numeric_limits<T>::has_signaling_NaN;
@@ -82,6 +162,7 @@ namespace fem::numeric {
         static constexpr bool is_integral = false;
         static constexpr bool is_signed = true;
         static constexpr bool is_complex = true;
+        static constexpr bool is_dual = false;
         static constexpr bool has_infinity = std::numeric_limits<T>::has_infinity;
         static constexpr bool has_quiet_nan = std::numeric_limits<T>::has_quiet_NaN;
         static constexpr bool has_signaling_nan = std::numeric_limits<T>::has_signaling_NaN;
@@ -184,7 +265,7 @@ namespace fem::numeric {
         };
 
         static constexpr bool is_numeric_container =
-                is_container && NumberLike<value_type>;
+                is_container && StorableType<value_type>;
 
         static constexpr bool is_ieee_container =
                 is_numeric_container && IEEECompliant<value_type>;
@@ -231,6 +312,12 @@ namespace fem::numeric {
             return alignof(value_type);
         }
         }();
+
+        static constexpr bool supports_simd =
+            storage_optimization_traits<value_type>::supports_simd;
+
+        static constexpr bool is_trivially_relocatable =
+            storage_optimization_traits<value_type>::is_trivially_relocatable;
     };
 
     /**
@@ -273,7 +360,7 @@ namespace fem::numeric {
         using value_type = T;
 
         static constexpr bool is_vectorizable =
-                std::is_arithmetic_v<T> && !std::is_same_v<T, bool>;
+                std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !is_dual_number_v<T>;
 
         static constexpr size_t vector_size = [] {
             if constexpr (is_vectorizable) {
@@ -312,5 +399,55 @@ namespace fem::numeric {
     inline constexpr bool are_compatible_v = are_compatible<T1, T2>::value;
 
 } // namespace fem::numeric
+
+
+namespace fem::numeric {
+    // Specialization to recognize DualBase as a dual number
+    template<typename T, std::size_t N>
+    struct is_dual_number<DualBase<T, N>> : std::true_type {};
+
+    // Specialization for scalar_type extraction
+    template<typename T, std::size_t N>
+    struct scalar_type<DualBase<T, N>> {
+        using type = T;
+    };
+
+    // Numeric traits specialization for DualBase
+    template<typename T, std::size_t N>
+    struct numeric_traits<DualBase<T, N>> {
+        using value_type = DualBase<T, N>;
+        using real_type = T;
+        using complex_type = std::complex<T>;
+
+        static constexpr bool is_number_like = NumberLike<T>;
+        static constexpr bool is_ieee_compliant = IEEECompliant<T>;
+        static constexpr bool is_floating_point = false;  // It's composite
+        static constexpr bool is_integral = false;
+        static constexpr bool is_signed = std::is_signed_v<T>;
+        static constexpr bool is_complex = false;
+        static constexpr bool is_dual = true;  // Mark as dual
+        static constexpr bool has_infinity = std::numeric_limits<T>::has_infinity;
+        static constexpr bool has_quiet_nan = std::numeric_limits<T>::has_quiet_NaN;
+
+        static constexpr size_t size = sizeof(value_type);
+        static constexpr size_t alignment = alignof(value_type);
+        static constexpr size_t num_derivatives = N;
+
+        // Factory methods
+        static value_type zero() noexcept {
+            return value_type(T{0});
+        }
+
+        static value_type one() noexcept {
+            return value_type(T{1});
+        }
+
+        static value_type make_independent(const T& val, std::size_t index) {
+            value_type result(val);
+            result.seed(index);
+            return result;
+        }
+    };
+}
 
 #endif //NUMERIC_TRAITS_BASE_H
