@@ -111,13 +111,62 @@ namespace fem::numeric {
             return Shape(new_dims);
         }
 
+        size_t normalize_axis(int axis) const {
+            if (axis < 0) {
+                axis += static_cast<int>(dims_.size());
+            }
+            if (axis < 0 || axis >= static_cast<int>(dims_.size())) {
+                throw std::out_of_range("Axis out of range");
+            }
+            return static_cast<size_t>(axis);
+        }
+
         // Add dimension of size 1 at specified axis
-        Shape unsqueeze(size_t axis) const {
-            if (axis > dims_.size()) {
+        Shape unsqueeze(int axis) const {
+            size_t norm_axis;
+            if (axis < 0) {
+                // Handle negative axis
+                int adjusted = axis + static_cast<int>(dims_.size()) + 1;
+                if (adjusted < 0) {
+                    throw std::out_of_range("Axis out of range for unsqueeze");
+                }
+                norm_axis = static_cast<size_t>(adjusted);
+            } else {
+                norm_axis = static_cast<size_t>(axis);
+            }
+
+            if (norm_axis > dims_.size()) {
                 throw std::out_of_range("Axis out of range for unsqueeze");
             }
+
             std::vector<size_t> new_dims = dims_;
-            new_dims.insert(new_dims.begin() + static_cast<std::ptrdiff_t>(axis), 1);
+            new_dims.insert(new_dims.begin() + static_cast<std::ptrdiff_t>(norm_axis), 1);
+            return Shape(new_dims);
+        }
+
+        // Flatten to 1D
+        Shape flatten() const {
+            return Shape{size()};
+        }
+
+        // Reverse dimensions (like NumPy's transpose with no args)
+        Shape reverse() const {
+            std::vector<size_t> reversed(dims_.rbegin(), dims_.rend());
+            return Shape(reversed);
+        }
+
+        // Permute dimensions (for general transpose)
+        Shape permute(const std::vector<size_t>& axes) const {
+            if (axes.size() != dims_.size()) {
+                throw std::invalid_argument("Permutation must have same length as dimensions");
+            }
+            std::vector<size_t> new_dims(dims_.size());
+            for (size_t i = 0; i < axes.size(); ++i) {
+                if (axes[i] >= dims_.size()) {
+                    throw std::out_of_range("Permutation index out of range");
+                }
+                new_dims[i] = dims_[axes[i]];
+            }
             return Shape(new_dims);
         }
 
@@ -127,18 +176,59 @@ namespace fem::numeric {
             }
 
             std::vector<size_t> new_dims(target.dims_.size());
+
+            // Fill from the right, aligning dimensions
+            size_t offset = target.dims_.size() - dims_.size();
+
             for (size_t i = 0; i < target.dims_.size(); ++i) {
-                if (i < dims_.size()) {
-                    if (dims_[i] == 1) {
+                if (i < offset) {
+                    // This dimension doesn't exist in source, take from target
+                    new_dims[i] = target.dims_[i];
+                } else {
+                    // Both shapes have this dimension (when right-aligned)
+                    size_t src_idx = i - offset;
+                    if (dims_[src_idx] == 1) {
                         new_dims[i] = target.dims_[i];
                     } else {
-                        new_dims[i] = dims_[i];
+                        new_dims[i] = dims_[src_idx];
                     }
-                } else {
-                    new_dims[i] = target.dims_[i];
                 }
             }
             return Shape(new_dims);
+        }
+
+        // Reshape with -1 for inferred dimension (NumPy-like)
+        Shape reshape_infer(const std::vector<int>& new_shape) const {
+            size_t total = size();
+            int infer_idx = -1;
+            size_t known_size = 1;
+
+            for (size_t i = 0; i < new_shape.size(); ++i) {
+                if (new_shape[i] == -1) {
+                    if (infer_idx != -1) {
+                        throw std::invalid_argument("Only one dimension can be -1");
+                    }
+                    infer_idx = static_cast<int>(i);  // Explicit cast
+                } else if (new_shape[i] < 0) {
+                    throw std::invalid_argument("Negative dimensions not allowed except -1");
+                } else {
+                    known_size *= static_cast<size_t>(new_shape[i]);  // Explicit cast
+                }
+            }
+
+            std::vector<size_t> result_dims;
+            for (size_t i = 0; i < new_shape.size(); ++i) {
+                if (static_cast<int>(i) == infer_idx) {
+                    if (total % known_size != 0) {
+                        throw std::invalid_argument("Cannot infer dimension: size mismatch");
+                    }
+                    result_dims.push_back(total / known_size);
+                } else {
+                    result_dims.push_back(static_cast<size_t>(new_shape[i]));  // Explicit cast
+                }
+            }
+
+            return Shape(result_dims);
         }
 
         // Comparisons
@@ -147,15 +237,18 @@ namespace fem::numeric {
             return dims_ == other.dims_;
         }
         bool is_broadcastable_with(const Shape& other) const {
-            if (dims_.size() != other.dims_.size()) {
-                return false;
-            }
-            for (size_t i = 0; i < dims_.size(); ++i) {
-                if (dims_[i] != other.dims_[i] &&
-                    dims_[i] != 1 &&
-                    other.dims_[i] != 1) {
+            // Compare dimensions from right to left
+            size_t min_dims = std::min(dims_.size(), other.dims_.size());
+
+            for (size_t i = 0; i < min_dims; ++i) {
+                size_t this_idx = dims_.size() - 1 - i;
+                size_t other_idx = other.dims_.size() - 1 - i;
+
+                if (dims_[this_idx] != other.dims_[other_idx] &&
+                    dims_[this_idx] != 1 &&
+                    other.dims_[other_idx] != 1) {
                     return false;
-                }
+                    }
             }
             return true;
         }
@@ -186,9 +279,42 @@ namespace fem::numeric {
         const std::vector<size_t>& dims() const noexcept {
             return dims_;
         }
-
+    protected:
+        std::vector<size_t>& mutable_dims() { return dims_; }
+        const std::vector<size_t>& dims_internal() const { return dims_; }
     private:
         std::vector<size_t> dims_;
+    };
+
+    class StridedShape : public Shape {
+        std::vector<size_t> strides_;
+
+    public:
+        using Shape::Shape;  // Inherit constructors
+
+        // Compute default strides for row-major (C-style) layout
+        void compute_strides_row_major() {
+            const auto& shape_dims = dims();  // Renamed to avoid collision
+            strides_.resize(shape_dims.size());
+            size_t stride = 1;
+            for (int i = static_cast<int>(shape_dims.size()) - 1; i >= 0; --i) {
+                strides_[static_cast<size_t>(i)] = stride;
+                stride *= shape_dims[static_cast<size_t>(i)];
+            }
+        }
+
+        // Compute default strides for column-major (Fortran-style) layout
+        void compute_strides_col_major() {
+            const auto& shape_dims = dims();  // Renamed to avoid collision
+            strides_.resize(shape_dims.size());
+            size_t stride = 1;
+            for (size_t i = 0; i < shape_dims.size(); ++i) {
+                strides_[i] = stride;
+                stride *= shape_dims[i];
+            }
+        }
+
+        const std::vector<size_t>& strides() const { return strides_; }
     };
 
     /**
@@ -299,6 +425,12 @@ namespace fem::numeric {
             return derived().nbytes();
         }
 
+        /*
+         *  @brief Get number of dimensions
+         */
+        size_t ndim() const noexcept {
+            return shape().rank();
+        }
         /**
          * @brief Create a copy
          */

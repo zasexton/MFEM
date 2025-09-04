@@ -550,3 +550,187 @@ TEST(AllocatorEdgeCases, NullptrHandling) {
     // For AlignedAllocator construct method
     EXPECT_NO_THROW(aligned.construct(null_int, 42));  // Should handle gracefully
 }
+
+TEST(AlignedAllocator, SimulateAllocationFailure) {
+    AlignedAllocator<double, 32> alloc;
+
+    // Use max_size() + 1 to trigger the check at line 74
+    size_t huge = alloc.max_size() + 1;
+
+    bool threw = false;
+    try {
+        [[maybe_unused]] auto p = alloc.allocate(huge);
+    } catch (const std::bad_alloc&) {
+        threw = true;
+    }
+    EXPECT_TRUE(threw);
+}
+
+TEST(PoolAllocator, LargeAllocationBypassesPool) {
+    // Test line 140 - allocations larger than pool size
+    PoolAllocator<int> pool(10);  // Small pool of 10 ints
+
+    // Allocate more than pool size - should bypass pool and go directly to malloc
+    int* large = pool.allocate(11);  // Just beyond pool size
+    ASSERT_NE(large, nullptr);
+
+    // Write to it to ensure it's valid memory
+    for (int i = 0; i < 11; ++i) {
+        large[i] = i * 10;
+    }
+
+    // Verify
+    for (int i = 0; i < 11; ++i) {
+        EXPECT_EQ(large[i], i * 10);
+    }
+
+    // This went directly to malloc, but deallocate should still be safe
+    pool.deallocate(large, 11);
+    SUCCEED();
+}
+
+TEST(StackAllocator, ActuallyUsesStackBuffer) {
+    // Make sure we're within bounds
+    constexpr size_t StackElems = 32;
+    StackAllocator<int, StackElems> stack;
+
+    // First allocation fits in stack
+    int* p1 = stack.allocate(10);
+    ASSERT_NE(p1, nullptr);
+
+    // Second allocation also fits (10 + 10 = 20 < 32)
+    int* p2 = stack.allocate(10);
+    ASSERT_NE(p2, nullptr);
+
+    // These should be contiguous in the stack buffer
+    EXPECT_EQ(p2, p1 + 10);
+
+    // Fill some values to ensure it's usable memory
+    for (int i = 0; i < 10; ++i) {
+        p1[i] = i;
+        p2[i] = i + 100;
+    }
+
+    // Verify values
+    for (int i = 0; i < 10; ++i) {
+        EXPECT_EQ(p1[i], i);
+        EXPECT_EQ(p2[i], i + 100);
+    }
+
+    // Now allocate something that exceeds remaining space
+    // We've used 20, have 32 total, so asking for 13+ goes to heap
+    int* heap = stack.allocate(13);
+    ASSERT_NE(heap, nullptr);
+
+    // This should NOT be contiguous with stack allocations
+    EXPECT_NE(heap, p2 + 10);
+
+    // Cleanup
+    stack.deallocate(heap, 13);
+
+    // Reset should allow reuse
+    stack.reset();
+    int* p3 = stack.allocate(5);
+    EXPECT_EQ(p3, p1);  // Should get same address after reset
+}
+
+TEST(StackAllocator, DeallocateStackMemory) {
+    // Test the stack deallocation path (lines 267-270)
+    StackAllocator<int, 64> stack;
+
+    // Allocate from stack
+    int* stack_mem = stack.allocate(10);
+    ASSERT_NE(stack_mem, nullptr);
+
+    // Deallocating stack memory should be a no-op
+    EXPECT_NO_THROW(stack.deallocate(stack_mem, 10));
+
+    // After deallocate, we should still be able to allocate
+    // (since deallocate doesn't actually free stack memory)
+    int* next = stack.allocate(10);
+    ASSERT_NE(next, nullptr);
+    EXPECT_EQ(next, stack_mem + 10);  // Should continue where we left off
+}
+
+TEST(AlignedAllocator, DestructorCoverage) {
+    // Ensure destructor path is covered
+    {
+        AlignedAllocator<int, 32> alloc;
+        int* p = alloc.allocate(10);
+        ASSERT_NE(p, nullptr);
+        alloc.deallocate(p, 10);
+    }  // Destructor called here
+    SUCCEED();
+}
+
+TEST(AllocatorBase, VirtualMethods) {
+    // Test the base class virtual methods
+    class TestAllocator : public AllocatorBase<int> {
+    public:
+        pointer allocate(size_type n) override {
+            return static_cast<pointer>(std::malloc(n * sizeof(int)));
+        }
+
+        void deallocate(pointer p, size_type) override {
+            std::free(p);
+        }
+
+        size_type allocated_size() const noexcept override {
+            return 100;  // Mock value
+        }
+
+        size_type allocation_count() const noexcept override {
+            return 5;  // Mock value
+        }
+    };
+
+    TestAllocator alloc;
+    EXPECT_EQ(alloc.max_size(), std::numeric_limits<size_t>::max() / sizeof(int));
+    EXPECT_EQ(alloc.allocated_size(), 100u);
+    EXPECT_EQ(alloc.allocation_count(), 5u);
+
+    int* p = alloc.allocate(10);
+    ASSERT_NE(p, nullptr);
+    alloc.deallocate(p, 10);
+}
+
+TEST(TrackingAllocator, ConstructDestroyMethods) {
+    // Test the inherited construct/destroy from BaseAllocator
+    using TA = TrackingAllocator<Tracked>;
+    TA alloc;
+
+    Tracked::ctor_count = 0;
+    Tracked::dtor_count = 0;
+
+    Tracked* p = alloc.allocate(1);
+    ASSERT_NE(p, nullptr);
+
+    // Use placement new and destructor directly to ensure coverage
+    new (p) Tracked(42);
+    EXPECT_EQ(p->v, 42);
+    EXPECT_EQ(Tracked::ctor_count, 1);
+
+    p->~Tracked();
+    EXPECT_EQ(Tracked::dtor_count, 1);
+
+    alloc.deallocate(p, 1);
+}
+
+TEST(StackAllocator, MixedStackAndHeapDeallocation) {
+    StackAllocator<int, 16> stack;
+
+    // Allocate from stack - use less than full capacity
+    int* stack_ptr = stack.allocate(8);
+    ASSERT_NE(stack_ptr, nullptr);
+
+    // Next allocation that would exceed stack capacity goes to heap
+    // We've used 8, have 16 total, so asking for 9 or more triggers heap
+    int* heap_ptr = stack.allocate(9);  // This exceeds remaining stack
+    ASSERT_NE(heap_ptr, nullptr);
+
+    // Deallocate in mixed order
+    stack.deallocate(heap_ptr, 9);    // Should free heap memory
+    stack.deallocate(stack_ptr, 8);   // Should be no-op for stack
+
+    SUCCEED();
+}

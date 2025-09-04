@@ -285,3 +285,284 @@ TEST(CheckedIterator, BaseAndEquality) {
     EXPECT_TRUE(a != b);
     EXPECT_EQ(b.base(), raw + 1);
 }
+
+TEST(ContainerIterator, DereferenceOperator) {
+    // Test line 30 - operator*
+    int arr[] = {42, 84};
+    ContainerIterator<int> it(arr);
+    EXPECT_EQ(*it, 42);  // Direct dereference
+    *it = 100;  // Modify through iterator
+    EXPECT_EQ(arr[0], 100);
+}
+
+TEST(ContainerIterator, DifferenceOperator) {
+    // Test lines 82-83 - operator- between iterators
+    int arr[] = {1, 2, 3, 4, 5};
+    ContainerIterator<int> it1(arr);
+    ContainerIterator<int> it2(arr + 3);
+
+    auto diff = it2 - it1;
+    EXPECT_EQ(diff, 3);
+
+    diff = it1 - it2;
+    EXPECT_EQ(diff, -3);
+}
+
+TEST(ContainerIterator, NotEqualOperator) {
+    // Test lines 93-94 - operator!=
+    int arr[] = {1, 2};
+    ContainerIterator<int> it1(arr);
+    ContainerIterator<int> it2(arr);
+
+    EXPECT_FALSE(it1 != it2);  // Same position
+    ++it2;
+    EXPECT_TRUE(it1 != it2);   // Different positions
+}
+
+TEST(ContainerIterator, GreaterThanOperator) {
+    // Test lines 103-104 - operator>
+    int arr[] = {1, 2, 3};
+    ContainerIterator<int> it1(arr);
+    ContainerIterator<int> it2(arr + 2);
+
+    EXPECT_FALSE(it1 > it2);
+    EXPECT_TRUE(it2 > it1);
+    EXPECT_FALSE(it1 > it1);
+}
+
+TEST(ContainerIterator, LessEqualAndGreaterEqual) {
+    // Test lines 108-109, 113-114 - operator<= and operator>=
+    int arr[] = {1, 2, 3};
+    ContainerIterator<int> it1(arr);
+    ContainerIterator<int> it2(arr + 1);
+
+    EXPECT_TRUE(it1 <= it2);
+    EXPECT_TRUE(it1 <= it1);
+    EXPECT_FALSE(it2 <= it1);
+
+    EXPECT_TRUE(it2 >= it1);
+    EXPECT_TRUE(it1 >= it1);
+    EXPECT_FALSE(it1 >= it2);
+}
+
+// ============================================================================
+// Additional StridedIterator coverage
+// ============================================================================
+
+TEST(StridedIterator, DereferenceOperator) {
+    // Test line 142 - operator*
+    int arr[] = {10, 20, 30, 40};
+    StridedIterator<int> it(arr, 2);
+
+    EXPECT_EQ(*it, 10);
+    *it = 15;  // Modify through iterator
+    EXPECT_EQ(arr[0], 15);
+}
+
+TEST(StridedIterator, PostIncrement) {
+    // Test lines 154-158 - operator++(int)
+    int arr[] = {0, 1, 2, 3, 4, 5};
+    StridedIterator<int> it(arr, 2);
+
+    auto old = it++;
+    EXPECT_EQ(*old, 0);
+    EXPECT_EQ(*it, 2);
+}
+
+TEST(StridedIterator, PreDecrement) {
+    // Test lines 160-163 - operator--
+    int arr[] = {0, 1, 2, 3, 4, 5};
+    StridedIterator<int> it(arr + 4, 2);  // Start at element 4
+
+    --it;
+    EXPECT_EQ(*it, 2);
+    auto& ref = --it;
+    EXPECT_EQ(*ref, 0);
+}
+
+TEST(StridedIterator, PostDecrement) {
+    // Test lines 165-169 - operator--(int)
+    int arr[] = {0, 1, 2, 3, 4, 5};
+    StridedIterator<int> it(arr + 4, 2);
+
+    auto old = it--;
+    EXPECT_EQ(*old, 4);
+    EXPECT_EQ(*it, 2);
+}
+
+TEST(StridedIterator, PlusEqualsAndMinusEquals) {
+    // Test lines 171-174, 176-178
+    int arr[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    StridedIterator<int> it(arr, 2);
+
+    it += 3;
+    EXPECT_EQ(*it, 6);
+
+    it -= 2;
+    EXPECT_EQ(*it, 2);
+}
+
+TEST(StridedIterator, CommutativeAddAndSubtract) {
+    // Test lines 185-187, 189-191
+    int arr[] = {0, 1, 2, 3, 4, 5};
+    StridedIterator<int> it(arr, 2);
+
+    // Commutative add (n + iterator)
+    auto it2 = 2 + it;
+    EXPECT_EQ(*it2, 4);
+
+    // Subtract
+    auto it3 = it2 - 1;
+    EXPECT_EQ(*it3, 2);
+}
+
+TEST(StridedIterator, DifferenceBetweenIterators) {
+    // Test lines 193-196
+    int arr[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+    StridedIterator<int> it1(arr, 2);
+    StridedIterator<int> it2(arr + 6, 2);  // 3 strides ahead
+
+    auto diff = it2 - it1;
+    EXPECT_EQ(diff, 3);
+}
+
+TEST(StridedIterator, NotEqualOperator) {
+    // Test lines 203-206
+    int arr[] = {1, 2, 3};
+    StridedIterator<int> it1(arr, 1);
+    StridedIterator<int> it2(arr, 1);
+
+    EXPECT_FALSE(it1 != it2);
+    ++it2;
+    EXPECT_TRUE(it1 != it2);
+}
+
+TEST(StridedIterator, GreaterThanOperator) {
+    // Test lines 213-216
+    int arr[] = {1, 2, 3, 4};
+    StridedIterator<int> it1(arr, 1);
+    StridedIterator<int> it2(arr + 2, 1);
+
+    EXPECT_TRUE(it2 > it1);
+    EXPECT_FALSE(it1 > it2);
+}
+
+TEST(StridedIterator, LessEqualAndGreaterEqual) {
+    // Test lines 218-221, 223-226
+    int arr[] = {1, 2, 3};
+    StridedIterator<int> it1(arr, 1);
+    StridedIterator<int> it2(arr + 1, 1);
+
+    EXPECT_TRUE(it1 <= it2);
+    EXPECT_TRUE(it1 <= it1);
+
+    EXPECT_TRUE(it2 >= it1);
+    EXPECT_TRUE(it1 >= it1);
+}
+
+TEST(StridedIterator, StrideGetter) {
+    // Test line 229
+    int arr[] = {1, 2, 3};
+    StridedIterator<int> it(arr, 3);
+
+    EXPECT_EQ(it.stride(), 3);
+}
+
+// ============================================================================
+// Additional MultiDimIterator coverage
+// ============================================================================
+
+TEST(MultiDimIterator, PostIncrement) {
+    // Test lines 279-283
+    int arr[] = {0, 1, 2, 3};
+    std::array<size_t, 2> shape{2, 2};
+    std::array<size_t, 2> strides{2, 1};
+
+    MultiDimIterator<int, 2> it(arr, strides, shape);
+
+    auto old = it++;
+    EXPECT_EQ(*old, 0);
+    EXPECT_EQ(*it, 1);
+}
+
+TEST(MultiDimIterator, EqualityOperators) {
+    // Test lines 285-288, 290-293
+    int arr[] = {0, 1, 2, 3};
+    std::array<size_t, 2> shape{2, 2};
+    std::array<size_t, 2> strides{2, 1};
+
+    MultiDimIterator<int, 2> it1(arr, strides, shape);
+    MultiDimIterator<int, 2> it2(arr, strides, shape);
+
+    EXPECT_TRUE(it1 == it2);
+    EXPECT_FALSE(it1 != it2);
+
+    ++it2;
+    EXPECT_FALSE(it1 == it2);
+    EXPECT_TRUE(it1 != it2);
+}
+
+TEST(MultiDimIterator, IndicesGetter) {
+    // Test line 295
+    int arr[] = {0, 1, 2, 3};
+    std::array<size_t, 2> shape{2, 2};
+    std::array<size_t, 2> strides{2, 1};
+
+    MultiDimIterator<int, 2> it(arr, strides, shape);
+
+    auto& indices = it.indices();
+    EXPECT_EQ(indices[0], 0u);
+    EXPECT_EQ(indices[1], 0u);
+
+    ++it;
+    EXPECT_EQ(indices[0], 0u);
+    EXPECT_EQ(indices[1], 1u);
+}
+
+// ============================================================================
+// Additional CheckedIterator coverage
+// ============================================================================
+
+TEST(CheckedIterator, IncrementOperators) {
+    // Test lines 347-350, 352-356
+    std::vector<int> v = {1, 2, 3};
+    ContainerIterator<int> raw(v.data());
+    CheckedIterator<ContainerIterator<int>> it(raw);
+
+    // Pre-increment
+    auto& ref = ++it;
+    EXPECT_EQ(*ref, 2);
+
+    // Post-increment
+    auto old = it++;
+    EXPECT_EQ(*old, 2);
+    EXPECT_EQ(*it, 3);
+}
+
+TEST(CheckedIterator, EqualityOperators) {
+    // Test lines 382-384, 386-388
+    std::vector<int> v = {1, 2, 3};
+    ContainerIterator<int> raw1(v.data());
+    ContainerIterator<int> raw2(v.data());
+
+    CheckedIterator<ContainerIterator<int>> it1(raw1);
+    CheckedIterator<ContainerIterator<int>> it2(raw2);
+
+    EXPECT_TRUE(it1 == it2);
+    EXPECT_FALSE(it1 != it2);
+
+    ++it2;
+    EXPECT_FALSE(it1 == it2);
+    EXPECT_TRUE(it1 != it2);
+}
+
+TEST(CheckedIterator, BaseGetter) {
+    // Test line 390
+    std::vector<int> v = {1, 2, 3};
+    ContainerIterator<int> raw(v.data());
+    CheckedIterator<ContainerIterator<int>> it(raw);
+
+    EXPECT_EQ(it.base(), raw);
+    ++it;
+    EXPECT_EQ(it.base(), raw + 1);
+}

@@ -31,6 +31,7 @@ endif()
 
 # Additional options
 option(FEM_NUMERIC_ENABLE_COVERAGE "Enable code coverage" OFF)
+option(FEM_NUMERIC_ENABLE_MEMCHECK "Enable memory checking with Valgrind" OFF)
 option(FEM_NUMERIC_USE_SANITIZERS "Enable address and UB sanitizers" OFF)
 option(FEM_NUMERIC_HEADER_ONLY "Use as header-only library" OFF)
 option(FEM_NUMERIC_ENABLE_SIMD "Enable SIMD optimizations" ON)

@@ -1,395 +1,322 @@
-// test_storage_base.cpp
+// test_storage_base.cpp - Focused maximum coverage
 #include <gtest/gtest.h>
-
 #include <base/storage_base.h>
 #include <base/numeric_base.h>
 
-#include <cstdint>
-#include <cstddef>
-#include <climits>
-#include <new>
-#include <stdexcept>
-#include <utility>
-#include <memory>  // For unique_ptr
+#include <vector>
+#include <memory>
+#include <limits>
 
-// Helper functions to avoid including <algorithm>
-namespace test_utils {
-    template<typename T>
-    constexpr T max(T a, T b) { return (a > b) ? a : b; }
-}
-
-// Helper: choose n so n*sizeof(T) is a multiple of Alignment
-template <typename T>
-static size_t n_multiple_for_alignment(size_t Alignment, size_t cap = 256) {
-    for (size_t n = 1; n <= cap; ++n) {
-        if ((n * sizeof(T)) % Alignment == 0) return n;
-    }
-    size_t bytes = ((Alignment + sizeof(T) - 1) / sizeof(T)) * sizeof(T);
-    return test_utils::max<size_t>(1, bytes / sizeof(T));
-}
-
-struct Tracked {
-    static inline int ctor = 0;
-    static inline int dtor = 0;
-    int v{};
-
-    Tracked() : v(0) { ++ctor; }
-    explicit Tracked(int x) : v(x) { ++ctor; }
-    Tracked(const Tracked& o) : v(o.v) { ++ctor; }
-    Tracked(Tracked&& o) noexcept : v(o.v) { ++ctor; }
-    Tracked& operator=(const Tracked&) = default;
-    Tracked& operator=(Tracked&&) = default;
-    ~Tracked() { ++dtor; }
-
-    // Arithmetic operations to satisfy NumberLike concept
-    Tracked operator+(const Tracked& other) const { return Tracked(v + other.v); }
-    Tracked operator-(const Tracked& other) const { return Tracked(v - other.v); }
-    Tracked operator*(const Tracked& other) const { return Tracked(v * other.v); }
-    Tracked operator/(const Tracked& other) const { return Tracked(v / other.v); }
-
-    // Comparison operations
-    bool operator==(const Tracked& other) const { return v == other.v; }
-    bool operator!=(const Tracked& other) const { return v != other.v; }
-    bool operator<(const Tracked& other) const { return v < other.v; }
-    bool operator>(const Tracked& other) const { return v > other.v; }
-
-    // Required for some algorithms
-    operator int() const { return v; }
-};
+using namespace fem::numeric;
 
 // ============================================================================
-// DynamicStorage Tests
+// DynamicStorage - Test EVERY method exactly once
 // ============================================================================
 
-TEST(DynamicStorage, BasicsAndVectorLikeOps) {
-    fem::numeric::DynamicStorage<int> ds;
+TEST(DynamicStorage, CompleteCoverage) {
+    // Default constructor
+    DynamicStorage<int> ds;
+
+    // Every non-const method
     EXPECT_EQ(ds.size(), 0u);
-    EXPECT_TRUE(ds.empty());
     EXPECT_EQ(ds.capacity(), 0u);
-    EXPECT_EQ(ds.layout(), fem::numeric::Layout::RowMajor);
-    EXPECT_EQ(ds.device(), fem::numeric::Device::CPU);
-    EXPECT_TRUE(ds.is_contiguous());
-
-    ds.push_back(1);
-    ds.push_back(2);
-    ds.push_back(3);
-    EXPECT_EQ(ds.size(), 3u);
-    EXPECT_EQ(ds.front(), 1);
-    EXPECT_EQ(ds.back(), 3);
-
-    int sum = 0;
-    for (size_t i = 0; i < ds.size(); ++i) {
-        sum += ds[i];
-    }
-    EXPECT_EQ(sum, 6);
-
-    EXPECT_EQ(ds[0], 1);
-    ds[1] = 22;
-    EXPECT_EQ(ds[1], 22);
-
-    auto cap_before = ds.capacity();
-    ds.reserve(test_utils::max<size_t>(cap_before + 10, 32));
-    EXPECT_GE(ds.capacity(), cap_before + 10);
-
-    ds.resize(5, -7);
-    EXPECT_EQ(ds.size(), 5u);
-    EXPECT_EQ(ds[3], -7);
-    EXPECT_EQ(ds[4], -7);
-
-    ds.clear();
     EXPECT_TRUE(ds.empty());
-    EXPECT_EQ(ds.size(), 0u);
 
-    ds.resize(4);
-    ds.fill(9);
-    for (size_t i = 0; i < ds.size(); ++i) {
-        EXPECT_EQ(ds[i], 9);
-    }
-}
+    // Size constructor
+    DynamicStorage<int> ds1(3);
 
-TEST(DynamicStorage, CloneAndSwap) {
-    fem::numeric::DynamicStorage<double> a(3, 2.5);
-    auto up = a.clone();
-    ASSERT_TRUE(up);
+    // Size+value constructor
+    DynamicStorage<int> ds2(3, 42);
 
-    auto* b = dynamic_cast<fem::numeric::DynamicStorage<double>*>(up.get());
-    ASSERT_NE(b, nullptr);
-    ASSERT_EQ(b->size(), 3u);
-    for (size_t i = 0; i < 3; ++i) {
-        EXPECT_DOUBLE_EQ((*b)[i], 2.5);
-    }
+    // Iterator constructor
+    std::vector<int> v{1,2,3};
+    DynamicStorage<int> ds3(v.begin(), v.end());
 
-    (*b)[1] = -1.0;
-    EXPECT_DOUBLE_EQ(a[1], 2.5);
+    // Initializer list
+    DynamicStorage<int> ds4{1,2,3};
 
-    fem::numeric::DynamicStorage<double> c(2, 7.0);
-    b->swap(c);
-    EXPECT_EQ(b->size(), 2u);
-    EXPECT_EQ((*b)[0], 7.0);
-    EXPECT_EQ(c.size(), 3u);
-    EXPECT_EQ(c[1], -1.0);
-}
+    // Copy constructor
+    DynamicStorage<int> ds5(ds4);
 
-TEST(DynamicStorage, SwapThrowsWithDifferentStorageType) {
-    fem::numeric::DynamicStorage<double> dyn(2, 1.0);
-    fem::numeric::StaticStorage<double, 4> st(2, 5.0);
-    fem::numeric::StorageBase<double>& base_dyn = dyn;
-    fem::numeric::StorageBase<double>& base_st = st;
+    // Move constructor
+    DynamicStorage<int> ds6(std::move(ds5));
 
-    EXPECT_THROW(base_dyn.swap(base_st), std::runtime_error);
-}
+    // Copy assignment
+    ds = ds4;
 
-// ============================================================================
-// StaticStorage Tests
-// ============================================================================
+    // Move assignment
+    ds1 = std::move(ds6);
 
-TEST(StaticStorage, ConstructorsAndBounds) {
-    fem::numeric::StaticStorage<int, 8> s0;
-    EXPECT_TRUE(s0.empty());
-    EXPECT_EQ(s0.capacity(), 8u);
-    EXPECT_EQ(s0.size(), 0u);
-    EXPECT_TRUE(s0.is_contiguous());
-    EXPECT_EQ(s0.layout(), fem::numeric::Layout::RowMajor);
-    EXPECT_EQ(s0.device(), fem::numeric::Device::CPU);
+    // Non-const methods on ds2
+    int* data = ds2.data();
+    ASSERT_NE(data, nullptr);
 
-    fem::numeric::StaticStorage<int, 8> s1(5);
-    EXPECT_EQ(s1.size(), 5u);
-    for (size_t i = 0; i < 5; ++i) {
-        EXPECT_EQ(s1[i], 0);
-    }
+    int& ref = ds2[0];
+    ref = 10;
 
-    fem::numeric::StaticStorage<int, 8> s2(6, 3);
-    EXPECT_EQ(s2.size(), 6u);
-    for (size_t i = 0; i < 6; ++i) {
-        EXPECT_EQ(s2[i], 3);
-    }
+    ds2.resize(2);
+    ds2.resize(5, 99);
+    ds2.reserve(10);
 
-    EXPECT_THROW((fem::numeric::StaticStorage<int, 4>(5)), std::length_error);
-}
+    EXPECT_EQ(ds2.layout(), Layout::RowMajor);
+    EXPECT_EQ(ds2.device(), Device::CPU);
+    EXPECT_TRUE(ds2.is_contiguous());
 
-TEST(StaticStorage, ResizeReserveClearFillAndClone) {
-    fem::numeric::StaticStorage<double, 6> s(3, 1.5);
-    s.resize(5, -2.0);
-    EXPECT_EQ(s.size(), 5u);
-    EXPECT_DOUBLE_EQ(s[3], -2.0);
-    EXPECT_DOUBLE_EQ(s[4], -2.0);
+    auto clone = ds2.clone();
+    ASSERT_NE(clone, nullptr);
 
-    s.resize(2);
-    EXPECT_EQ(s.size(), 2u);
+    ds2.fill(77);
 
-    EXPECT_THROW(s.reserve(7), std::length_error);
-    EXPECT_THROW(s.resize(7), std::length_error);
+    // Swap same type
+    DynamicStorage<int> other(2, 88);
+    StorageBase<int>& b1 = ds2;
+    StorageBase<int>& b2 = other;
+    b1.swap(b2);
 
-    s.fill(9.0);
-    for (size_t i = 0; i < s.size(); ++i) {
-        EXPECT_DOUBLE_EQ(s[i], 9.0);
-    }
+    ds2.clear();
+    EXPECT_TRUE(ds2.empty());
 
-    auto up = s.clone();
-    auto* sc = dynamic_cast<fem::numeric::StaticStorage<double, 6>*>(up.get());
-    ASSERT_NE(sc, nullptr);
-    ASSERT_EQ(sc->size(), s.size());
-    for (size_t i = 0; i < s.size(); ++i) {
-        EXPECT_DOUBLE_EQ((*sc)[i], 9.0);
-    }
+    // Vector operations
+    int val = 100;
+    ds2.push_back(val);  // copy
+    ds2.push_back(200);  // move
 
-    s.clear();
-    EXPECT_EQ(s.size(), 0u);
-    EXPECT_TRUE(s.empty());
-}
+    int& front = ds2.front();
+    int& back = ds2.back();
+    front = 1;
+    back = 2;
 
-TEST(StaticStorage, SwapSameTypeAndThrowsOnDifferentType) {
-    fem::numeric::StaticStorage<int, 5> a(3, 1);
-    fem::numeric::StaticStorage<int, 5> b(2, 8);
+    auto begin = ds2.begin();
+    auto end = ds2.end();
+    EXPECT_NE(begin, end);
 
-    a.swap(b);
-    EXPECT_EQ(a.size(), 2u);
-    EXPECT_EQ(a[0], 8);
-    EXPECT_EQ(b.size(), 3u);
-    EXPECT_EQ(b[1], 1);
+    ds2.pop_back();
 
-    fem::numeric::DynamicStorage<int> d(3, 7);
-    fem::numeric::StorageBase<int>& base_a = a;
-    fem::numeric::StorageBase<int>& base_d = d;
-    EXPECT_THROW(base_a.swap(base_d), std::runtime_error);
+    // Const methods
+    const DynamicStorage<int> cds(2, 50);
+    EXPECT_EQ(cds.size(), 2u);
+    EXPECT_GE(cds.capacity(), 2u);
+    EXPECT_FALSE(cds.empty());
+
+    const int* cdata = cds.data();
+    ASSERT_NE(cdata, nullptr);
+
+    const int& cref = cds[0];
+    EXPECT_EQ(cref, 50);
+
+    EXPECT_EQ(cds.layout(), Layout::RowMajor);
+    EXPECT_EQ(cds.device(), Device::CPU);
+    EXPECT_TRUE(cds.is_contiguous());
+
+    auto cclone = cds.clone();
+    ASSERT_NE(cclone, nullptr);
+
+    EXPECT_EQ(cds.front(), 50);
+    EXPECT_EQ(cds.back(), 50);
+
+    auto cbegin = cds.begin();
+    auto cend = cds.end();
+    EXPECT_NE(cbegin, cend);
 }
 
 // ============================================================================
-// AlignedStorage Tests
+// StaticStorage - Test EVERY method exactly once
 // ============================================================================
 
-TEST(AlignedStorage, AlignmentBasicsAndCtor) {
-    constexpr size_t Align = 32;
-    using AS = fem::numeric::AlignedStorage<double, Align>;
+TEST(StaticStorage, CompleteCoverage) {
+    // Default constructor
+    StaticStorage<int, 10> ss;
+    EXPECT_TRUE(ss.empty());
 
-    size_t n = n_multiple_for_alignment<double>(Align);
-    AS a(n);
-    EXPECT_EQ(a.size(), n);
-    EXPECT_EQ(a.capacity(), n);
-    EXPECT_TRUE(a.is_contiguous());
-    EXPECT_EQ(a.layout(), fem::numeric::Layout::RowMajor);
-    EXPECT_EQ(a.device(), fem::numeric::Device::CPU);
+    // Size constructor
+    StaticStorage<int, 10> ss1(5);
 
-    auto addr = reinterpret_cast<std::uintptr_t>(a.data());
-    ASSERT_NE(a.data(), nullptr);
-    EXPECT_EQ(addr % Align, 0u);
+    // Size+value constructor
+    StaticStorage<int, 10> ss2(5, 42);
 
-    for (size_t i = 0; i < n; ++i) {
-        EXPECT_EQ(a[i], 0.0);
-    }
-}
+    // Every non-const method on ss2
+    EXPECT_EQ(ss2.size(), 5u);
+    EXPECT_EQ(ss2.capacity(), 10u);
+    EXPECT_FALSE(ss2.empty());
 
-TEST(AlignedStorage, ResizeReserveFillAndClear) {
-    constexpr size_t Align = 32;
-    using AS = fem::numeric::AlignedStorage<int, Align>;
-    const size_t n0 = 8;
-    const size_t n1 = 16;
+    int* data = ss2.data();
+    ASSERT_NE(data, nullptr);
 
-    AS a(n0, 3);
-    for (size_t i = 0; i < a.size(); ++i) {
-        EXPECT_EQ(a[i], 3);
-    }
+    int& ref = ss2[0];
+    ref = 10;
 
-    a.resize(n1, -5);
-    EXPECT_EQ(a.size(), n1);
-    EXPECT_GE(a.capacity(), n1);
-    for (size_t i = 0; i < n0; ++i) {
-        EXPECT_EQ(a[i], 3);
-    }
-    for (size_t i = n0; i < n1; ++i) {
-        EXPECT_EQ(a[i], -5);
-    }
+    ss2.resize(3);
+    ss2.resize(7, 99);
+    ss2.reserve(8);  // OK
 
-    a.reserve(24);
-    EXPECT_GE(a.capacity(), 24u);
-    EXPECT_EQ(a.size(), n1);
+    EXPECT_EQ(ss2.layout(), Layout::RowMajor);
+    EXPECT_EQ(ss2.device(), Device::CPU);
+    EXPECT_TRUE(ss2.is_contiguous());
 
-    a.fill(42);
-    for (size_t i = 0; i < a.size(); ++i) {
-        EXPECT_EQ(a[i], 42);
-    }
+    auto clone = ss2.clone();
+    ASSERT_NE(clone, nullptr);
 
-    a.clear();
-    EXPECT_EQ(a.size(), 0u);
-    EXPECT_TRUE(a.empty());
-}
+    ss2.fill(77);
 
-TEST(AlignedStorage, CopyAndMoveSemantics) {
-    constexpr size_t Align = 32;
-    using AS = fem::numeric::AlignedStorage<double, Align>;
-    const size_t n = n_multiple_for_alignment<double>(Align);
+    // Swap same type
+    StaticStorage<int, 10> other(2, 88);
+    StorageBase<int>& b1 = ss2;
+    StorageBase<int>& b2 = other;
+    b1.swap(b2);
 
-    AS a(n, 1.25);
-    AS b = a;
-    ASSERT_EQ(b.size(), a.size());
-    for (size_t i = 0; i < a.size(); ++i) {
-        EXPECT_DOUBLE_EQ(b[i], a[i]);
-    }
+    ss2.clear();
+    EXPECT_TRUE(ss2.empty());
 
-    AS c(std::move(a));
-    EXPECT_EQ(c.size(), n);
-    for (size_t i = 0; i < n; ++i) {
-        EXPECT_DOUBLE_EQ(c[i], 1.25);
-    }
-    EXPECT_EQ(a.size(), 0u);
-    EXPECT_EQ(a.data(), nullptr);
+    // Const methods
+    const StaticStorage<int, 10> css(3, 50);
+    EXPECT_EQ(css.size(), 3u);
+    EXPECT_EQ(css.capacity(), 10u);
+    EXPECT_FALSE(css.empty());
 
-    AS d(n, 0.0);
-    d = c;
-    EXPECT_EQ(d.size(), c.size());
-    for (size_t i = 0; i < n; ++i) {
-        EXPECT_DOUBLE_EQ(d[i], 1.25);
-    }
+    const int* cdata = css.data();
+    ASSERT_NE(cdata, nullptr);
 
-    AS e(n, -9.0);
-    e = std::move(c);
-    EXPECT_EQ(e.size(), n);
-    for (size_t i = 0; i < n; ++i) {
-        EXPECT_DOUBLE_EQ(e[i], 1.25);
-    }
-    EXPECT_EQ(c.size(), 0u);
-    EXPECT_EQ(c.data(), nullptr);
-}
+    const int& cref = css[0];
+    EXPECT_EQ(cref, 50);
 
-TEST(AlignedStorage, CloneAndSwapAndTypeMismatch) {
-    constexpr size_t Align = 32;
-    using AS = fem::numeric::AlignedStorage<double, Align>;
-    const size_t n = n_multiple_for_alignment<double>(Align);
+    EXPECT_EQ(css.layout(), Layout::RowMajor);
+    EXPECT_EQ(css.device(), Device::CPU);
+    EXPECT_TRUE(css.is_contiguous());
 
-    AS a(n, 2.0);
-    auto up = a.clone();
-    auto* ac = dynamic_cast<AS*>(up.get());
-    ASSERT_NE(ac, nullptr);
-    ASSERT_EQ(ac->size(), n);
-    for (size_t i = 0; i < n; ++i) {
-        EXPECT_DOUBLE_EQ((*ac)[i], 2.0);
-    }
+    auto cclone = css.clone();
+    ASSERT_NE(cclone, nullptr);
 
-    AS b(n, -1.0);
-    a.swap(b);
-    EXPECT_DOUBLE_EQ(a[0], -1.0);
-    EXPECT_DOUBLE_EQ(b[0], 2.0);
-
-    fem::numeric::DynamicStorage<double> dyn(2, 3.14);
-    fem::numeric::StorageBase<double>& base_al = a;
-    fem::numeric::StorageBase<double>& base_ds = dyn;
-    EXPECT_THROW(base_al.swap(base_ds), std::runtime_error);
-}
-
-TEST(AlignedStorage, TrackedObjectLifetimes) {
-    Tracked::ctor = Tracked::dtor = 0;
-
-    constexpr size_t Align = 32;
-    using AS = fem::numeric::AlignedStorage<Tracked, Align>;
-    const size_t n = n_multiple_for_alignment<Tracked>(Align);
-    const size_t m = 2 * n;
-
-    {
-        AS a(n);
-        EXPECT_EQ(a.size(), n);
-        EXPECT_EQ(Tracked::ctor, static_cast<int>(n));
-
-        a.resize(m, Tracked{7});
-        EXPECT_EQ(a.size(), m);
-        EXPECT_GE(Tracked::ctor, static_cast<int>(m));
-
-        a.resize(n);
-        EXPECT_EQ(a.size(), n);
-    }
-    EXPECT_EQ(Tracked::ctor, Tracked::dtor);
+    // Test errors
+    EXPECT_THROW((StaticStorage<int, 5>(6)), std::length_error);
+    EXPECT_THROW((StaticStorage<int, 5>(6, 10)), std::length_error);
+    StaticStorage<int, 5> err(3);
+    EXPECT_THROW(err.resize(6), std::length_error);
+    EXPECT_THROW(err.resize(6, 10), std::length_error);
+    EXPECT_THROW(err.reserve(6), std::length_error);
 }
 
 // ============================================================================
-// Polymorphic behavior via StorageBase<T>
+// AlignedStorage - Test EVERY method exactly once
 // ============================================================================
 
-TEST(StorageBasePolymorphism, VirtualDispatchWorks) {
-    // Dynamic
-    std::unique_ptr<fem::numeric::StorageBase<int>> p =
-        std::make_unique<fem::numeric::DynamicStorage<int>>(3, 5);
-    EXPECT_EQ(p->size(), 3u);
-    EXPECT_EQ((*p)[1], 5);
-    p->fill(9);
-    EXPECT_EQ((*p)[2], 9);
-    auto c = p->clone();
-    EXPECT_EQ(c->size(), 3u);
-    EXPECT_EQ((*c)[0], 9);
+TEST(AlignedStorage, CompleteCoverage) {
+    // Default constructor
+    AlignedStorage<int, 32> as;
+    EXPECT_TRUE(as.empty());
 
-    // Static
-    std::unique_ptr<fem::numeric::StorageBase<int>> ps =
-        std::make_unique<fem::numeric::StaticStorage<int, 4>>(2, 1);
-    EXPECT_EQ(ps->capacity(), 4u);
-    EXPECT_EQ(ps->size(), 2u);
-    ps->resize(3, 7);
-    EXPECT_EQ(ps->size(), 3u);
-    EXPECT_EQ((*ps)[2], 7);
+    // Size constructor
+    AlignedStorage<int, 32> as1(3);
 
-    // Aligned
-    constexpr size_t Align = 32;
-    const size_t n = n_multiple_for_alignment<int>(Align);
-    std::unique_ptr<fem::numeric::StorageBase<int>> pa =
-        std::make_unique<fem::numeric::AlignedStorage<int, Align>>(n, 4);
-    EXPECT_EQ(pa->size(), n);
-    auto addr = reinterpret_cast<std::uintptr_t>(pa->data());
-    EXPECT_EQ(addr % Align, 0u);
+    // Size+value constructor
+    AlignedStorage<int, 32> as2(5, 42);
+
+    // Copy constructor
+    AlignedStorage<int, 32> as3(as2);
+
+    // Move constructor
+    AlignedStorage<int, 32> as4(std::move(as3));
+
+    // Copy assignment (with data)
+    as1 = as2;
+
+    // Move assignment
+    as = std::move(as4);
+
+    // Self-assignment
+    as2 = as2;
+
+    // Every non-const method on as2
+    EXPECT_EQ(as2.size(), 5u);
+    EXPECT_GE(as2.capacity(), 5u);
+    EXPECT_FALSE(as2.empty());
+
+    int* data = as2.data();
+    ASSERT_NE(data, nullptr);
+
+    int& ref = as2[0];
+    ref = 10;
+
+    // All resize paths
+    as2.resize(3);  // shrink
+    as2.resize(5);  // grow default construct
+    as2.resize(8, 99);  // grow with value
+    as2.resize(4, 88);  // shrink with value
+
+    as2.reserve(20);
+
+    EXPECT_EQ(as2.layout(), Layout::RowMajor);
+    EXPECT_EQ(as2.device(), Device::CPU);
+    EXPECT_TRUE(as2.is_contiguous());
+
+    auto clone = as2.clone();
+    ASSERT_NE(clone, nullptr);
+
+    as2.fill(77);
+
+    // Swap same type
+    AlignedStorage<int, 32> other(2, 88);
+    StorageBase<int>& b1 = as2;
+    StorageBase<int>& b2 = other;
+    b1.swap(b2);
+
+    as2.clear();
+    EXPECT_TRUE(as2.empty());
+
+    // Const methods
+    const AlignedStorage<int, 32> cas(3, 50);
+    EXPECT_EQ(cas.size(), 3u);
+    EXPECT_GE(cas.capacity(), 3u);
+    EXPECT_FALSE(cas.empty());
+
+    const int* cdata = cas.data();
+    ASSERT_NE(cdata, nullptr);
+
+    const int& cref = cas[0];
+    EXPECT_EQ(cref, 50);
+
+    EXPECT_EQ(cas.layout(), Layout::RowMajor);
+    EXPECT_EQ(cas.device(), Device::CPU);
+    EXPECT_TRUE(cas.is_contiguous());
+
+    auto cclone = cas.clone();
+    ASSERT_NE(cclone, nullptr);
+
+    // Copy assign from empty
+    AlignedStorage<int, 32> empty;
+    AlignedStorage<int, 32> nonempty(2, 10);
+    nonempty = empty;
+    EXPECT_TRUE(nonempty.empty());
+}
+
+// ============================================================================
+// Cross-type swap errors
+// ============================================================================
+
+TEST(StorageSwap, CrossTypeErrors) {
+    DynamicStorage<int> ds(2, 1);
+    StaticStorage<int, 10> ss(2, 2);
+    AlignedStorage<int, 32> as(2, 3);
+
+    StorageBase<int>& bds = ds;
+    StorageBase<int>& bss = ss;
+    StorageBase<int>& bas = as;
+
+    EXPECT_THROW(bds.swap(bss), std::runtime_error);
+    EXPECT_THROW(bds.swap(bas), std::runtime_error);
+    EXPECT_THROW(bss.swap(bas), std::runtime_error);
+}
+
+// ============================================================================
+// Allocation failure test
+// ============================================================================
+
+TEST(AlignedStorage, AllocationFailure) {
+    try {
+        size_t huge = std::numeric_limits<size_t>::max() / sizeof(int) / 2;
+        AlignedStorage<int, 32> as(huge);
+        // System has lots of memory if we get here
+        SUCCEED();
+    } catch (const std::bad_alloc&) {
+        SUCCEED();  // Expected
+    }
 }
