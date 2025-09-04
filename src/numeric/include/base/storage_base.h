@@ -7,6 +7,12 @@
 #include <vector>
 #include <cstring>
 #include <span>
+#include <array>
+#include <cassert>
+#include <algorithm>
+#include <cstdlib>
+#include <iterator>
+#include <cstddef>
 
 #include "numeric_base.h"
 
@@ -26,6 +32,44 @@ namespace fem::numeric {
         using const_pointer = const T*;
         using reference = T&;
         using const_reference = const T&;
+
+        std::span<T> span() noexcept {
+            if (!is_contiguous()) [[unlikely]]
+                throw std::logic_error("span() requires contiguous storage");
+            return { data(), size() };
+        }
+        std::span<const T> span() const noexcept {
+            if (!is_contiguous()) [[unlikely]]
+                throw std::logic_error("span() requires contiguous storage");
+            return { data(), size() };
+        }
+
+        // Raw bytes views (handy for SIMD/memcpy-style ops)
+        std::span<const std::byte> as_bytes() const noexcept {
+            auto s = span();
+            return std::as_bytes(s);
+        }
+        std::span<std::byte> as_writable_bytes() noexcept {
+            auto s = span();
+            return std::as_writable_bytes(s);
+        }
+
+        // Iterator helpers (valid for contiguous storages)
+        iterator begin() noexcept { return data(); }
+        const_iterator begin() const noexcept { return data(); }
+        const_iterator cbegin() const noexcept { return data(); }
+
+        iterator end() noexcept { return data() + size(); }
+        const_iterator end() const noexcept { return data() + size(); }
+        const_iterator cend() const noexcept { return data() + size(); }
+
+        reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+        const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+        const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(cend()); }
+
+        reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+        const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+        const_reverse_iterator crend() const noexcept { return const_reverse_iterator(cbegin()); }
 
         static_assert(NumberLike<T>, "Storage type must satisfy NumberLike concept");
 
@@ -53,11 +97,12 @@ namespace fem::numeric {
         virtual bool is_contiguous() const noexcept = 0;
 
         // Clone the storage
-        virtual std::unique_ptr<StorageBase> clone() const = 0;
+        virtual std::unique_ptr<StorageBase<T>> clone() const = 0;
 
         // Memory operations
         virtual void fill(const T& value) = 0;
         virtual void swap(StorageBase& other) = 0;
+
     };
 
     /**
@@ -107,11 +152,11 @@ namespace fem::numeric {
         const_pointer data() const noexcept override { return data_.data(); }
 
         reference operator[](size_type i) override {
-            assert(i < size_);
+            assert(i < size());
             return data_[i];
         }
         const_reference operator[](size_type i) const override {
-            assert(i < size_);
+            assert(i < size());
             return data_[i];
         }
 
@@ -424,6 +469,12 @@ namespace fem::numeric {
             }
         }
 
+        static constexpr size_t lane_bytes() noexcept { return Alignment; }
+        static constexpr size_t simd_lanes() noexcept { return Alignment / sizeof(T); }
+
+        bool is_simd_sized() const noexcept { return size_ % simd_lanes() == 0; }
+        size_type simd_tail() const noexcept { return size_ % simd_lanes(); }
+
     private:
         pointer data_; // ensure that the pointer is aligned type
         size_type size_;
@@ -479,19 +530,6 @@ namespace fem::numeric {
             data_ = new_data;
             capacity_ = new_capacity;
         }
-
-        bool is_simd_sized() const noexcept {
-            constexpr size_t simd_width = alignment / sizeof(value_type);
-            return size_ % simd_width == 0;
-        }
-
-        void pad_to_simd_boundary(const T& pad_value = T{}) {
-            constexpr size_t simd_width = alignment / sizeof(value_type);
-            size_type padded_size = ((size_ + simd_width - 1) / simd_width) * simd_width;
-            resize(padded_size, pad_value);
-        }
-
-        // TODO add aligned iterators and span<> for rnages to aligned operations
 
     };
 }

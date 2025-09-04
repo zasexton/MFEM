@@ -219,50 +219,76 @@ add_custom_target(fem_numeric_quick_tests
 # ============================================================================
 
 if(FEM_NUMERIC_ENABLE_COVERAGE)
-    find_program(LCOV lcov)
-    find_program(GENHTML genhtml)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        # Find required tools
+        find_program(GCOV_EXECUTABLE gcov)
+        find_program(LCOV_EXECUTABLE lcov)
+        find_program(GENHTML_EXECUTABLE genhtml)
+        find_program(GCOVR_EXECUTABLE gcovr)
 
-    if(LCOV AND GENHTML)
-        # Create coverage target
-        add_custom_target(fem_numeric_coverage
-                # Clean previous coverage info
-                COMMAND ${LCOV} --directory ${CMAKE_BINARY_DIR} --zerocounters
+        # Check what's missing and provide installation instructions
+        set(MISSING_COVERAGE_TOOLS "")
 
-                # Run tests
-                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L numeric
+        if(NOT GCOV_EXECUTABLE)
+            list(APPEND MISSING_COVERAGE_TOOLS "gcov")
+        endif()
 
-                # Capture coverage info
-                COMMAND ${LCOV}
-                --directory ${CMAKE_BINARY_DIR}
-                --capture
-                --output-file coverage.info
+        if(NOT LCOV_EXECUTABLE)
+            list(APPEND MISSING_COVERAGE_TOOLS "lcov")
+        endif()
 
-                # Remove external and test files from coverage
-                COMMAND ${LCOV}
-                --remove coverage.info
-                '/usr/*' '*/test/*' '*/tests/*' '*/googletest/*' '*/catch2/*'
-                --output-file coverage.info.cleaned
+        if(NOT GENHTML_EXECUTABLE)
+            list(APPEND MISSING_COVERAGE_TOOLS "genhtml (part of lcov)")
+        endif()
 
-                # Generate HTML report
-                COMMAND ${GENHTML}
-                coverage.info.cleaned
-                --output-directory ${CMAKE_BINARY_DIR}/coverage
-                --title "FEM Numeric Library Coverage"
-                --show-details
-                --legend
+        if(MISSING_COVERAGE_TOOLS)
+            message(WARNING "Coverage enabled but missing tools: ${MISSING_COVERAGE_TOOLS}")
+            message(STATUS "")
+            message(STATUS "To install missing coverage tools:")
 
-                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                DEPENDS fem_numeric_build_tests
-                COMMENT "Generating code coverage report"
-        )
+            # Detect the system and provide appropriate instructions
+            if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+                # Try to detect the distribution
+                if(EXISTS "/etc/debian_version")
+                    message(STATUS "  Ubuntu/Debian: sudo apt-get install lcov")
+                elseif(EXISTS "/etc/redhat-release")
+                    message(STATUS "  RHEL/CentOS/Fedora: sudo dnf install lcov")
+                elseif(EXISTS "/etc/arch-release")
+                    message(STATUS "  Arch Linux: sudo pacman -S lcov")
+                elseif(EXISTS "/etc/alpine-release")
+                    message(STATUS "  Alpine Linux: sudo apk add lcov")
+                else()
+                    message(STATUS "  Linux: Install 'lcov' using your package manager")
+                endif()
+            elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+                message(STATUS "  macOS: brew install lcov")
+            elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+                message(STATUS "  Windows: Install lcov from: https://github.com/linux-test-project/lcov")
+                message(STATUS "           Or use gcovr instead: pip install gcovr")
+            endif()
 
-        # Print coverage summary
-        add_custom_command(TARGET fem_numeric_coverage POST_BUILD
-                COMMAND ${LCOV} --summary coverage.info.cleaned
-                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        )
-    else()
-        message(STATUS "lcov/genhtml not found - coverage target will not be available")
+            message(STATUS "")
+            message(STATUS "Alternative: Install gcovr (Python-based, cross-platform):")
+            message(STATUS "  pip install gcovr")
+            message(STATUS "")
+
+            # Optionally disable coverage if tools are missing
+            option(FEM_NUMERIC_FORCE_COVERAGE "Force coverage even with missing tools" OFF)
+            if(NOT FEM_NUMERIC_FORCE_COVERAGE)
+                message(STATUS "Disabling coverage due to missing tools. Set FEM_NUMERIC_FORCE_COVERAGE=ON to override.")
+                set(FEM_NUMERIC_ENABLE_COVERAGE OFF CACHE BOOL "Enable code coverage" FORCE)
+            endif()
+        else()
+            message(STATUS "All coverage tools found")
+        endif()
+
+        # Only set flags if we're still doing coverage
+        if(FEM_NUMERIC_ENABLE_COVERAGE)
+            set(COVERAGE_FLAGS "--coverage -fprofile-arcs -ftest-coverage")
+            set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${COVERAGE_FLAGS}")
+            set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${COVERAGE_FLAGS}")
+            set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${COVERAGE_FLAGS}")
+        endif()
     endif()
 endif()
 
@@ -270,22 +296,45 @@ endif()
 # Memory Check (Valgrind)
 # ============================================================================
 
-find_program(VALGRIND valgrind)
-if(VALGRIND)
-    add_custom_target(fem_numeric_memcheck
-            COMMAND ${CMAKE_CTEST_COMMAND}
-            -T memcheck
-            -L numeric
-            --output-on-failure
-            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Running tests with Valgrind memory check"
-    )
+if(FEM_NUMERIC_ENABLE_MEMCHECK)
+    find_program(VALGRIND_EXECUTABLE valgrind)
 
-    # Configure Valgrind
-    set(MEMORYCHECK_COMMAND_OPTIONS
-            "--leak-check=full --show-leak-kinds=all --track-origins=yes --verbose"
-            CACHE STRING "Valgrind options"
-    )
+    if(NOT VALGRIND_EXECUTABLE)
+        message(WARNING "Memory checking enabled but Valgrind not found")
+        message(STATUS "")
+        message(STATUS "To install Valgrind:")
+
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            if(EXISTS "/etc/debian_version")
+                message(STATUS "  Ubuntu/Debian: sudo apt-get install valgrind")
+            elseif(EXISTS "/etc/redhat-release")
+                message(STATUS "  RHEL/CentOS/Fedora: sudo dnf install valgrind")
+            elseif(EXISTS "/etc/arch-release")
+                message(STATUS "  Arch Linux: sudo pacman -S valgrind")
+            else()
+                message(STATUS "  Linux: Install 'valgrind' using your package manager")
+            endif()
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            message(STATUS "  macOS: Valgrind is not well supported on recent macOS versions")
+            message(STATUS "         Consider using AddressSanitizer instead (-DFEM_NUMERIC_USE_SANITIZERS=ON)")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            message(STATUS "  Windows: Valgrind is not available on Windows")
+            message(STATUS "           Consider using AddressSanitizer or Dr. Memory instead")
+        endif()
+
+        message(STATUS "")
+        set(FEM_NUMERIC_ENABLE_MEMCHECK OFF CACHE BOOL "Enable memory checking" FORCE)
+    else()
+        message(STATUS "Valgrind found: ${VALGRIND_EXECUTABLE}")
+
+        # Configure CTest to use Valgrind
+        set(MEMORYCHECK_COMMAND ${VALGRIND_EXECUTABLE})
+        set(MEMORYCHECK_COMMAND_OPTIONS
+                "--leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1"
+                CACHE STRING "Valgrind options"
+        )
+        include(CTest)
+    endif()
 endif()
 
 # ============================================================================
