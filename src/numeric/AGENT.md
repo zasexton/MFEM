@@ -82,14 +82,6 @@ numeric/
 │   │   ├── taylor_mode.hpp           # Taylor series mode
 │   │   └── edge_pushing.hpp          # Graph-based AD
 │   │
-│   ├── fem_specific/                 # FEM-oriented AD utilities
-│   │   ├── tangent_operator.hpp      # Consistent tangent matrices
-│   │   ├── material_tangent.hpp      # Material model derivatives
-│   │   ├── sensitivity_assembly.hpp   # Sensitivity matrix assembly
-│   │   ├── shape_derivatives.hpp     # Mesh sensitivity
-│   │   ├── adjoint_system.hpp        # Adjoint problem setup
-│   │   └── energy_derivatives.hpp    # Energy functional gradients
-│   │
 │   ├── operations/                   # AD-aware operations
 │   │   ├── ad_arithmetic.hpp         # Overloaded operators
 │   │   ├── ad_transcendental.hpp     # sin, cos, exp, log
@@ -114,10 +106,7 @@ numeric/
 │   ├── sparse_vector.hpp             # Sparse vector
 │   ├── sparse_matrix.hpp             # Sparse matrix base
 │   ├── sparse_tensor.hpp             # Sparse tensor
-│   ├──  complex.hpp                  # Complex number support
-│   ├── ad_vector.hpp                 # AD-enabled vectors
-│   ├── ad_matrix.hpp                 # AD-enabled matrices
-│   └── ad_tensor.hpp                 # AD-enabled tensors
+│   └── complex.hpp                   # Complex number support
 │
 ├── storage/                          # Storage implementations
 │   ├── dense_storage.hpp             # Contiguous memory
@@ -150,11 +139,11 @@ numeric/
 │   │   ├── block_diagonal.hpp       # Block diagonal
 │   │   ├── nested_matrix.hpp        # Hierarchical blocks
 │   │   ├── dia.hpp                  # Diagonal format
-│   │   └── ell.hpp                  # ELLPACK format
+│   │   ├── ell.hpp                  # ELLPACK format
+│   │   └── pattern.hpp              # 
 │   ├── operations/
 │   │   ├── sparse_blas.hpp          # Sparse BLAS
 │   │   ├── sparse_arithmetic.hpp    # Arithmetic ops
-│   │   ├── sparse_assembly.hpp      # Assembly utilities
 │   │   ├── sparse_conversion.hpp    # Format conversion
 │   │   └── sparse_ad_operations.hpp  # AD-aware sparse ops
 │   └── builders/
@@ -212,7 +201,6 @@ numeric/
 │   ├── scalar_ops.hpp               # Scalar operations
 │   ├── matrix_product.hpp           # Matrix multiplication
 │   ├── block_expressions.hpp        # Block operations
-│   ├── petrov_galerkin.hpp          # Non-symmetric ops
 │   ├── aliasing.hpp                 # Aliasing detection
 │   ├── evaluation.hpp               # Evaluation strategies
 │   └── ad_expressions.hpp           # AD-aware expressions
@@ -222,7 +210,6 @@ numeric/
 │   ├── transcendental.hpp           # sin, cos, exp, log
 │   ├── tensor_contraction.hpp       # Tensor contractions
 │   ├── kronecker_product.hpp        # Kronecker products
-│   ├── stabilization.hpp            # SUPG/GLS matrices
 │   ├── skew_symmetric.hpp           # Skew operations
 │   ├── reductions.hpp               # Sum, mean, etc.
 │   ├── element_wise.hpp             # Element-wise ops
@@ -298,7 +285,6 @@ numeric/
 │   ├── slice.hpp                    # Slice objects
 │   ├── fancy_indexing.hpp           # Advanced indexing
 │   ├── block_indexing.hpp           # Block indexing
-│   ├── dof_indexing.hpp             # DOF-based indexing
 │   └── multi_index.hpp              # Multi-dimensional
 │
 ├── optimization/                    # NEW: Optimization with AD
@@ -333,7 +319,6 @@ numeric/
 │   ├── comparison.hpp               # Float comparison
 │   ├── timer.hpp                    # Performance timing
 │   ├── memory_utils.hpp             # Memory utilities
-│   ├── fem_utils.hpp                # FEM-specific utilities
 │   ├── error_handling.hpp           # Error handling
 │   └── ad_utils.hpp                 # AD helper functions
 │
