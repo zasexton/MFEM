@@ -314,7 +314,7 @@ public:
     }
 
     // ========================================================================
-    // Stream output (keeping as requested)
+    // Stream output
     // ========================================================================
 
     friend std::ostream& operator<<(std::ostream& os, const DualBase& dual) {
@@ -418,7 +418,7 @@ DualBase<T, N> cos(const DualBase<T, N>& x) {
 }
 
 // ============================================================================
-// Helper functions (keeping as requested)
+// Helper functions
 // ============================================================================
 
 // Create a dual number from value with zero derivatives
