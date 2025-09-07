@@ -4,11 +4,17 @@
 #define NUMERIC_VIEW_BASE_H
 
 #include <span>
+#include <optional>
+#include <array>
 
 #include "numeric_base.h"
 #include "storage_base.h"
 
 namespace fem::numeric {
+
+    // Forward declaration
+    template<typename T, size_t Rank>
+    class MultiDimView;
 
     /**
      * @brief Base class for views (non-owning references to data)
@@ -36,6 +42,7 @@ namespace fem::numeric {
         const_pointer data() const noexcept { return data_; }
         size_type size() const noexcept { return size_; }
         bool empty() const noexcept { return size_ == 0; }
+        bool is_view() const noexcept { return true; }
 
         // Element access
         reference operator[](size_type i) { return data_[i]; }
@@ -75,6 +82,20 @@ namespace fem::numeric {
         // Check if view is valid
         bool is_valid() const noexcept { return data_ != nullptr; }
 
+        // Check if memory regions overlap (useful for aliasing detection)
+        bool overlaps(const ViewBase& other) const noexcept {
+            if (!data_ || !other.data_) return false;
+
+            const T* this_end = data_ + size_;
+            const T* other_end = other.data_ + other.size_;
+
+            return !(this_end <= other.data_ || other_end <= data_);
+        }
+
+        template<size_t NewRank>
+        std::optional<MultiDimView<T, NewRank>> reshape(
+            const std::array<size_t, NewRank>& new_shape) const;
+
     protected:
         pointer data_;
         size_type size_;
@@ -100,25 +121,25 @@ namespace fem::numeric {
 
         // Element access with stride
         reference operator[](size_type i) {
-            return this->data_[i * stride_];
+            return this->data_[static_cast<difference_type>(i) * stride_];
         }
 
         const_reference operator[](size_type i) const {
-            return this->data_[i * stride_];
+            return this->data_[static_cast<difference_type>(i) * stride_];
         }
 
         reference at(size_type i) {
             if (i >= this->size_) {
                 throw std::out_of_range("Strided view index out of range");
             }
-            return this->data_[i * stride_];
+            return this->data_[static_cast<difference_type>(i) * stride_];
         }
 
         const_reference at(size_type i) const {
             if (i >= this->size_) {
                 throw std::out_of_range("Strided view index out of range");
             }
-            return this->data_[i * stride_];
+            return this->data_[static_cast<difference_type>(i) * stride_];
         }
 
         difference_type stride() const noexcept { return stride_; }
@@ -130,7 +151,7 @@ namespace fem::numeric {
             if (offset + count > this->size_) {
                 throw std::out_of_range("Subview out of range");
             }
-            return StridedView(this->data_ + offset * stride_, count, stride_);
+            return StridedView(this->data_ + static_cast<difference_type>(offset) * stride_, count, stride_);
         }
 
     private:
@@ -163,7 +184,7 @@ namespace fem::numeric {
             std::ptrdiff_t stride = 1;
             for (size_t i = Rank; i > 0; --i) {
                 strides[i-1] = stride;
-                stride *= shape[i-1];
+                stride *= static_cast<std::ptrdiff_t>(shape[i-1]);
             }
             return MultiDimView(data, shape, strides);
         }
@@ -208,7 +229,7 @@ namespace fem::numeric {
             std::ptrdiff_t expected = 1;
             for (size_t i = Rank; i > 0; --i) {
                 if (strides_[i-1] != expected) return false;
-                expected *= shape_[i-1];
+                expected *= static_cast<std::ptrdiff_t>(shape_[i-1]);
             }
             return true;
         }
@@ -222,7 +243,7 @@ namespace fem::numeric {
             shape_type new_shape = shape_;
             new_shape[dim] = 1;
 
-            pointer new_data = data_ + index * strides_[dim];
+            pointer new_data = data_ + static_cast<std::ptrdiff_t>(index) * strides_[dim];
 
             return MultiDimView(new_data, new_shape, strides_);
         }
@@ -233,20 +254,34 @@ namespace fem::numeric {
         stride_type strides_;
 
         template<typename... Indices>
-        size_type linear_index(Indices... indices) const {
+        std::ptrdiff_t linear_index(Indices... indices) const {
             std::array<size_type, Rank> idx_array{static_cast<size_type>(indices)...};
-            size_type linear_idx = 0;
+            std::ptrdiff_t linear_idx = 0;
 
             for (size_t i = 0; i < Rank; ++i) {
                 if (idx_array[i] >= shape_[i]) {
                     throw std::out_of_range("Index out of bounds");
                 }
-                linear_idx += idx_array[i] * strides_[i];
+                linear_idx += static_cast<std::ptrdiff_t>(idx_array[i]) * strides_[i];
             }
 
             return linear_idx;
         }
     };
+
+    // Define reshape method after MultiDimView is complete
+    template<typename T>
+    template<size_t NewRank>
+    std::optional<MultiDimView<T, NewRank>> ViewBase<T>::reshape(
+        const std::array<size_t, NewRank>& new_shape) const {
+        // Check if total size matches
+        size_t total = 1;
+        for (auto dim : new_shape) total *= dim;
+        if (total != size_) return std::nullopt;
+
+        // Only works for contiguous data
+        return MultiDimView<T, NewRank>::from_contiguous(data_, new_shape);
+    }
 
     /**
      * @brief View factory for creating different view types
@@ -287,4 +322,4 @@ namespace fem::numeric {
 
 } // namespace fem::numeric
 
-#endif //MFEM_VIEW_BASE_H
+#endif //NUMERIC_VIEW_BASE_H
