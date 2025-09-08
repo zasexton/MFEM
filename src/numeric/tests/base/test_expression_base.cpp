@@ -585,6 +585,8 @@ public:
         move_count = 0;
     }
 
+    TrackingContainer() : MockContainer<T>() {}
+
     TrackingContainer(const Shape& shape, const T& value)
         : MockContainer<T>(shape, value) {}
 
