@@ -3,13 +3,21 @@
 #ifndef NUMERIC_SLICE_BASE_H
 #define NUMERIC_SLICE_BASE_H
 
+#include <algorithm>
+#include <numeric>
+#include <string>
 #include <optional>
 #include <variant>
 #include <vector>
+#include <limits>
 
 #include "numeric_base.h"
 
 namespace fem::numeric {
+
+    // Forward declarations
+    class MultiIndex;
+    class SliceParser;
 
     /**
      * @brief Slice object for NumPy-like slicing
@@ -54,54 +62,87 @@ namespace fem::numeric {
         Slice normalize(size_t size) const {
             index_type norm_start = start_;
             index_type norm_stop = stop_;
+            auto ssize = static_cast<index_type>(size);
 
             // Handle negative indices
-            if (norm_start < 0) {
-                norm_start += static_cast<index_type>(size);
+            if (norm_start != none && norm_start < 0) {
+                norm_start += ssize;
             }
-            if (norm_stop < 0) {
-                norm_stop += static_cast<index_type>(size);
-            }
-
-            // Handle none/max values
-            if (norm_stop == none || norm_stop > static_cast<index_type>(size)) {
-                norm_stop = static_cast<index_type>(size);
+            if (norm_stop != none && norm_stop < 0) {
+                norm_stop += ssize;
             }
 
-            // Clamp to valid range
-            norm_start = std::max<index_type>(0, std::min<index_type>(norm_start, size));
-            norm_stop = std::max<index_type>(0, std::min<index_type>(norm_stop, size));
+            if (step_ > 0) {
+                // Forward iteration
+                if (norm_start == none) norm_start = 0;
+                if (norm_stop == none) norm_stop = ssize;
+
+                // Clamp to valid range
+                norm_start = std::max<index_type>(0, std::min<index_type>(norm_start, ssize));
+                norm_stop = std::max<index_type>(0, std::min<index_type>(norm_stop, ssize));
+            } else {
+                // Backward iteration
+                if (norm_start == none) norm_start = ssize - 1;
+                if (norm_stop == none) {
+                    norm_stop = -(ssize + 1); // Special marker for "include 0"
+                }
+
+                // Clamp start only (stop can go negative for reverse)
+                norm_start = std::max<index_type>(-1, std::min<index_type>(norm_start, ssize - 1));
+                // Don't clamp stop - it indicates where to stop
+            }
 
             return Slice(norm_start, norm_stop, step_);
         }
 
-        // Calculate number of elements in slice
         size_t count(size_t size) const {
             Slice norm = normalize(size);
-
-            if (norm.start_ >= norm.stop_) {
-                return 0;
-            }
+            auto ssize = static_cast<index_type>(size);
 
             if (step_ > 0) {
-                return (norm.stop_ - norm.start_ + step_ - 1) / step_;
+                if (norm.start_ >= norm.stop_) {
+                    return 0;
+                }
+                return static_cast<size_t>((norm.stop_ - norm.start_ + step_ - 1) / step_);
             } else {
-                return (norm.start_ - norm.stop_ - step_ - 1) / (-step_);
+                // Check for special sentinel value
+                index_type actual_stop = norm.stop_;
+                if (actual_stop <= -ssize) {
+                    actual_stop = -1;  // Include index 0
+                }
+
+                if (norm.start_ <= actual_stop) {
+                    return 0;
+                }
+                return static_cast<size_t>((norm.start_ - actual_stop - step_ - 1) / (-step_));
             }
         }
 
-        // Get indices for iteration
         std::vector<size_t> indices(size_t size) const {
             Slice norm = normalize(size);
+            auto ssize = static_cast<index_type>(size);
             std::vector<size_t> result;
-            result.reserve(count(size));
 
             if (step_ > 0) {
+                if (norm.start_ >= norm.stop_) {
+                    return result;
+                }
+                result.reserve(count(size));
                 for (index_type i = norm.start_; i < norm.stop_; i += step_) {
                     result.push_back(static_cast<size_t>(i));
                 }
             } else {
-                for (index_type i = norm.start_; i > norm.stop_; i += step_) {
+                // Check for special sentinel value
+                index_type actual_stop = norm.stop_;
+                if (actual_stop <= -ssize) {
+                    actual_stop = -1;  // Include index 0
+                }
+
+                if (norm.start_ <= actual_stop) {
+                    return result;
+                }
+                result.reserve(count(size));
+                for (index_type i = norm.start_; i > actual_stop; i += step_) {
                     result.push_back(static_cast<size_t>(i));
                 }
             }
@@ -118,8 +159,8 @@ namespace fem::numeric {
     /**
      * @brief All sentinel for selecting all elements
      */
-        struct All {};
-        inline constexpr All all{};
+    struct All {};
+    inline constexpr All all{};
 
     /**
      * @brief NewAxis sentinel for adding dimensions
@@ -197,6 +238,32 @@ namespace fem::numeric {
             MultiIndex result;
             size_t shape_idx = 0;
 
+            // First, check for multiple ellipses
+            int ellipsis_count = 0;
+            for (const auto& idx : indices_) {
+                if (std::holds_alternative<Ellipsis>(idx)) {
+                    ellipsis_count++;
+                }
+            }
+            if (ellipsis_count > 1) {
+                throw std::invalid_argument("Only one ellipsis allowed in index");
+            }
+
+            // Count how many dimensions we're indexing (excluding NewAxis and Ellipsis)
+            size_t index_dims = 0;
+            for (const auto& idx : indices_) {
+                if (!std::holds_alternative<NewAxis>(idx) &&
+                    !std::holds_alternative<Ellipsis>(idx)) {
+                    index_dims++;
+                    }
+            }
+
+            // If no ellipsis and we have more indices than dimensions, error
+            if (ellipsis_count == 0 && index_dims > shape.rank()) {
+                throw std::out_of_range("Too many indices for shape");
+            }
+
+            // Now do the actual normalization
             for (const auto& idx : indices_) {
                 if (std::holds_alternative<Ellipsis>(idx)) {
                     // Expand ellipsis to match remaining dimensions
@@ -247,7 +314,7 @@ namespace fem::numeric {
                 } else if (std::holds_alternative<std::vector<bool>>(idx)) {
                     // Boolean mask indexing
                     const auto& mask = std::get<std::vector<bool>>(idx);
-                    dims.push_back(std::count(mask.begin(), mask.end(), true));
+                    dims.push_back(static_cast<size_t>(std::count(mask.begin(), mask.end(), true)));
                     shape_idx++;
                 }
             }
@@ -269,6 +336,17 @@ namespace fem::numeric {
                 return Slice::all();
             }
 
+            // Count colons
+            size_t colon_count = static_cast<size_t>(std::count(str.begin(), str.end(), ':'));
+            if (colon_count > 2) {
+                throw std::invalid_argument("Too many colons in slice: " + str);
+            }
+
+            // "::0" should still be invalid (zero step)
+            if (str == "::0") {
+                throw std::invalid_argument("Slice step cannot be zero");
+            }
+
             std::vector<std::optional<std::ptrdiff_t>> parts;
             size_t start = 0;
 
@@ -279,7 +357,27 @@ namespace fem::numeric {
                     if (part.empty()) {
                         parts.push_back(std::nullopt);
                     } else {
-                        parts.push_back(std::stoi(part));
+                        // Validate that the string is a valid integer
+                        // Check for invalid characters (including '.')
+                        bool is_negative = (part[0] == '-');
+                        size_t digit_start = is_negative ? 1 : 0;
+
+                        for (size_t j = digit_start; j < part.length(); ++j) {
+                            if (!std::isdigit(part[j])) {
+                                throw std::invalid_argument("Invalid number in slice: " + part);
+                            }
+                        }
+
+                        if (digit_start == part.length()) {
+                            // Just a '-' with no digits
+                            throw std::invalid_argument("Invalid number in slice: " + part);
+                        }
+
+                        try {
+                            parts.push_back(std::stoi(part));
+                        } catch (const std::exception&) {
+                            throw std::invalid_argument("Invalid number in slice: " + part);
+                        }
                     }
                     start = i + 1;
                 }
@@ -304,14 +402,162 @@ namespace fem::numeric {
     };
 
     /**
+     * @brief Parser for NumPy-like multi-dimensional indexing strings
+     * Supports syntax like ":,2,:", "3::,5:", "None,3", "...,2", etc.
+     */
+    class IndexParser {
+    public:
+        static MultiIndex parse(const std::string& str);  // Declaration only
+
+    private:
+        static IndexVariant parse_single_index(const std::string& part);
+        static IndexVariant parse_array_index(const std::string& content);
+    };
+
+    // Implementation of IndexParser methods after all classes are defined
+    inline MultiIndex IndexParser::parse(const std::string& str) {
+        MultiIndex result;
+
+        // Remove outer brackets if present
+        std::string s = str;
+        if (!s.empty() && s.front() == '[' && s.back() == ']') {
+            s = s.substr(1, s.length() - 2);
+        }
+
+        size_t start = 0;
+        int bracket_depth = 0;
+
+        // Split by commas, but respect bracket nesting
+        for (size_t i = 0; i <= s.length(); ++i) {
+            if (i < s.length()) {
+                if (s[i] == '[') bracket_depth++;
+                else if (s[i] == ']') bracket_depth--;
+            }
+
+            if ((i == s.length() || (s[i] == ',' && bracket_depth == 0))) {
+                std::string part = s.substr(start, i - start);
+
+                // Trim whitespace
+                part.erase(0, part.find_first_not_of(" \t\n\r"));
+                part.erase(part.find_last_not_of(" \t\n\r") + 1);
+
+                result.append(parse_single_index(part));
+                start = i + 1;
+            }
+        }
+
+        return result;
+    }
+
+    inline IndexVariant IndexParser::parse_single_index(const std::string& part) {
+        // Empty or just ":" means all
+        if (part.empty() || part == ":") {
+            return all;
+        }
+
+        // Ellipsis
+        if (part == "...") {
+            return ellipsis;
+        }
+
+        // NewAxis (Python's None)
+        if (part == "None" || part == "np.newaxis") {
+            return newaxis;
+        }
+
+        // Check if it's a slice (contains ':')
+        if (part.find(':') != std::string::npos) {
+            return SliceParser::parse(part);
+        }
+
+        // Check for array indexing [1,2,3]
+        if (part.front() == '[' && part.back() == ']') {
+            return parse_array_index(part.substr(1, part.length() - 2));
+        }
+
+        // Otherwise, try to parse as integer
+        bool is_negative = !part.empty() && part[0] == '-';
+        size_t digit_start = is_negative ? 1 : 0;
+
+        for (size_t j = digit_start; j < part.length(); ++j) {
+            if (!std::isdigit(part[j])) {
+                throw std::invalid_argument("Invalid index: " + part);
+            }
+        }
+
+        if (digit_start == part.length()) {
+            throw std::invalid_argument("Invalid index: " + part);
+        }
+
+        try {
+            return static_cast<std::ptrdiff_t>(std::stoll(part));
+        } catch (const std::exception&) {
+            throw std::invalid_argument("Invalid index: " + part);
+        }
+    }
+
+    inline IndexVariant IndexParser::parse_array_index(const std::string& content) {
+        std::vector<std::ptrdiff_t> indices;
+        size_t start = 0;
+
+        for (size_t i = 0; i <= content.length(); ++i) {
+            if (i == content.length() || content[i] == ',') {
+                std::string num = content.substr(start, i - start);
+
+                // Trim whitespace
+                num.erase(0, num.find_first_not_of(" \t"));
+                num.erase(num.find_last_not_of(" \t") + 1);
+
+                if (num.empty()) {
+                    throw std::invalid_argument("Empty array index element");
+                }
+
+                try {
+                    indices.push_back(std::stoll(num));
+                } catch (const std::exception&) {
+                    throw std::invalid_argument("Invalid array index: " + num);
+                }
+                start = i + 1;
+            }
+        }
+
+        if (indices.empty()) {
+            throw std::invalid_argument("Empty array index");
+        }
+
+        return indices;
+    }
+
+    /**
      * @brief User-defined literal for slice creation
      */
     inline namespace literals {
         inline Slice operator""_s(const char* str, size_t) {
             return SliceParser::parse(str);
         }
+
+        /**
+         * @brief Create MultiIndex from NumPy-like string syntax
+         * Examples:
+         *   ":,2,:"_idx      -> all, index 2, all
+         *   "3::,5:"_idx     -> slice from 3 with default step, slice from 5
+         *   "None,3"_idx     -> newaxis, index 3
+         *   "...,2"_idx      -> ellipsis, index 2
+         *   "[1,2,3],::-1"_idx -> array indexing, reverse slice
+         */
+        inline MultiIndex operator""_idx(const char* str, size_t) {
+            return IndexParser::parse(str);
+        }
     }
 
+    inline constexpr All _{};
+    inline constexpr NewAxis N{};
+    inline constexpr Ellipsis E{};
+
+    template<typename... Args>
+    inline MultiIndex idx(Args... args) {
+        return MultiIndex{args...};
+    }
 } // namespace fem::numeric
 
 #endif //NUMERIC_SLICE_BASE_H
