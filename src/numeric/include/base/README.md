@@ -1,288 +1,253 @@
-# Numeric Base Infrastructure
+# FEM Numeric Base Library
 
-This folder contains the foundational infrastructure for the FEM numeric library. All components are designed to support IEEE-compliant numeric operations for any number-like type.
+## Overview
 
-## ✅ Complete File List
+The FEM Numeric Base Library provides a foundational framework for IEEE 754-compliant numerical computing with support for multi-dimensional arrays, automatic differentiation, expression templates, and advanced indexing. This library forms the core infrastructure for finite element method (FEM) computations while maintaining strict numerical standards.
 
-### Core Infrastructure
-1. **numeric_base.hpp** ✓
-    - `NumberLike` and `IEEECompliant` concepts
-    - `Shape` class for multi-dimensional arrays
-    - `NumericBase` CRTP base class
-    - `IEEEComplianceChecker` for IEEE 754 validation
-    - `NumericMetadata` for type information
-    - `NumericOptions` for runtime configuration
-    - Error hierarchy (`NumericError`, `DimensionError`, etc.)
+## Architecture Overview
 
-2. **container_base.hpp** ✓
-    - `ContainerBase` template for Vector/Matrix/Tensor
-    - Full STL-compatible iterator support
-    - Element-wise operations with IEEE checking
-    - Reduction operations (sum, product, min, max, mean)
-    - Automatic NaN/Inf detection
+### Core Components
 
-3. **storage_base.hpp** ✓
-    - `StorageBase` abstract interface
-    - `DynamicStorage` (heap-allocated, growable)
-    - `StaticStorage` (stack-allocated, fixed-size)
-    - `AlignedStorage` (SIMD-aligned memory)
-    - Support for all IEEE-compliant types
+#### 1. Foundation Layer (`numeric_base.h`)
+The foundation defines core concepts, types, and error handling:
 
-4. **expression_base.hpp** ✓
-    - Expression templates for lazy evaluation
-    - `BinaryExpression` and `UnaryExpression`
-    - `TerminalExpression` and `ScalarExpression`
-    - Broadcasting support
-    - Parallel evaluation capability
+- **Concepts**: `NumberLike`, `IEEECompliant` - compile-time constraints for numeric types
+- **Shape System**: Multi-dimensional shape representation with broadcasting support
+- **Layout & Device**: Memory layout (row/column major) and device location abstraction
+- **Error Hierarchy**: Specialized exceptions for dimension mismatches and computation errors
+- **IEEE Compliance**: Runtime checking for NaN, Inf, and numerical validity
 
-5. **iterator_base.hpp** ✓
-    - `ContainerIterator` for contiguous data
-    - `StridedIterator` for non-contiguous views
-    - `MultiDimIterator` for tensor traversal
-    - `CheckedIterator` for runtime validation
-    - Full random-access iterator support
+#### 2. Type System (`traits_base.h`)
+Compile-time type introspection and optimization hints:
 
-6. **traits_base.hpp** ✓
-    - `numeric_traits` for type properties
-    - `promote_traits` for type promotion rules
-    - `container_traits` for container properties
-    - `storage_traits` for storage characteristics
-    - `simd_traits` for vectorization info
-    - Complex number specializations
+- **Type Detection**: Identifies complex numbers, dual numbers, and composite types
+- **Storage Optimization**: Provides hints for SIMD, alignment, and relocation
+- **Type Promotion**: NumPy-like type promotion rules for mixed-type operations
+- **Container Traits**: Compile-time properties of containers and storage
 
-7. **allocator_base.hpp** ✓
-    - `AllocatorBase` interface
-    - `AlignedAllocator` for SIMD operations
-    - `PoolAllocator` for frequent allocations
-    - `TrackingAllocator` for memory profiling
-    - `StackAllocator` for temporary allocations
+#### 3. Storage Layer (`storage_base.h`)
+Memory management with multiple strategies:
 
-8. **view_base.hpp** ✓
-    - `ViewBase` for non-owning references
-    - `StridedView` for custom strides
-    - `MultiDimView` for N-dimensional views
-    - `ViewFactory` for view creation
-    - Zero-copy operations
+- **StorageBase**: Abstract interface for all storage implementations
+- **DynamicStorage**: Heap-allocated storage using std::vector
+- **StaticStorage**: Stack-allocated storage with compile-time size
+- **AlignedStorage**: SIMD-aligned memory for vectorized operations
 
-9. **slice_base.hpp** ✓
-    - `Slice` object for NumPy-like slicing
-    - `MultiIndex` for advanced indexing
-    - Support for `All`, `NewAxis`, `Ellipsis`
-    - `SliceParser` for string-based slicing
-    - User-defined literals (`"1:5:2"_s`)
+#### 4. Container System (`container_base.h`)
+High-level container abstractions:
 
-10. **ops_base.hpp** ✓
-    - IEEE-compliant operation functors
-    - Arithmetic operations (plus, minus, multiplies, divides)
-    - Transcendental functions (sin, cos, exp, log)
-    - Comparison operations with NaN handling
-    - `OperationDispatcher` for runtime selection
+- **ContainerBase**: CRTP base for owned data containers
+- **ViewContainer**: Non-owning references to data
+- **Mixins**: SliceableContainer, BroadcastableContainer, AxisReducible
 
-11. **broadcast_base.hpp** ✓
-    - `BroadcastHelper` for NumPy-style broadcasting
-    - Shape compatibility checking
-    - Index mapping for broadcast operations
-    - `BroadcastIterator` for efficient traversal
-    - `AxisReducer` for reduction operations
+#### 5. View System (`view_base.h`)
+Non-owning data access patterns:
 
-## 🏗️ Architecture Overview
+- **ViewBase**: Simple contiguous views
+- **StridedView**: Non-contiguous data with custom strides
+- **MultiDimView**: N-dimensional views with arbitrary strides
 
-### Design Principles
-1. **IEEE Compliance**: All operations respect IEEE 754 standards
-2. **Type Safety**: Compile-time concepts ensure type correctness
-3. **Zero Overhead**: Template metaprogramming for compile-time optimization
-4. **Flexibility**: Support for any number-like type (int, float, complex, custom)
-5. **Independence**: No dependencies on FEM core classes
+#### 6. Iteration (`iterator_base.h`)
+Iterator adapters for various access patterns:
 
-### Key Features
+- **ContainerIterator**: Standard random-access iterator
+- **StridedIterator**: Iterator with custom stride
+- **MultiDimIterator**: N-dimensional iteration
+- **CheckedIterator**: IEEE compliance checking during iteration
 
-#### Type System
-- **Concepts**: `NumberLike<T>` and `IEEECompliant<T>` ensure type safety
-- **Promotion**: Automatic type promotion following NumPy rules
-- **Complex Support**: Full support for `std::complex<T>`
+#### 7. Slicing & Indexing (`slice_base.h`)
+NumPy-like advanced indexing:
 
-#### Memory Management
-- **Multiple Storage Backends**: Dynamic, static, aligned, strided
-- **Custom Allocators**: Pool, stack, tracking allocators
-- **Zero-Copy Views**: Efficient slicing without data duplication
-- **SIMD Alignment**: Automatic alignment for vectorization
+- **Slice**: Python-style slice objects with start:stop:step
+- **MultiIndex**: Complex indexing with slices, arrays, masks
+- **Special Sentinels**: `all`, `newaxis`, `ellipsis`
+- **String Parsing**: Parse slice strings like "1:5:2" or "::2,3"
 
-#### Expression Templates
-- **Lazy Evaluation**: Operations build expression trees
-- **Broadcasting**: NumPy-style shape broadcasting
-- **Parallel Execution**: Automatic parallelization for large arrays
-- **Memory Efficiency**: No temporary arrays created
+#### 8. Operations (`ops_base.h`)
+Functor-based operations with IEEE compliance:
 
-#### Slicing & Indexing
-- **NumPy-like Syntax**: Support for `[start:stop:step]` slicing
-- **Advanced Indexing**: Integer arrays, boolean masks, ellipsis
-- **Multi-dimensional**: Full support for N-dimensional indexing
-- **String Literals**: `"1:5:2"_s` for convenient slice creation
+- **Arithmetic**: Addition, multiplication, division with NaN/Inf handling
+- **Transcendental**: sin, cos, exp, log with domain checking
+- **Comparisons**: IEEE-compliant comparison (NaN != NaN)
+- **Reductions**: sum, mean, variance with numerical stability
 
-#### Operations
-- **IEEE 754 Compliant**: Proper NaN/Inf handling
-- **Runtime Checking**: Optional validation of finite values
-- **Vectorized**: SIMD-ready operation functors
-- **Extensible**: Easy to add custom operations
+#### 9. Expression Templates (`expression_base.h`)
+Lazy evaluation system:
 
-## 📊 Component Dependencies
+- **Expression Trees**: Build computation graphs without temporaries
+- **Broadcasting**: Automatic shape broadcasting in expressions
+- **Optimization**: Parallel and vectorized evaluation strategies
+- **Type Safety**: Compile-time expression validation
 
-```
-numeric_base.hpp (foundation - no dependencies)
-    ├── traits_base.hpp
-    ├── allocator_base.hpp
-    ├── storage_base.hpp
-    │   └── container_base.hpp
-    ├── iterator_base.hpp
-    ├── view_base.hpp
-    ├── slice_base.hpp
-    ├── ops_base.hpp
-    ├── expression_base.hpp
-    └── broadcast_base.hpp
-```
+#### 10. Broadcasting (`broadcast_base.h`)
+NumPy-style broadcasting rules:
 
-## 🔧 Usage Examples
+- **Shape Compatibility**: Determine broadcastable shapes
+- **Index Mapping**: Map broadcasted indices to original data
+- **Broadcast Iterators**: Iterate over broadcasted data without copying
+
+#### 11. Automatic Differentiation (`dual_base.h`, `dual_math.h`, `dual_comparison.h`)
+Forward-mode automatic differentiation:
+
+- **DualBase**: Dual number implementation with value and derivatives
+- **Chain Rule**: Automatic derivative propagation
+- **Math Functions**: Extended math library with derivatives
+- **Comparison**: Careful handling of non-differentiable operations
+
+#### 12. Memory Management (`allocator_base.h`)
+Custom allocators for specialized needs:
+
+- **AlignedAllocator**: SIMD-aligned allocation
+- **PoolAllocator**: Fast allocation from memory pools
+- **TrackingAllocator**: Memory usage profiling
+- **StackAllocator**: Stack-based temporary allocations
+
+## Usage Examples
 
 ### Basic Container Creation
 ```cpp
 using namespace fem::numeric;
 
-// Will work with Vector, Matrix, Tensor once implemented
-template<typename T>
-class MyContainer : public ContainerBase<MyContainer<T>, T> {
-    // Implementation details
-};
+// Create a shape
+Shape shape({3, 4, 5});  // 3x4x5 tensor
 
-// Supports any number-like type
-MyContainer<float> f_cont;        // IEEE 754 single precision
-MyContainer<double> d_cont;       // IEEE 754 double precision
-MyContainer<std::complex<double>> c_cont;  // Complex numbers
-MyContainer<int32_t> i_cont;      // Integers
+// Dynamic storage
+DynamicStorage<double> storage(shape.size());
+ContainerBase<MyContainer, double> container(shape);
+
+// Fill with value
+container.fill(3.14);
+
+// Check for numerical issues
+if (container.has_nan()) {
+    throw ComputationError("NaN detected");
+}
+```
+
+### Advanced Slicing
+```cpp
+// NumPy-style slicing
+MultiIndex idx = "2:5, ::2, :"_idx;  // [2:5, ::2, :]
+auto view = container[idx];
+
+// Using slice objects
+Slice s(2, 10, 2);  // start=2, stop=10, step=2
+auto indices = s.indices(container.size());
 ```
 
 ### Expression Templates
 ```cpp
 // Lazy evaluation - no temporaries created
-auto expr = make_expression(A) + make_expression(B) * 2.0;
+auto expr = (a + b) * c - d / 2.0;
 
-// Force evaluation when needed
-Matrix<double> result;
-expr.eval_to(result);
-```
+// Force evaluation
+auto result = expr.eval<DynamicStorage, double>();
 
-### Slicing
-```cpp
-// Create slices
-auto s1 = Slice(1, 10, 2);     // 1:10:2
-auto s2 = "5::-1"_s;           // 5::-1 using literal
-auto s3 = Slice::all();        // Select all
-
-// Multi-dimensional indexing
-MultiIndex idx{s1, all, newaxis, Slice(0, 5)};
-```
-
-### Views
-```cpp
-// Create non-owning views
-double data[100];
-auto view = ViewBase<double>(data, 100);
-auto subview = view.subview(10, 20);
-
-// Strided views
-auto strided = StridedView<double>(data, 50, 2);  // Every other element
-
-// Multi-dimensional views
-auto mdview = MultiDimView<double, 2>::from_contiguous(data, {10, 10});
+// Parallel evaluation for large arrays
+if (expr.is_parallelizable() && expr.size() > 1000) {
+    expr.parallel_eval_to(result);
+}
 ```
 
 ### Broadcasting
 ```cpp
+Shape a_shape({3, 1, 5});
+Shape b_shape({1, 4, 5});
+
 // Check compatibility
-Shape s1{3, 1, 5};
-Shape s2{1, 4, 5};
-bool compatible = BroadcastHelper::are_broadcastable(s1, s2);
+if (BroadcastHelper::are_broadcastable(a_shape, b_shape)) {
+    Shape result_shape = BroadcastHelper::broadcast_shape(a_shape, b_shape);
+    // result_shape = (3, 4, 5)
+}
 
-// Get broadcasted shape
-Shape result = BroadcastHelper::broadcast_shape(s1, s2);  // {3, 4, 5}
+// Broadcast iteration without copying
+auto [begin, end] = BroadcastHelper::make_broadcast_range(
+    data.data(), data.shape(), broadcast_shape);
 ```
 
-### Custom Allocators
+### Automatic Differentiation
 ```cpp
-// Aligned allocation for SIMD
-using AlignedVec = MyContainer<float, AlignedStorage<float, 32>>;
+using Dual = DualBase<double, 3>;  // 3 derivative directions
 
-// Memory pool for frequent allocations  
-PoolAllocator<double> pool(1024);
+// Create independent variables
+Dual x = make_independent(2.0, 0);  // df/dx
+Dual y = make_independent(3.0, 1);  // df/dy
 
-// Track memory usage
-using TrackedContainer = MyContainer<double, DynamicStorage<double, 
-                                     TrackingAllocator<double>>>;
+// Compute function and derivatives
+Dual f = sin(x) * exp(y) + pow(x, 2);
+
+double value = f.value();           // f(2, 3)
+double dfdx = f.derivative(0);      // ∂f/∂x
+double dfdy = f.derivative(1);      // ∂f/∂y
 ```
 
-## ⚠️ Important Notes
+### Custom Storage
+```cpp
+// Stack allocation for small arrays
+StaticStorage<float, 100> small_storage(50);
 
-### IEEE Compliance
-- All operations handle NaN and Inf according to IEEE 754
-- Optional runtime checking via `NumericOptions::check_finite`
-- Complex numbers follow C++ standard (based on IEEE 754)
+// Aligned storage for SIMD
+AlignedStorage<double, 32> simd_storage(1024);
 
-### Performance Considerations
-- Expression templates eliminate temporaries
-- SIMD alignment available via `AlignedStorage`
-- Parallel execution for large arrays (OpenMP support)
-- Zero-copy views for efficient slicing
+// Pool allocator for many small allocations
+PoolAllocator<int> pool(256);
+```
 
-### Type Safety
-- Compile-time concepts ensure type compatibility
-- Automatic type promotion follows NumPy rules
-- Runtime bounds checking in debug mode
+## Design Principles
 
-## 🚀 Next Steps
+1. IEEE 754 Compliance
 
-With this base infrastructure complete, the next phase is implementing:
+All operations respect IEEE floating-point standards
+NaN propagation and Inf handling follow IEEE rules
+Optional runtime checking for numerical validity
 
-1. **Vector** class (using `ContainerBase`)
-2. **Matrix** class (using `ContainerBase`)
-3. **Tensor** class (using `ContainerBase`)
-4. **Sparse** variants of each
-5. **Decomposition** algorithms
-6. **Solver** implementations
+2. Zero-Cost Abstractions
 
-All of these will build upon this solid foundation while maintaining:
-- IEEE 754 compliance
-- Support for any number-like type
-- Independence from FEM core classes
-- NumPy-like syntax and semantics
+Heavy use of templates and CRTP for compile-time polymorphism
+Expression templates eliminate temporaries
+Inline functions and constexpr for optimization
 
-## 🧪 Testing Requirements
+3. Memory Safety
 
-Each base component should be tested for:
-- IEEE compliance (NaN, Inf handling)
-- Type promotion correctness
-- Memory safety (no leaks, proper alignment)
-- Iterator correctness
-- Broadcasting rules
-- Performance benchmarks
+RAII for automatic resource management
+Strong exception safety guarantees
+Bounds checking in debug mode
 
-## 📝 Additional Infrastructure Considerations
+4. Flexibility
 
-The current base infrastructure is comprehensive, but future additions might include:
+Multiple storage strategies (heap, stack, aligned)
+Pluggable allocators for custom memory management
+View system for non-owning data access
 
-1. **Parallel Execution Policy**
-    - More sophisticated parallel execution strategies
-    - GPU offloading support
+5. Interoperability
 
-2. **Serialization Base**
-    - Binary/text serialization interfaces
-    - Compatibility with standard formats
+NumPy-like broadcasting and indexing
+STL-compatible iterators
+Conversion to/from std::span
 
-3. **Random Number Generation Base**
-    - Interfaces for random number generators
-    - Distribution support
+## Dependencies
 
-4. **Optimization Base**
-    - Interfaces for optimization algorithms
-    - Gradient computation support
+### Internal Dependencies
+```
+numeric_base.h (foundation)
+├── traits_base.h (uses concepts from numeric_base)
+├── storage_base.h (uses traits and numeric_base)
+├── iterator_base.h (uses numeric_base)
+├── slice_base.h (uses Shape from numeric_base)
+├── view_base.h (uses numeric_base, storage_base)
+├── ops_base.h (uses numeric_base for compliance checking)
+├── broadcast_base.h (uses Shape from numeric_base)
+├── allocator_base.h (uses numeric_base)
+├── container_base.h (uses all above)
+├── expression_base.h (uses container, ops, broadcast)
+└── dual_base.h, dual_math.h, dual_comparison.h (uses numeric_base)
+```
 
-However, the current base infrastructure provides everything needed to build a fully functional, IEEE-compliant numeric 
-library with intuitive syntax.
+### External Dependencies
+
+- C++20 or later
+- Standard library (memory, vector, array, span, concepts)
+- Optional: OpenMP for parallel execution
+
+## Performance Considerations
+
