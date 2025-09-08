@@ -8,6 +8,7 @@
 #include <functional>
 #include <variant>
 #include <execution>
+#include <vector>
 
 #include "numeric_base.h"
 #include "storage_base.h"

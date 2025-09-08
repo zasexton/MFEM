@@ -3,6 +3,10 @@
 #ifndef NUMERIC_BASE_H
 #define NUMERIC_BASE_H
 
+#if __cplusplus < 202002L
+#  error "MFEM numeric requires C++20 or later"
+#endif
+
 #include <cstddef>
 #include <type_traits>
 #include <concepts>
