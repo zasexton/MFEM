@@ -87,12 +87,16 @@ namespace fem::numeric {
         inline size_t& operator[](size_t i) { return dims_[i]; }
 
         size_t size() const noexcept {
+            if (dims_.empty()) {
+                return 1;
+            }
             size_t result = 1;
             for (auto d : dims_) {
                 result *= d;
             }
             return result;
         }
+
         bool empty() const noexcept { return dims_.empty(); }
 
         // Get number of dimensions

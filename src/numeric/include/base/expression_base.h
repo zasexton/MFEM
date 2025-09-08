@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <any>
 #include <tuple>
+#include <memory>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -145,7 +146,7 @@ namespace fem::numeric {
         explicit TerminalExpression(const Container& data)
             : data_ptr_(&data), owns_data_(false) {}
 
-        // Constructor for rvalue references - moves/copies data
+        // Constructor for rvalue references - moves data
         explicit TerminalExpression(Container&& data)
             : owned_data_(std::move(data)), data_ptr_(&owned_data_), owns_data_(true) {}
 
@@ -168,11 +169,11 @@ namespace fem::numeric {
                 result.resize(shape());
             }
 
-#ifdef _OPENMP
+            #ifdef _OPENMP
             bool use_parallel = NumericOptions::defaults().allow_parallel &&
                               data().size() > 1000;
-#pragma omp parallel for if(use_parallel)
-#endif
+            #pragma omp parallel for if(use_parallel)
+            #endif
             for (size_t i = 0; i < data().size(); ++i) {
                 result[i] = static_cast<result_type>(data()[i]);
             }
@@ -183,11 +184,11 @@ namespace fem::numeric {
         size_t complexity() const noexcept { return data().size(); }
 
         const Container& data() const {
-            return *data_ptr_;
+            return owns_data_ ? owned_data_ : *data_ptr_;
         }
 
     private:
-        Container owned_data_;  // Storage for moved/copied data
+        Container owned_data_;  // Storage for moved/copied data (used when owns_data_ is true)
         const Container* data_ptr_;  // Pointer to either owned_data_ or external data
         bool owns_data_;  // Whether we own the data
     };
@@ -281,9 +282,6 @@ namespace fem::numeric {
         Shape shape_;
     };
 
-    /**
-     * @brief Binary expression template
-     */
     template<typename LHS, typename RHS, typename Op>
     class BinaryExpression : public ExpressionBase<BinaryExpression<LHS, RHS, Op>> {
     public:
@@ -291,22 +289,55 @@ namespace fem::numeric {
         using rhs_type = RHS;
         using operation_type = Op;
 
+        // All combinations of lvalue/rvalue
         BinaryExpression(const LHS& lhs, const RHS& rhs, Op op = Op{})
-                : lhs_(lhs), rhs_(rhs), op_(op) {
-            // Validate shapes for broadcasting
+            : lhs_ptr_(&lhs), rhs_ptr_(&rhs),
+              op_(op), owns_lhs_(false), owns_rhs_(false) {
             shape_ = compute_broadcast_shape(lhs.shape(), rhs.shape());
+        }
+
+        BinaryExpression(LHS&& lhs, const RHS& rhs, Op op = Op{})
+            : lhs_storage_(std::make_unique<LHS>(std::move(lhs))),
+              lhs_ptr_(lhs_storage_.get()), rhs_ptr_(&rhs),
+              op_(op), owns_lhs_(true), owns_rhs_(false) {
+            shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs.shape());
+        }
+
+        BinaryExpression(const LHS& lhs, RHS&& rhs, Op op = Op{})
+            : rhs_storage_(std::make_unique<RHS>(std::move(rhs))),
+              lhs_ptr_(&lhs), rhs_ptr_(rhs_storage_.get()),
+              op_(op), owns_lhs_(false), owns_rhs_(true) {
+            shape_ = compute_broadcast_shape(lhs.shape(), rhs_ptr_->shape());
+        }
+
+        BinaryExpression(LHS&& lhs, RHS&& rhs, Op op = Op{})
+            : lhs_storage_(std::make_unique<LHS>(std::move(lhs))),
+              rhs_storage_(std::make_unique<RHS>(std::move(rhs))),
+              lhs_ptr_(lhs_storage_.get()), rhs_ptr_(rhs_storage_.get()),
+              op_(op), owns_lhs_(true), owns_rhs_(true) {
+            shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs_ptr_->shape());
         }
 
         Shape shape() const { return shape_; }
 
         template<typename T>
         auto eval(size_t i) const {
-            // Handle broadcasting
-            size_t lhs_idx = broadcast_index(i, lhs_.shape(), shape_);
-            size_t rhs_idx = broadcast_index(i, rhs_.shape(), shape_);
+            // Debug shapes
+            std::cout << "Debug shapes: lhs.shape=" << lhs().shape().to_string()
+                      << " rhs.shape=" << rhs().shape().to_string()
+                      << " broadcast_shape=" << shape_.to_string() << std::endl;
 
-            auto lhs_val = lhs_.template eval<T>(lhs_idx);
-            auto rhs_val = rhs_.template eval<T>(rhs_idx);
+            // Handle broadcasting
+            size_t lhs_idx = broadcast_index(i, lhs().shape(), shape_);
+            size_t rhs_idx = broadcast_index(i, rhs().shape(), shape_);
+
+            auto lhs_val = lhs().template eval<T>(lhs_idx);
+            auto rhs_val = rhs().template eval<T>(rhs_idx);
+
+            // Add debugging output
+            std::cout << "Debug: i=" << i
+                      << " lhs_idx=" << lhs_idx << " rhs_idx=" << rhs_idx
+                      << " lhs_val=" << lhs_val << " rhs_val=" << rhs_val;
 
             // Check for IEEE compliance issues
             if constexpr (std::is_floating_point_v<T>) {
@@ -315,7 +346,10 @@ namespace fem::numeric {
                 }
             }
 
-            return op_(lhs_val, rhs_val);
+            auto result = op_(lhs_val, rhs_val);
+            std::cout << " result=" << result << std::endl;
+
+            return result;
         }
 
         template<typename Container>
@@ -337,28 +371,52 @@ namespace fem::numeric {
         }
 
         bool is_parallelizable() const noexcept {
-            return lhs_.is_parallelizable() && rhs_.is_parallelizable();
+            return lhs().is_parallelizable() && rhs().is_parallelizable();
         }
 
         bool is_vectorizable() const noexcept {
-            return lhs_.is_vectorizable() && rhs_.is_vectorizable();
+            return lhs().is_vectorizable() && rhs().is_vectorizable();
         }
 
         size_t complexity() const noexcept {
-            return lhs_.complexity() + rhs_.complexity() + shape_.size();
+            return lhs().complexity() + rhs().complexity() + shape_.size();
         }
 
     private:
-        const LHS& lhs_;
-        const RHS& rhs_;
+        std::unique_ptr<LHS> lhs_storage_;
+        std::unique_ptr<RHS> rhs_storage_;
+        const LHS* lhs_ptr_;
+        const RHS* rhs_ptr_;
         Op op_;
         Shape shape_;
+        bool owns_lhs_;
+        bool owns_rhs_;
+
+        const LHS& lhs() const { return *lhs_ptr_; }
+        const RHS& rhs() const { return *rhs_ptr_; }
 
         static Shape compute_broadcast_shape(const Shape& s1, const Shape& s2) {
-            if (!s1.is_broadcastable_with(s2)) {
-                throw DimensionError("Incompatible shapes for broadcasting");
+            // Get the maximum rank
+            size_t max_rank = std::max(s1.rank(), s2.rank());
+
+            // Build the result shape
+            std::vector<size_t> result_dims(max_rank);
+
+            for (size_t i = 0; i < max_rank; ++i) {
+                // Work from the rightmost dimension
+                size_t dim1 = (i < s1.rank()) ? s1[s1.rank() - 1 - i] : 1;
+                size_t dim2 = (i < s2.rank()) ? s2[s2.rank() - 1 - i] : 1;
+
+                // Check if dimensions are compatible
+                if (dim1 != dim2 && dim1 != 1 && dim2 != 1) {
+                    throw DimensionError("Incompatible shapes for broadcasting");
+                }
+
+                // Take the maximum (non-1) dimension
+                result_dims[max_rank - 1 - i] = std::max(dim1, dim2);
             }
-            return s1.broadcast_to(s2);
+
+            return Shape(result_dims);
         }
 
         static size_t broadcast_index(size_t idx, const Shape& from_shape, const Shape& to_shape) {
@@ -366,7 +424,18 @@ namespace fem::numeric {
                 return idx;
             }
 
-            // Proper multi-dimensional index calculation
+            // Special case: scalar broadcasting
+            // A shape with total size 1 broadcasts to any shape by always using index 0
+            if (from_shape.size() == 1) {
+                return 0;
+            }
+
+            // Handle empty shape (also scalar)
+            if (from_shape.rank() == 0) {
+                return 0;
+            }
+
+            // Rest of the multi-dimensional broadcasting logic
             std::vector<size_t> indices(to_shape.rank());
             size_t temp = idx;
 
@@ -420,14 +489,20 @@ namespace fem::numeric {
         using expression_type = Expr;
         using operation_type = Op;
 
+        // For lvalue expressions - store reference
         UnaryExpression(const Expr& expr, Op op = Op{})
-                : expr_(expr), op_(op) {}
+            : expr_ptr_(&expr), op_(op), owns_expr_(false) {}
 
-        Shape shape() const { return expr_.shape(); }
+        // For rvalue expressions - move/copy
+        UnaryExpression(Expr&& expr, Op op = Op{})
+            : expr_storage_(std::make_unique<Expr>(std::move(expr))),
+              expr_ptr_(expr_storage_.get()), op_(op), owns_expr_(true) {}
+
+        Shape shape() const { return expr().shape(); }
 
         template<typename T>
         auto eval(size_t i) const {
-            auto val = expr_.template eval<T>(i);
+            auto val = expr().template eval<T>(i);
 
             // Check for IEEE compliance
             if constexpr (std::is_floating_point_v<T>) {
@@ -458,20 +533,26 @@ namespace fem::numeric {
         }
 
         bool is_parallelizable() const noexcept {
-            return expr_.is_parallelizable();
+            return expr().is_parallelizable();
         }
 
         bool is_vectorizable() const noexcept {
-            return expr_.is_vectorizable();
+            return expr().is_vectorizable();
         }
 
         size_t complexity() const noexcept {
-            return expr_.complexity() + shape().size();
+            return expr().complexity() + shape().size();
         }
 
     private:
-        const Expr& expr_;
+        std::unique_ptr<Expr> expr_storage_;  // Storage for moved expression
+        const Expr* expr_ptr_;                // Pointer to either expr_storage_ or external
         Op op_;
+        bool owns_expr_;
+
+        const Expr& expr() const {
+            return *expr_ptr_;
+        }
 
         template<typename T>
         void check_operation_validity(T val) const {
@@ -658,18 +739,40 @@ namespace fem::numeric {
     template<typename T>
     struct is_expression : std::false_type {};
 
+    // Specialize for all expression types
     template<typename Derived>
     struct is_expression<ExpressionBase<Derived>> : std::true_type {};
 
+    template<typename Container>
+    struct is_expression<TerminalExpression<Container>> : std::true_type {};
+
     template<typename T>
-    inline constexpr bool is_expression_v = is_expression<T>::value;
+    struct is_expression<ScalarExpression<T>> : std::true_type {};
+
+    template<typename T>
+    struct is_expression<ViewExpression<T>> : std::true_type {};
+
+    template<typename LHS, typename RHS, typename Op>
+    struct is_expression<BinaryExpression<LHS, RHS, Op>> : std::true_type {};
+
+    template<typename Expr, typename Op>
+    struct is_expression<UnaryExpression<Expr, Op>> : std::true_type {};
+
+    template<typename Expr>
+    struct is_expression<SliceExpression<Expr>> : std::true_type {};
+
+    template<typename Expr, typename Op>
+    struct is_expression<ReductionExpression<Expr, Op>> : std::true_type {};
+
+    template<typename T>
+    inline constexpr bool is_expression_v = is_expression<std::decay_t<T>>::value;
 
     /**
      * @brief Helper to create terminal expressions
      */
     template<typename Container>
-    auto make_expression(const Container& c) {
-        return TerminalExpression<Container>(c);
+    auto make_expression(Container&& c) {
+        return TerminalExpression<std::decay_t<Container>>(std::forward<Container>(c));
     }
 
     /**
@@ -689,6 +792,41 @@ namespace fem::numeric {
     }
 
     // ============================================================
+    // Generic expression builder infrastructure with perfect forwarding
+    // ============================================================
+
+    /**
+     * @brief Generic unary expression builder with perfect forwarding
+     */
+    template<typename Op, typename Expr>
+    auto make_unary_expression(Expr&& expr, Op op = Op{}) {
+        return UnaryExpression<std::decay_t<Expr>, Op>(
+            std::forward<Expr>(expr), op
+        );
+    }
+
+    /**
+     * @brief Generic binary expression builder with perfect forwarding
+     */
+    template<typename Op, typename LHS, typename RHS>
+    auto make_binary_expression(LHS&& lhs, RHS&& rhs, Op op = Op{}) {
+        return BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, Op>(
+            std::forward<LHS>(lhs), std::forward<RHS>(rhs), op
+        );
+    }
+
+
+    template<template<typename> class OpTemplate>
+    struct TypedOpWrapper {
+        template<typename T>
+        T operator()(const T& lhs, const T& rhs) const {
+            using Op = OpTemplate<T>;
+            Op op{};
+            return op(lhs, rhs);
+        }
+    };
+
+// ============================================================
     // Expression builder operators
     // ============================================================
 
@@ -753,179 +891,365 @@ namespace fem::numeric {
     }
 
     // ============================================================
-    // Expression builder operators - updated to use wrappers
+    // Binary arithmetic operators with perfect forwarding
     // ============================================================
 
-    // Binary arithmetic operations - these can use ops directly with void specialization
     template<typename LHS, typename RHS>
-    auto operator+(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
-        return BinaryExpression<LHS, RHS, ops::plus<>>(
-            lhs.derived(), rhs.derived()
-        );
-    }
-
-    template<typename LHS, typename RHS>
-    auto operator-(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
-        return BinaryExpression<LHS, RHS, ops::minus<>>(
-            lhs.derived(), rhs.derived()
-        );
+    auto operator+(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, TypedOpWrapper<ops::plus>>> {
+        return make_binary_expression<TypedOpWrapper<ops::plus>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     template<typename LHS, typename RHS>
-    auto operator*(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
-        return BinaryExpression<LHS, RHS, ops::multiplies<>>(
-            lhs.derived(), rhs.derived()
-        );
+    auto operator-(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, TypedOpWrapper<ops::minus>>> {
+        return make_binary_expression<TypedOpWrapper<ops::minus>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     template<typename LHS, typename RHS>
-    auto operator/(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
-        return BinaryExpression<LHS, RHS, ops::divides<>>(
-            lhs.derived(), rhs.derived()
-        );
-    }
-
-    // Unary operations
-    template<typename Expr>
-    auto operator-(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::negate_wrapper>(expr.derived());
-    }
-
-    // Mathematical functions - using wrappers that delegate to ops_base.h
-    template<typename Expr>
-    auto abs(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::abs_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto sign(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::sign_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto sqrt(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::sqrt_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto exp(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::exp_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto log(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::log_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto log10(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::log10_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto log2(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::log2_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto sin(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::sin_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto cos(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::cos_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto tan(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::tan_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto asin(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::asin_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto acos(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::acos_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto atan(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::atan_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto sinh(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::sinh_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto cosh(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::cosh_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto tanh(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::tanh_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto round(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::round_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto floor(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::floor_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto ceil(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::ceil_wrapper>(expr.derived());
-    }
-
-    template<typename Expr>
-    auto trunc(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, expr_ops::trunc_wrapper>(expr.derived());
-    }
-
-    // Binary mathematical functions
-    template<typename LHS, typename RHS>
-    auto pow(const ExpressionBase<LHS>& base, const ExpressionBase<RHS>& exp) {
-        return BinaryExpression<LHS, RHS, expr_ops::pow_wrapper>(
-            base.derived(), exp.derived()
-        );
+    auto operator*(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, TypedOpWrapper<ops::multiplies>>> {
+        return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     template<typename LHS, typename RHS>
-    auto atan2(const ExpressionBase<LHS>& y, const ExpressionBase<RHS>& x) {
-        return BinaryExpression<LHS, RHS, expr_ops::atan2_wrapper>(
-            y.derived(), x.derived()
-        );
+    auto operator/(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, TypedOpWrapper<ops::divides>>> {
+        return make_binary_expression<TypedOpWrapper<ops::divides>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     template<typename LHS, typename RHS>
-    auto hypot(const ExpressionBase<LHS>& x, const ExpressionBase<RHS>& y) {
-        return BinaryExpression<LHS, RHS, expr_ops::hypot_wrapper>(
-            x.derived(), y.derived()
-        );
+    auto operator%(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, TypedOpWrapper<ops::modulus>>> {
+        return make_binary_expression<TypedOpWrapper<ops::modulus>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    // ============================================================
+    // Unary operators with perfect forwarding
+    // ============================================================
+
+    template<typename Expr>
+    auto operator-(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::negate_wrapper>> {
+        return make_unary_expression<expr_ops::negate_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // ============================================================
+    // Unary mathematical functions with perfect forwarding
+    // ============================================================
+
+    template<typename Expr>
+    auto abs(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::abs_wrapper>> {
+        return make_unary_expression<expr_ops::abs_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto sign(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::sign_wrapper>> {
+        return make_unary_expression<expr_ops::sign_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto sqrt(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::sqrt_wrapper>> {
+        return make_unary_expression<expr_ops::sqrt_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // Exponential and logarithmic functions
+    template<typename Expr>
+    auto exp(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::exp_wrapper>> {
+        return make_unary_expression<expr_ops::exp_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto log(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::log_wrapper>> {
+        return make_unary_expression<expr_ops::log_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto log10(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::log10_wrapper>> {
+        return make_unary_expression<expr_ops::log10_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto log2(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::log2_wrapper>> {
+        return make_unary_expression<expr_ops::log2_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // Trigonometric functions
+    template<typename Expr>
+    auto sin(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::sin_wrapper>> {
+        return make_unary_expression<expr_ops::sin_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto cos(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::cos_wrapper>> {
+        return make_unary_expression<expr_ops::cos_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto tan(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::tan_wrapper>> {
+        return make_unary_expression<expr_ops::tan_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // Inverse trigonometric functions
+    template<typename Expr>
+    auto asin(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::asin_wrapper>> {
+        return make_unary_expression<expr_ops::asin_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto acos(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::acos_wrapper>> {
+        return make_unary_expression<expr_ops::acos_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto atan(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::atan_wrapper>> {
+        return make_unary_expression<expr_ops::atan_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // Hyperbolic functions
+    template<typename Expr>
+    auto sinh(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::sinh_wrapper>> {
+        return make_unary_expression<expr_ops::sinh_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto cosh(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::cosh_wrapper>> {
+        return make_unary_expression<expr_ops::cosh_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto tanh(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::tanh_wrapper>> {
+        return make_unary_expression<expr_ops::tanh_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // Rounding functions
+    template<typename Expr>
+    auto round(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::round_wrapper>> {
+        return make_unary_expression<expr_ops::round_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto floor(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::floor_wrapper>> {
+        return make_unary_expression<expr_ops::floor_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto ceil(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::ceil_wrapper>> {
+        return make_unary_expression<expr_ops::ceil_wrapper>(std::forward<Expr>(expr));
+    }
+
+    template<typename Expr>
+    auto trunc(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, expr_ops::trunc_wrapper>> {
+        return make_unary_expression<expr_ops::trunc_wrapper>(std::forward<Expr>(expr));
+    }
+
+    // ============================================================
+    // Binary mathematical functions with perfect forwarding
+    // ============================================================
+
+    template<typename LHS, typename RHS>
+    auto pow(LHS&& base, RHS&& exp) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, expr_ops::pow_wrapper>> {
+        return make_binary_expression<expr_ops::pow_wrapper>(std::forward<LHS>(base), std::forward<RHS>(exp));
     }
 
     template<typename LHS, typename RHS>
-    auto min(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
-        return BinaryExpression<LHS, RHS, expr_ops::min_wrapper>(
-            lhs.derived(), rhs.derived()
-        );
+    auto atan2(LHS&& y, RHS&& x) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, expr_ops::atan2_wrapper>> {
+        return make_binary_expression<expr_ops::atan2_wrapper>(std::forward<LHS>(y), std::forward<RHS>(x));
     }
 
     template<typename LHS, typename RHS>
-    auto max(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
-        return BinaryExpression<LHS, RHS, expr_ops::max_wrapper>(
-            lhs.derived(), rhs.derived()
-        );
+    auto hypot(LHS&& x, RHS&& y) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, expr_ops::hypot_wrapper>> {
+        return make_binary_expression<expr_ops::hypot_wrapper>(std::forward<LHS>(x), std::forward<RHS>(y));
+    }
+
+    template<typename LHS, typename RHS>
+    auto min(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, expr_ops::min_wrapper>> {
+        return make_binary_expression<expr_ops::min_wrapper>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto max(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, expr_ops::max_wrapper>> {
+        return make_binary_expression<expr_ops::max_wrapper>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    // ============================================================
+    // Comparison operations with perfect forwarding
+    // ============================================================
+
+    template<typename LHS, typename RHS>
+    auto equal(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::equal_to<>>> {
+        return make_binary_expression<ops::equal_to<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto not_equal(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::not_equal_to<>>> {
+        return make_binary_expression<ops::not_equal_to<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto less(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::less<>>> {
+        return make_binary_expression<ops::less<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto less_equal(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::less_equal<>>> {
+        return make_binary_expression<ops::less_equal<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto greater(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::greater<>>> {
+        return make_binary_expression<ops::greater<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto greater_equal(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::greater_equal<>>> {
+        return make_binary_expression<ops::greater_equal<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    // ============================================================
+    // Logical operations with perfect forwarding
+    // ============================================================
+
+    template<typename LHS, typename RHS>
+    auto logical_and(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::logical_and>> {
+        return make_binary_expression<ops::logical_and>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto logical_or(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::logical_or>> {
+        return make_binary_expression<ops::logical_or>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename Expr>
+    auto logical_not(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, ops::logical_not>> {
+        return make_unary_expression<ops::logical_not>(std::forward<Expr>(expr));
+    }
+
+    template<typename LHS, typename RHS>
+    auto logical_xor(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::logical_xor>> {
+        return make_binary_expression<ops::logical_xor>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    // ============================================================
+    // Bitwise operations with perfect forwarding (for integral types)
+    // ============================================================
+
+    template<typename LHS, typename RHS>
+    auto bit_and(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::bit_and<>>> {
+        return make_binary_expression<ops::bit_and<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto bit_or(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::bit_or<>>> {
+        return make_binary_expression<ops::bit_or<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto bit_xor(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::bit_xor<>>> {
+        return make_binary_expression<ops::bit_xor<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename Expr>
+    auto bit_not(Expr&& expr) ->
+        std::enable_if_t<is_expression_v<Expr>,
+                         UnaryExpression<std::decay_t<Expr>, ops::bit_not<>>> {
+        return make_unary_expression<ops::bit_not<>>(std::forward<Expr>(expr));
+    }
+
+    template<typename LHS, typename RHS>
+    auto left_shift(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::left_shift<>>> {
+        return make_binary_expression<ops::left_shift<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    template<typename LHS, typename RHS>
+    auto right_shift(LHS&& lhs, RHS&& rhs) ->
+        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
+                         BinaryExpression<std::decay_t<LHS>, std::decay_t<RHS>, ops::right_shift<>>> {
+        return make_binary_expression<ops::right_shift<>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
 } // namespace fem::numeric
