@@ -67,6 +67,9 @@ endif()
 
 add_library(fem_numeric_test_utils INTERFACE)
 
+# Ensure all numeric test targets use C++20 features
+target_compile_features(fem_numeric_test_utils INTERFACE cxx_std_20)
+
 target_link_libraries(fem_numeric_test_utils INTERFACE
         fem::numeric
         ${TEST_FRAMEWORK_LIBS}

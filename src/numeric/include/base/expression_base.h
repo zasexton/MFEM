@@ -14,6 +14,7 @@
 #include <any>
 #include <tuple>
 #include <memory>
+#include <iostream>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -323,9 +324,9 @@ namespace fem::numeric {
         template<typename T>
         auto eval(size_t i) const {
             // Debug shapes
-            std::cout << "Debug shapes: lhs.shape=" << lhs().shape().to_string()
-                      << " rhs.shape=" << rhs().shape().to_string()
-                      << " broadcast_shape=" << shape_.to_string() << std::endl;
+            // std::cout << "Debug shapes: lhs.shape=" << lhs().shape().to_string()
+            //          << " rhs.shape=" << rhs().shape().to_string()
+            //          << " broadcast_shape=" << shape_.to_string() << std::endl;
 
             // Handle broadcasting
             size_t lhs_idx = broadcast_index(i, lhs().shape(), shape_);
@@ -335,9 +336,9 @@ namespace fem::numeric {
             auto rhs_val = rhs().template eval<T>(rhs_idx);
 
             // Add debugging output
-            std::cout << "Debug: i=" << i
-                      << " lhs_idx=" << lhs_idx << " rhs_idx=" << rhs_idx
-                      << " lhs_val=" << lhs_val << " rhs_val=" << rhs_val;
+            // std::cout << "Debug: i=" << i
+            //          << " lhs_idx=" << lhs_idx << " rhs_idx=" << rhs_idx
+            //          << " lhs_val=" << lhs_val << " rhs_val=" << rhs_val;
 
             // Check for IEEE compliance issues
             if constexpr (std::is_floating_point_v<T>) {
@@ -347,7 +348,7 @@ namespace fem::numeric {
             }
 
             auto result = op_(lhs_val, rhs_val);
-            std::cout << " result=" << result << std::endl;
+            // std::cout << " result=" << result << std::endl;
 
             return result;
         }
