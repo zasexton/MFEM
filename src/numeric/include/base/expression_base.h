@@ -139,21 +139,26 @@ namespace fem::numeric {
     class TerminalExpression : public ExpressionBase<TerminalExpression<Container>> {
     public:
         using value_type = typename Container::value_type;
-        using const_reference = const Container&;
+        using container_type = Container;
 
-        explicit TerminalExpression(const_reference data)
-                : data_(data) {}
+        // Constructor for lvalue references - stores reference
+        explicit TerminalExpression(const Container& data)
+            : data_ptr_(&data), owns_data_(false) {}
 
-        Shape shape() const { return data_.shape(); }
+        // Constructor for rvalue references - moves/copies data
+        explicit TerminalExpression(Container&& data)
+            : owned_data_(std::move(data)), data_ptr_(&owned_data_), owns_data_(true) {}
+
+        Shape shape() const { return data().shape(); }
 
         template<typename T>
         auto eval(size_t i) const {
-            return static_cast<T>(data_[i]);
+            return static_cast<T>(data()[i]);
         }
 
         template<typename T, typename... Indices>
         auto eval_at(Indices... indices) const {
-            return static_cast<T>(data_.at(indices...));
+            return static_cast<T>(data().at(indices...));
         }
 
         template<typename ResultContainer>
@@ -163,24 +168,28 @@ namespace fem::numeric {
                 result.resize(shape());
             }
 
-            #ifdef _OPENMP
+#ifdef _OPENMP
             bool use_parallel = NumericOptions::defaults().allow_parallel &&
-                              data_.size() > 1000;
-            #pragma omp parallel for if(use_parallel)
-            #endif
-            for (size_t i = 0; i < data_.size(); ++i) {
-                result[i] = static_cast<result_type>(data_[i]);
+                              data().size() > 1000;
+#pragma omp parallel for if(use_parallel)
+#endif
+            for (size_t i = 0; i < data().size(); ++i) {
+                result[i] = static_cast<result_type>(data()[i]);
             }
         }
 
         bool is_parallelizable() const noexcept { return true; }
-        bool is_vectorizable() const noexcept { return data_.is_contiguous(); }
-        size_t complexity() const noexcept { return size(); }
+        bool is_vectorizable() const noexcept { return data().is_contiguous(); }
+        size_t complexity() const noexcept { return data().size(); }
 
-        const_reference data() const { return data_; }
+        const Container& data() const {
+            return *data_ptr_;
+        }
 
     private:
-        const_reference data_;
+        Container owned_data_;  // Storage for moved/copied data
+        const Container* data_ptr_;  // Pointer to either owned_data_ or external data
+        bool owns_data_;  // Whether we own the data
     };
 
     /**
@@ -362,21 +371,23 @@ namespace fem::numeric {
             size_t temp = idx;
 
             // Convert linear index to multi-dimensional indices
-            for (int i = static_cast<int>(to_shape.rank()) - 1; i >= 0; --i) {
-                indices[i] = temp % to_shape[i];
-                temp /= to_shape[i];
+            for (size_t i = to_shape.rank(); i > 0; --i) {
+                size_t dim_idx = i - 1;
+                indices[dim_idx] = temp % to_shape[dim_idx];
+                temp /= to_shape[dim_idx];
             }
 
             // Map to source shape considering broadcasting rules
             size_t result = 0;
             size_t stride = 1;
 
-            int offset = static_cast<int>(to_shape.rank() - from_shape.rank());
-            for (int i = static_cast<int>(from_shape.rank()) - 1; i >= 0; --i) {
-                int to_idx = i + offset;
-                size_t coord = (from_shape[i] == 1) ? 0 : indices[to_idx];
+            size_t offset = to_shape.rank() - from_shape.rank();
+            for (size_t i = from_shape.rank(); i > 0; --i) {
+                size_t from_idx = i - 1;
+                size_t to_idx = from_idx + offset;
+                size_t coord = (from_shape[from_idx] == 1) ? 0 : indices[to_idx];
                 result += coord * stride;
-                stride *= from_shape[i];
+                stride *= from_shape[from_idx];
             }
 
             return result;
@@ -681,7 +692,71 @@ namespace fem::numeric {
     // Expression builder operators
     // ============================================================
 
-    // Binary arithmetic operations
+    // ============================================================
+    // Operation wrappers for expression templates
+    // These wrappers delegate to ops_base.h operations with proper type deduction
+    // ============================================================
+
+    namespace expr_ops {
+
+        /**
+         * @brief Generic wrapper that uses ops_base operations with runtime type deduction
+         * This allows us to use ops_base.h operations without void specialization issues
+         */
+        template<template<typename> class OpTemplate>
+        struct op_wrapper {
+            template<typename T>
+            auto operator()(const T& val) const {
+                using op_type = OpTemplate<T>;
+                return op_type{}(val);
+            }
+        };
+
+        template<template<typename> class OpTemplate>
+        struct binary_op_wrapper {
+            template<typename T>
+            auto operator()(const T& lhs, const T& rhs) const {
+                using op_type = OpTemplate<T>;
+                return op_type{}(lhs, rhs);
+            }
+        };
+
+        // Unary operation wrappers using ops_base.h implementations
+        using negate_wrapper = op_wrapper<ops::negate>;
+        using abs_wrapper = op_wrapper<ops::abs_op>;
+        using sign_wrapper = op_wrapper<ops::sign_op>;
+        using sqrt_wrapper = op_wrapper<ops::sqrt_op>;
+        using exp_wrapper = op_wrapper<ops::exp_op>;
+        using log_wrapper = op_wrapper<ops::log_op>;
+        using log10_wrapper = op_wrapper<ops::log10_op>;
+        using log2_wrapper = op_wrapper<ops::log2_op>;
+        using sin_wrapper = op_wrapper<ops::sin_op>;
+        using cos_wrapper = op_wrapper<ops::cos_op>;
+        using tan_wrapper = op_wrapper<ops::tan_op>;
+        using asin_wrapper = op_wrapper<ops::asin_op>;
+        using acos_wrapper = op_wrapper<ops::acos_op>;
+        using atan_wrapper = op_wrapper<ops::atan_op>;
+        using sinh_wrapper = op_wrapper<ops::sinh_op>;
+        using cosh_wrapper = op_wrapper<ops::cosh_op>;
+        using tanh_wrapper = op_wrapper<ops::tanh_op>;
+        using round_wrapper = op_wrapper<ops::round_op>;
+        using floor_wrapper = op_wrapper<ops::floor_op>;
+        using ceil_wrapper = op_wrapper<ops::ceil_op>;
+        using trunc_wrapper = op_wrapper<ops::trunc_op>;
+
+        // Binary operation wrappers
+        using pow_wrapper = binary_op_wrapper<ops::power_op>;
+        using atan2_wrapper = binary_op_wrapper<ops::atan2_op>;
+        using hypot_wrapper = binary_op_wrapper<ops::hypot_op>;
+        using min_wrapper = binary_op_wrapper<ops::min_op>;
+        using max_wrapper = binary_op_wrapper<ops::max_op>;
+    }
+
+    // ============================================================
+    // Expression builder operators - updated to use wrappers
+    // ============================================================
+
+    // Binary arithmetic operations - these can use ops directly with void specialization
     template<typename LHS, typename RHS>
     auto operator+(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
         return BinaryExpression<LHS, RHS, ops::plus<>>(
@@ -713,43 +788,144 @@ namespace fem::numeric {
     // Unary operations
     template<typename Expr>
     auto operator-(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::negate<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::negate_wrapper>(expr.derived());
     }
 
-    // Mathematical functions
+    // Mathematical functions - using wrappers that delegate to ops_base.h
     template<typename Expr>
     auto abs(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::abs_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::abs_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto sign(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::sign_wrapper>(expr.derived());
     }
 
     template<typename Expr>
     auto sqrt(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::sqrt_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::sqrt_wrapper>(expr.derived());
     }
 
     template<typename Expr>
     auto exp(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::exp_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::exp_wrapper>(expr.derived());
     }
 
     template<typename Expr>
     auto log(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::log_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::log_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto log10(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::log10_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto log2(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::log2_wrapper>(expr.derived());
     }
 
     template<typename Expr>
     auto sin(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::sin_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::sin_wrapper>(expr.derived());
     }
 
     template<typename Expr>
     auto cos(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::cos_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::cos_wrapper>(expr.derived());
     }
 
     template<typename Expr>
     auto tan(const ExpressionBase<Expr>& expr) {
-        return UnaryExpression<Expr, ops::tan_op<>>(expr.derived());
+        return UnaryExpression<Expr, expr_ops::tan_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto asin(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::asin_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto acos(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::acos_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto atan(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::atan_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto sinh(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::sinh_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto cosh(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::cosh_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto tanh(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::tanh_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto round(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::round_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto floor(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::floor_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto ceil(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::ceil_wrapper>(expr.derived());
+    }
+
+    template<typename Expr>
+    auto trunc(const ExpressionBase<Expr>& expr) {
+        return UnaryExpression<Expr, expr_ops::trunc_wrapper>(expr.derived());
+    }
+
+    // Binary mathematical functions
+    template<typename LHS, typename RHS>
+    auto pow(const ExpressionBase<LHS>& base, const ExpressionBase<RHS>& exp) {
+        return BinaryExpression<LHS, RHS, expr_ops::pow_wrapper>(
+            base.derived(), exp.derived()
+        );
+    }
+
+    template<typename LHS, typename RHS>
+    auto atan2(const ExpressionBase<LHS>& y, const ExpressionBase<RHS>& x) {
+        return BinaryExpression<LHS, RHS, expr_ops::atan2_wrapper>(
+            y.derived(), x.derived()
+        );
+    }
+
+    template<typename LHS, typename RHS>
+    auto hypot(const ExpressionBase<LHS>& x, const ExpressionBase<RHS>& y) {
+        return BinaryExpression<LHS, RHS, expr_ops::hypot_wrapper>(
+            x.derived(), y.derived()
+        );
+    }
+
+    template<typename LHS, typename RHS>
+    auto min(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
+        return BinaryExpression<LHS, RHS, expr_ops::min_wrapper>(
+            lhs.derived(), rhs.derived()
+        );
+    }
+
+    template<typename LHS, typename RHS>
+    auto max(const ExpressionBase<LHS>& lhs, const ExpressionBase<RHS>& rhs) {
+        return BinaryExpression<LHS, RHS, expr_ops::max_wrapper>(
+            lhs.derived(), rhs.derived()
+        );
     }
 
 } // namespace fem::numeric
