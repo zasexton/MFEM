@@ -930,6 +930,70 @@ namespace fem::numeric {
         return make_binary_expression<TypedOpWrapper<ops::modulus>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
+    template<typename LHS>
+    auto operator+(LHS&& lhs, double rhs) ->
+        std::enable_if_t<is_expression_v<LHS>,
+                         BinaryExpression<std::decay_t<LHS>, ScalarExpression<double>, TypedOpWrapper<ops::plus>>> {
+        auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::plus>>(std::forward<LHS>(lhs), std::move(scalar_expr));
+    }
+
+    template<typename LHS>
+    auto operator-(LHS&& lhs, double rhs) ->
+        std::enable_if_t<is_expression_v<LHS>,
+                         BinaryExpression<std::decay_t<LHS>, ScalarExpression<double>, TypedOpWrapper<ops::minus>>> {
+        auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::minus>>(std::forward<LHS>(lhs), std::move(scalar_expr));
+    }
+
+    template<typename LHS>
+    auto operator*(LHS&& lhs, double rhs) ->
+        std::enable_if_t<is_expression_v<LHS>,
+                         BinaryExpression<std::decay_t<LHS>, ScalarExpression<double>, TypedOpWrapper<ops::multiplies>>> {
+        auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::forward<LHS>(lhs), std::move(scalar_expr));
+    }
+
+    template<typename LHS>
+    auto operator/(LHS&& lhs, double rhs) ->
+        std::enable_if_t<is_expression_v<LHS>,
+                         BinaryExpression<std::decay_t<LHS>, ScalarExpression<double>, TypedOpWrapper<ops::divides>>> {
+        auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::divides>>(std::forward<LHS>(lhs), std::move(scalar_expr));
+    }
+
+    // Scalar-Expression operations (scalar on left)
+    template<typename RHS>
+    auto operator+(double lhs, RHS&& rhs) ->
+        std::enable_if_t<is_expression_v<RHS>,
+                         BinaryExpression<ScalarExpression<double>, std::decay_t<RHS>, TypedOpWrapper<ops::plus>>> {
+        auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::plus>>(std::move(scalar_expr), std::forward<RHS>(rhs));
+    }
+
+    template<typename RHS>
+    auto operator-(double lhs, RHS&& rhs) ->
+        std::enable_if_t<is_expression_v<RHS>,
+                         BinaryExpression<ScalarExpression<double>, std::decay_t<RHS>, TypedOpWrapper<ops::minus>>> {
+        auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::minus>>(std::move(scalar_expr), std::forward<RHS>(rhs));
+    }
+
+    template<typename RHS>
+    auto operator*(double lhs, RHS&& rhs) ->
+        std::enable_if_t<is_expression_v<RHS>,
+                         BinaryExpression<ScalarExpression<double>, std::decay_t<RHS>, TypedOpWrapper<ops::multiplies>>> {
+        auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::move(scalar_expr), std::forward<RHS>(rhs));
+    }
+
+    template<typename RHS>
+    auto operator/(double lhs, RHS&& rhs) ->
+        std::enable_if_t<is_expression_v<RHS>,
+                         BinaryExpression<ScalarExpression<double>, std::decay_t<RHS>, TypedOpWrapper<ops::divides>>> {
+        auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
+        return make_binary_expression<TypedOpWrapper<ops::divides>>(std::move(scalar_expr), std::forward<RHS>(rhs));
+    }
     // ============================================================
     // Unary operators with perfect forwarding
     // ============================================================
