@@ -15,6 +15,8 @@
 #include <tuple>
 #include <memory>
 #include <iostream>
+#include <array>
+#include <stdexcept>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -295,6 +297,7 @@ namespace fem::numeric {
             : lhs_ptr_(&lhs), rhs_ptr_(&rhs),
               op_(op), owns_lhs_(false), owns_rhs_(false) {
             shape_ = compute_broadcast_shape(lhs.shape(), rhs.shape());
+            init_broadcast(lhs.shape(), rhs.shape());
         }
 
         BinaryExpression(LHS&& lhs, const RHS& rhs, Op op = Op{})
@@ -302,6 +305,7 @@ namespace fem::numeric {
               lhs_ptr_(lhs_storage_.get()), rhs_ptr_(&rhs),
               op_(op), owns_lhs_(true), owns_rhs_(false) {
             shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs.shape());
+            init_broadcast(lhs_ptr_->shape(), rhs.shape());
         }
 
         BinaryExpression(const LHS& lhs, RHS&& rhs, Op op = Op{})
@@ -309,6 +313,7 @@ namespace fem::numeric {
               lhs_ptr_(&lhs), rhs_ptr_(rhs_storage_.get()),
               op_(op), owns_lhs_(false), owns_rhs_(true) {
             shape_ = compute_broadcast_shape(lhs.shape(), rhs_ptr_->shape());
+            init_broadcast(lhs.shape(), rhs_ptr_->shape());
         }
 
         BinaryExpression(LHS&& lhs, RHS&& rhs, Op op = Op{})
@@ -317,6 +322,7 @@ namespace fem::numeric {
               lhs_ptr_(lhs_storage_.get()), rhs_ptr_(rhs_storage_.get()),
               op_(op), owns_lhs_(true), owns_rhs_(true) {
             shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs_ptr_->shape());
+            init_broadcast(lhs_ptr_->shape(), rhs_ptr_->shape());
         }
 
         Shape shape() const { return shape_; }
@@ -329,8 +335,8 @@ namespace fem::numeric {
             //          << " broadcast_shape=" << shape_.to_string() << std::endl;
 
             // Handle broadcasting
-            size_t lhs_idx = broadcast_index(i, lhs().shape(), shape_);
-            size_t rhs_idx = broadcast_index(i, rhs().shape(), shape_);
+            size_t lhs_idx = lhs_broadcast_ ? map_index(i, lhs_strides_) : i;
+            size_t rhs_idx = rhs_broadcast_ ? map_index(i, rhs_strides_) : i;
 
             auto lhs_val = lhs().template eval<T>(lhs_idx);
             auto rhs_val = rhs().template eval<T>(rhs_idx);
@@ -384,6 +390,8 @@ namespace fem::numeric {
         }
 
     private:
+        static constexpr size_t MAX_RANK = 8;
+
         std::unique_ptr<LHS> lhs_storage_;
         std::unique_ptr<RHS> rhs_storage_;
         const LHS* lhs_ptr_;
@@ -392,6 +400,13 @@ namespace fem::numeric {
         Shape shape_;
         bool owns_lhs_;
         bool owns_rhs_;
+
+        // Precomputed broadcasting information
+        size_t rank_{};
+        bool lhs_broadcast_{};
+        bool rhs_broadcast_{};
+        std::array<size_t, MAX_RANK> lhs_strides_{};
+        std::array<size_t, MAX_RANK> rhs_strides_{};
 
         const LHS& lhs() const { return *lhs_ptr_; }
         const RHS& rhs() const { return *rhs_ptr_; }
@@ -420,46 +435,62 @@ namespace fem::numeric {
             return Shape(result_dims);
         }
 
-        static size_t broadcast_index(size_t idx, const Shape& from_shape, const Shape& to_shape) {
-            if (from_shape == to_shape) {
-                return idx;
+        void init_broadcast(const Shape& lhs_shape, const Shape& rhs_shape) {
+            rank_ = shape_.rank();
+            if (rank_ > MAX_RANK) {
+                throw std::runtime_error("Rank exceeds MAX_RANK");
             }
 
-            // Special case: scalar broadcasting
-            // A shape with total size 1 broadcasts to any shape by always using index 0
-            if (from_shape.size() == 1) {
-                return 0;
+            lhs_broadcast_ = (lhs_shape != shape_);
+            rhs_broadcast_ = (rhs_shape != shape_);
+
+            if (lhs_broadcast_) {
+                compute_broadcast_strides(lhs_shape, lhs_strides_);
             }
 
-            // Handle empty shape (also scalar)
-            if (from_shape.rank() == 0) {
-                return 0;
+            if (rhs_broadcast_) {
+                compute_broadcast_strides(rhs_shape, rhs_strides_);
+            }
+        }
+
+        void compute_broadcast_strides(const Shape& from_shape,
+                                       std::array<size_t, MAX_RANK>& out) {
+            std::fill(out.begin(), out.end(), size_t{0});
+
+            if (from_shape.size() == 1 || from_shape.rank() == 0) {
+                return;
             }
 
-            // Rest of the multi-dimensional broadcasting logic
-            std::vector<size_t> indices(to_shape.rank());
-            size_t temp = idx;
+            size_t from_rank = from_shape.rank();
+            size_t offset = rank_ - from_rank;
 
-            // Convert linear index to multi-dimensional indices
-            for (size_t i = to_shape.rank(); i > 0; --i) {
-                size_t dim_idx = i - 1;
-                indices[dim_idx] = temp % to_shape[dim_idx];
-                temp /= to_shape[dim_idx];
-            }
-
-            // Map to source shape considering broadcasting rules
-            size_t result = 0;
+            // Compute strides for source shape
+            std::array<size_t, MAX_RANK> temp{};
             size_t stride = 1;
-
-            size_t offset = to_shape.rank() - from_shape.rank();
-            for (size_t i = from_shape.rank(); i > 0; --i) {
-                size_t from_idx = i - 1;
-                size_t to_idx = from_idx + offset;
-                size_t coord = (from_shape[from_idx] == 1) ? 0 : indices[to_idx];
-                result += coord * stride;
-                stride *= from_shape[from_idx];
+            for (size_t i = from_rank; i > 0; --i) {
+                size_t dim = i - 1;
+                temp[dim] = stride;
+                stride *= from_shape[dim];
             }
 
+            for (size_t i = 0; i < from_rank; ++i) {
+                size_t to_dim = i + offset;
+                if (from_shape[i] != 1) {
+                    out[to_dim] = temp[i];
+                }
+            }
+        }
+
+        size_t map_index(size_t idx, const std::array<size_t, MAX_RANK>& strides) const {
+            if (!rank_) { return 0; }
+            size_t temp = idx;
+            size_t result = 0;
+            for (size_t i = rank_; i > 0; --i) {
+                size_t dim = i - 1;
+                size_t coord = temp % shape_[dim];
+                temp /= shape_[dim];
+                result += coord * strides[dim];
+            }
             return result;
         }
 
