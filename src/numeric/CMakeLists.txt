@@ -36,6 +36,10 @@ option(FEM_NUMERIC_USE_SANITIZERS "Enable address and UB sanitizers" OFF)
 option(FEM_NUMERIC_HEADER_ONLY "Use as header-only library" OFF)
 option(FEM_NUMERIC_ENABLE_SIMD "Enable SIMD optimizations" ON)
 option(FEM_NUMERIC_ENABLE_OPENMP "Enable OpenMP parallelization" OFF)
+if(NOT DEFINED TBB_FETCH)
+    option(TBB_FETCH "Automatically download oneTBB if missing" ON)
+endif()
+include(cmake/FetchTBB.cmake)
 
 # ============================================================================
 # C++ Standard and Compiler Settings
@@ -233,6 +237,8 @@ target_compile_definitions(fem_numeric INTERFACE
 #     target_link_libraries(fem_numeric PUBLIC Eigen3::Eigen)
 #     target_compile_definitions(fem_numeric PUBLIC FEM_HAS_EIGEN)
 # endif()
+
+target_link_libraries(fem_numeric INTERFACE TBB::tbb)
 
 # ============================================================================
 # Testing
