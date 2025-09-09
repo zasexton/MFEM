@@ -218,10 +218,8 @@ namespace fem::numeric::traits {
      */
     template<typename T>
     struct storage_requirements {
-        using storage_traits_type = storage_traits<DynamicStorage<T>>;
-
         static constexpr size_t bytes_per_element = sizeof(T);
-        static constexpr size_t alignment = storage_traits_type::alignment;
+        static constexpr size_t alignment = alignof(T);  // Use natural alignment of T
 
         static constexpr size_t bytes_needed(size_t n) noexcept {
             return n * bytes_per_element;
@@ -303,24 +301,36 @@ namespace fem::numeric::traits {
      */
     template<typename T>
     inline bool approximately_equal(T a, T b,
-                                    T tolerance = numeric_limits<T>::comparison_tolerance()) noexcept {
+                                   T tolerance = numeric_limits<T>::comparison_tolerance()) noexcept {
         if constexpr (std::is_floating_point_v<T>) {
-                // Handle special cases using base functions
-                if (is_nan(a) || is_nan(b)) return false;
-                if (is_inf(a) || is_inf(b)) return a == b;
+            // Handle special cases using base functions
+            if (is_nan(a) || is_nan(b)) return false;
+            if (is_inf(a) || is_inf(b)) return a == b;
 
-                // Use relative and absolute tolerance
-                T diff = std::abs(a - b);
-                T abs_a = std::abs(a);
-                T abs_b = std::abs(b);
-                T largest = (abs_b > abs_a) ? abs_b : abs_a;
+            // Check for exact equality first (handles 0.0 == 0.0)
+            if (a == b) return true;
 
-                return diff <= largest * tolerance ||
-                diff < std::numeric_limits<T>::min();
+            T diff = std::abs(a - b);
+            T abs_a = std::abs(a);
+            T abs_b = std::abs(b);
+
+            // Get the larger of the two absolute values
+            T largest = (abs_b > abs_a) ? abs_b : abs_a;
+
+            // If the largest value is smaller than the tolerance,
+            // we're dealing with values very close to zero where
+            // relative tolerance doesn't make sense.
+            // Use absolute tolerance instead.
+            if (largest <= tolerance) {
+                return diff <= tolerance;
+            }
+
+            // For normal-sized values, use relative tolerance
+            return diff <= largest * tolerance;
+
         } else if constexpr (is_complex_v<T>) {
-                using real_t = typename T::value_type;
-                return approximately_equal(a.real(), b.real(), tolerance.real()) &&
-                approximately_equal(a.imag(), b.imag(), tolerance.real());
+            return approximately_equal(a.real(), b.real(), tolerance.real()) &&
+                   approximately_equal(a.imag(), b.imag(), tolerance.real());
         } else {
             return a == b;  // Exact comparison for integers
         }
