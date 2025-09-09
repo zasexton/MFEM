@@ -14,6 +14,7 @@
 #include <any>
 #include <tuple>
 #include <memory>
+#include <optional>
 #include <iostream>
 #ifdef _OPENMP
 #include <omp.h>
@@ -292,30 +293,26 @@ namespace fem::numeric {
 
         // All combinations of lvalue/rvalue
         BinaryExpression(const LHS& lhs, const RHS& rhs, Op op = Op{})
-            : lhs_ptr_(&lhs), rhs_ptr_(&rhs),
-              op_(op), owns_lhs_(false), owns_rhs_(false) {
+            : lhs_ptr_(&lhs), rhs_ptr_(&rhs), op_(op) {
             shape_ = compute_broadcast_shape(lhs.shape(), rhs.shape());
         }
 
         BinaryExpression(LHS&& lhs, const RHS& rhs, Op op = Op{})
-            : lhs_storage_(std::make_unique<LHS>(std::move(lhs))),
-              lhs_ptr_(lhs_storage_.get()), rhs_ptr_(&rhs),
-              op_(op), owns_lhs_(true), owns_rhs_(false) {
+            : lhs_storage_(std::move(lhs)),
+              lhs_ptr_(&*lhs_storage_), rhs_ptr_(&rhs), op_(op) {
             shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs.shape());
         }
 
         BinaryExpression(const LHS& lhs, RHS&& rhs, Op op = Op{})
-            : rhs_storage_(std::make_unique<RHS>(std::move(rhs))),
-              lhs_ptr_(&lhs), rhs_ptr_(rhs_storage_.get()),
-              op_(op), owns_lhs_(false), owns_rhs_(true) {
+            : rhs_storage_(std::move(rhs)),
+              lhs_ptr_(&lhs), rhs_ptr_(&*rhs_storage_), op_(op) {
             shape_ = compute_broadcast_shape(lhs.shape(), rhs_ptr_->shape());
         }
 
         BinaryExpression(LHS&& lhs, RHS&& rhs, Op op = Op{})
-            : lhs_storage_(std::make_unique<LHS>(std::move(lhs))),
-              rhs_storage_(std::make_unique<RHS>(std::move(rhs))),
-              lhs_ptr_(lhs_storage_.get()), rhs_ptr_(rhs_storage_.get()),
-              op_(op), owns_lhs_(true), owns_rhs_(true) {
+            : lhs_storage_(std::move(lhs)),
+              rhs_storage_(std::move(rhs)),
+              lhs_ptr_(&*lhs_storage_), rhs_ptr_(&*rhs_storage_), op_(op) {
             shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs_ptr_->shape());
         }
 
@@ -384,14 +381,12 @@ namespace fem::numeric {
         }
 
     private:
-        std::unique_ptr<LHS> lhs_storage_;
-        std::unique_ptr<RHS> rhs_storage_;
+        std::optional<std::decay_t<LHS>> lhs_storage_;
+        std::optional<std::decay_t<RHS>> rhs_storage_;
         const LHS* lhs_ptr_;
         const RHS* rhs_ptr_;
         Op op_;
         Shape shape_;
-        bool owns_lhs_;
-        bool owns_rhs_;
 
         const LHS& lhs() const { return *lhs_ptr_; }
         const RHS& rhs() const { return *rhs_ptr_; }
