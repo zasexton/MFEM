@@ -93,94 +93,156 @@ get_target_property(NUMERIC_INCLUDE_DIRS fem::numeric INTERFACE_INCLUDE_DIRECTOR
 message(STATUS "FEM Numeric include directories: ${NUMERIC_INCLUDE_DIRS}")
 
 # ============================================================================
-# Automatically Discover and Add Tests
+# Function to Add Unit Tests with Proper Naming and Organization
 # ============================================================================
 
-# Function to recursively add test files
-function(add_test_directory TEST_DIR)
-    # Get all test files in this directory and subdirectories
-    file(GLOB_RECURSE TEST_FILES
-            RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-            CONFIGURE_DEPENDS
-            "${TEST_DIR}/${TEST_FILE_PATTERN}"
+function(add_unit_test_executable TEST_CATEGORY TEST_NAME TEST_FILE)
+    # Create the standardized test executable name
+    set(TEST_EXEC_NAME "unit_${TEST_CATEGORY}_${TEST_NAME}")
+
+    # Skip if already added
+    if(TARGET ${TEST_EXEC_NAME})
+        return()
+    endif()
+
+    # Create test executable
+    add_executable(${TEST_EXEC_NAME} ${TEST_FILE})
+
+    # Set output directory to mirror test structure
+    set_target_properties(${TEST_EXEC_NAME} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/${TEST_CATEGORY}"
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/tests/unit/${TEST_CATEGORY}"
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/tests/unit/${TEST_CATEGORY}"
+            RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/tests/unit/${TEST_CATEGORY}"
+            RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/tests/unit/${TEST_CATEGORY}"
     )
 
-    foreach(TEST_FILE ${TEST_FILES})
-        # Extract test name from file path
-        get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
-        get_filename_component(TEST_PATH ${TEST_FILE} DIRECTORY)
+    # Link with test utilities
+    target_link_libraries(${TEST_EXEC_NAME} PRIVATE fem_numeric_test_utils)
 
-        # Create hierarchical test name based on path
-        string(REPLACE "/" "_" TEST_PATH_NAME ${TEST_PATH})
-        if(TEST_PATH_NAME)
-            set(FULL_TEST_NAME "test_${TEST_PATH_NAME}_${TEST_NAME}")
-        else()
-            set(FULL_TEST_NAME "test_${TEST_NAME}")
-        endif()
+    # Add coverage flags if enabled
+    if(FEM_NUMERIC_ENABLE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${TEST_EXEC_NAME} PRIVATE
+                --coverage
+                -fprofile-arcs
+                -ftest-coverage
+                -g
+                -O0
+        )
+        target_link_options(${TEST_EXEC_NAME} PRIVATE
+                --coverage
+                -fprofile-arcs
+                -ftest-coverage
+        )
+    endif()
 
-        # Skip if already added
-        if(NOT TARGET ${FULL_TEST_NAME})
-            # Create test executable
-            add_executable(${FULL_TEST_NAME} ${TEST_FILE})
+    # Add compile options
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${TEST_EXEC_NAME} PRIVATE
+                -Wno-unused-variable
+                -Wno-unused-parameter
+        )
+    endif()
 
-            # Link with test utilities
-            target_link_libraries(${FULL_TEST_NAME} PRIVATE fem_numeric_test_utils)
+    # Register with CTest
+    add_test(NAME ${TEST_EXEC_NAME}
+            COMMAND ${TEST_EXEC_NAME}
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
-            # Add compile options
-            if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-                target_compile_options(${FULL_TEST_NAME} PRIVATE
-                        -Wno-unused-variable
-                        -Wno-unused-parameter
-                )
-            endif()
+    # Set test properties
+    set_tests_properties(${TEST_EXEC_NAME} PROPERTIES
+            TIMEOUT 30
+            LABELS "numeric;unit/${TEST_CATEGORY}"
+    )
 
-            # Register with CTest
-            add_test(NAME ${FULL_TEST_NAME} COMMAND ${FULL_TEST_NAME})
+    # Organize in IDE
+    set_target_properties(${TEST_EXEC_NAME} PROPERTIES
+            FOLDER "Tests/unit/${TEST_CATEGORY}"
+    )
 
-            # Set test properties
-            set_tests_properties(${FULL_TEST_NAME} PROPERTIES
-                    TIMEOUT 30
-                    LABELS "numeric;${TEST_PATH}"
-                    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            )
+    # Add to global test list
+    list(APPEND ALL_TEST_TARGETS ${TEST_EXEC_NAME})
+    set(ALL_TEST_TARGETS ${ALL_TEST_TARGETS} PARENT_SCOPE)
 
-            # Organize in IDE
-            string(REPLACE "/" "\\" TEST_GROUP "Tests/${TEST_PATH}")
-            set_target_properties(${FULL_TEST_NAME} PROPERTIES
-                    FOLDER "${TEST_GROUP}"
-            )
-
-            # Add to test list for collective targets
-            list(APPEND ALL_TEST_TARGETS ${FULL_TEST_NAME})
-            set(ALL_TEST_TARGETS ${ALL_TEST_TARGETS} PARENT_SCOPE)
-        endif()
-    endforeach()
+    # Add to category-specific list
+    list(APPEND ${TEST_CATEGORY}_TEST_TARGETS ${TEST_EXEC_NAME})
+    set(${TEST_CATEGORY}_TEST_TARGETS ${${TEST_CATEGORY}_TEST_TARGETS} PARENT_SCOPE)
 endfunction()
 
 # ============================================================================
-# Discover All Test Files
+# Discover and Add Tests
 # ============================================================================
 
-# Clear test target list
+# Clear test target lists
 set(ALL_TEST_TARGETS "")
+set(TEST_CATEGORIES "")
 
-# Automatically discover test directories
-file(GLOB TEST_DIRECTORIES
-        LIST_DIRECTORIES true
-        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-        CONFIGURE_DEPENDS
-        "*"
-)
+# Function to process a test directory
+function(process_test_directory BASE_DIR CATEGORY)
+    # Find all test files in this category
+    file(GLOB TEST_FILES
+            CONFIGURE_DEPENDS
+            "${BASE_DIR}/${CATEGORY}/${TEST_FILE_PATTERN}"
+    )
 
-# Add tests from each directory
-foreach(DIR ${TEST_DIRECTORIES})
-    if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${DIR} AND NOT DIR STREQUAL "CMakeFiles")
-        add_test_directory(${DIR})
+    if(TEST_FILES)
+        message(STATUS "  Found ${CATEGORY} tests:")
+        list(APPEND TEST_CATEGORIES ${CATEGORY})
+        set(TEST_CATEGORIES ${TEST_CATEGORIES} PARENT_SCOPE)
+
+        foreach(TEST_FILE ${TEST_FILES})
+            get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
+            message(STATUS "    - ${TEST_NAME}")
+            add_unit_test_executable(${CATEGORY} ${TEST_NAME} ${TEST_FILE})
+        endforeach()
     endif()
-endforeach()
+endfunction()
 
-# Also check for test files in the root test directory
-add_test_directory(".")
+# Look for unit test structure
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/unit")
+    message(STATUS "Discovering unit tests in ${CMAKE_CURRENT_SOURCE_DIR}/unit:")
+
+    # Get all subdirectories in unit/
+    file(GLOB UNIT_SUBDIRS
+            LIST_DIRECTORIES true
+            CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/unit/*"
+    )
+
+    foreach(SUBDIR ${UNIT_SUBDIRS})
+        if(IS_DIRECTORY ${SUBDIR})
+            get_filename_component(CATEGORY ${SUBDIR} NAME)
+            if(NOT CATEGORY STREQUAL "CMakeFiles")
+                process_test_directory("${CMAKE_CURRENT_SOURCE_DIR}/unit" ${CATEGORY})
+            endif()
+        endif()
+    endforeach()
+else()
+    # Fallback: Look for any test structure
+    message(STATUS "No unit/ directory found, searching for test files in current directory")
+
+    # Search for directories that might contain tests
+    file(GLOB TEST_DIRS
+            LIST_DIRECTORIES true
+            CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/*"
+    )
+
+    foreach(DIR ${TEST_DIRS})
+        if(IS_DIRECTORY ${DIR})
+            get_filename_component(CATEGORY ${DIR} NAME)
+            if(NOT CATEGORY STREQUAL "CMakeFiles" AND
+                    NOT CATEGORY STREQUAL "include" AND
+                    NOT CATEGORY STREQUAL "data")
+                # Check if this directory contains test files
+                file(GLOB TEST_FILES "${DIR}/${TEST_FILE_PATTERN}")
+                if(TEST_FILES)
+                    process_test_directory(${CMAKE_CURRENT_SOURCE_DIR} ${CATEGORY})
+                endif()
+            endif()
+        endif()
+    endforeach()
+endif()
 
 # ============================================================================
 # Create Aggregate Test Targets
@@ -188,6 +250,12 @@ add_test_directory(".")
 
 # Create target to build all tests
 if(ALL_TEST_TARGETS)
+    add_custom_target(build_all_tests
+            DEPENDS ${ALL_TEST_TARGETS}
+            COMMENT "Building all FEM Numeric tests"
+    )
+
+    # Also create the original target name for compatibility
     add_custom_target(fem_numeric_build_tests
             DEPENDS ${ALL_TEST_TARGETS}
             COMMENT "Building all FEM Numeric tests"
@@ -195,6 +263,17 @@ if(ALL_TEST_TARGETS)
 endif()
 
 # Create target to run all tests
+add_custom_target(run_all_tests
+        COMMAND ${CMAKE_CTEST_COMMAND}
+        --output-on-failure
+        --parallel ${CMAKE_BUILD_PARALLEL_LEVEL}
+        -R "^unit_"
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running all unit tests"
+        DEPENDS ${ALL_TEST_TARGETS}
+)
+
+# Also create the original target name for compatibility
 add_custom_target(fem_numeric_run_tests
         COMMAND ${CMAKE_CTEST_COMMAND}
         --output-on-failure
@@ -202,8 +281,23 @@ add_custom_target(fem_numeric_run_tests
         -L numeric
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running all FEM Numeric tests"
-        DEPENDS fem_numeric_build_tests
+        DEPENDS ${ALL_TEST_TARGETS}
 )
+
+# Create category-specific test targets
+foreach(CATEGORY ${TEST_CATEGORIES})
+    if(${CATEGORY}_TEST_TARGETS)
+        add_custom_target(run_${CATEGORY}_tests
+                COMMAND ${CMAKE_CTEST_COMMAND}
+                --output-on-failure
+                --parallel ${CMAKE_BUILD_PARALLEL_LEVEL}
+                -R "^unit_${CATEGORY}_"
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Running ${CATEGORY} unit tests"
+                DEPENDS ${${CATEGORY}_TEST_TARGETS}
+        )
+    endif()
+endforeach()
 
 # Quick test target (runs a subset of fast tests)
 add_custom_target(fem_numeric_quick_tests
@@ -218,7 +312,7 @@ add_custom_target(fem_numeric_quick_tests
 )
 
 # ============================================================================
-# Test Coverage
+# Test Coverage Configuration
 # ============================================================================
 
 if(FEM_NUMERIC_ENABLE_COVERAGE)
@@ -227,76 +321,55 @@ if(FEM_NUMERIC_ENABLE_COVERAGE)
         find_program(GCOV_EXECUTABLE gcov)
         find_program(LCOV_EXECUTABLE lcov)
         find_program(GENHTML_EXECUTABLE genhtml)
-        find_program(GCOVR_EXECUTABLE gcovr)
 
-        # Check what's missing and provide installation instructions
-        set(MISSING_COVERAGE_TOOLS "")
+        if(LCOV_EXECUTABLE AND GENHTML_EXECUTABLE)
+            # Create coverage target
+            add_custom_target(coverage
+                    # Clean previous coverage
+                    COMMAND ${CMAKE_COMMAND} -E remove_directory coverage_html
+                    COMMAND find . -name "*.gcda" -delete
 
-        if(NOT GCOV_EXECUTABLE)
-            list(APPEND MISSING_COVERAGE_TOOLS "gcov")
-        endif()
+                    # Run tests
+                    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
 
-        if(NOT LCOV_EXECUTABLE)
-            list(APPEND MISSING_COVERAGE_TOOLS "lcov")
-        endif()
+                    # Capture coverage
+                    COMMAND ${LCOV_EXECUTABLE} --capture --directory . --output-file coverage.info --gcov-tool ${GCOV_EXECUTABLE}
 
-        if(NOT GENHTML_EXECUTABLE)
-            list(APPEND MISSING_COVERAGE_TOOLS "genhtml (part of lcov)")
-        endif()
+                    # Filter out system and test files
+                    COMMAND ${LCOV_EXECUTABLE} --remove coverage.info '/usr/*' '*/test/*' '*/tests/*' '*/_deps/*' --output-file coverage.filtered.info
 
-        if(MISSING_COVERAGE_TOOLS)
-            message(WARNING "Coverage enabled but missing tools: ${MISSING_COVERAGE_TOOLS}")
-            message(STATUS "")
-            message(STATUS "To install missing coverage tools:")
+                    # Generate HTML report
+                    COMMAND ${GENHTML_EXECUTABLE} coverage.filtered.info --output-directory coverage_html --title "FEM Numeric Coverage" --legend --show-details
 
-            # Detect the system and provide appropriate instructions
-            if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-                # Try to detect the distribution
-                if(EXISTS "/etc/debian_version")
-                    message(STATUS "  Ubuntu/Debian: sudo apt-get install lcov")
-                elseif(EXISTS "/etc/redhat-release")
-                    message(STATUS "  RHEL/CentOS/Fedora: sudo dnf install lcov")
-                elseif(EXISTS "/etc/arch-release")
-                    message(STATUS "  Arch Linux: sudo pacman -S lcov")
-                elseif(EXISTS "/etc/alpine-release")
-                    message(STATUS "  Alpine Linux: sudo apk add lcov")
-                else()
-                    message(STATUS "  Linux: Install 'lcov' using your package manager")
-                endif()
-            elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-                message(STATUS "  macOS: brew install lcov")
-            elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-                message(STATUS "  Windows: Install lcov from: https://github.com/linux-test-project/lcov")
-                message(STATUS "           Or use gcovr instead: pip install gcovr")
-            endif()
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Generating code coverage report"
+                    DEPENDS ${ALL_TEST_TARGETS}
+            )
 
-            message(STATUS "")
-            message(STATUS "Alternative: Install gcovr (Python-based, cross-platform):")
-            message(STATUS "  pip install gcovr")
-            message(STATUS "")
+            # Category-specific coverage targets
+            foreach(CATEGORY ${TEST_CATEGORIES})
+                add_custom_target(coverage_${CATEGORY}
+                        COMMAND ${CMAKE_COMMAND} -E remove_directory coverage_${CATEGORY}_html
+                        COMMAND find . -path "*/unit/${CATEGORY}/*" -name "*.gcda" -delete
+                        COMMAND ${CMAKE_CTEST_COMMAND} -R "^unit_${CATEGORY}_" --output-on-failure
+                        COMMAND ${LCOV_EXECUTABLE} --capture --directory . --output-file coverage_${CATEGORY}.info --gcov-tool ${GCOV_EXECUTABLE}
+                        COMMAND ${LCOV_EXECUTABLE} --extract coverage_${CATEGORY}.info "*/${CATEGORY}/*.h" "*/${CATEGORY}/*.hpp" --output-file coverage_${CATEGORY}.filtered.info
+                        COMMAND ${GENHTML_EXECUTABLE} coverage_${CATEGORY}.filtered.info --output-directory coverage_${CATEGORY}_html --title "${CATEGORY} Coverage" --legend --show-details
+                        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                        COMMENT "Generating ${CATEGORY} coverage report"
+                        DEPENDS ${${CATEGORY}_TEST_TARGETS}
+                )
+            endforeach()
 
-            # Optionally disable coverage if tools are missing
-            option(FEM_NUMERIC_FORCE_COVERAGE "Force coverage even with missing tools" OFF)
-            if(NOT FEM_NUMERIC_FORCE_COVERAGE)
-                message(STATUS "Disabling coverage due to missing tools. Set FEM_NUMERIC_FORCE_COVERAGE=ON to override.")
-                set(FEM_NUMERIC_ENABLE_COVERAGE OFF CACHE BOOL "Enable code coverage" FORCE)
-            endif()
+            message(STATUS "Coverage targets available: 'make coverage' and 'make coverage_<category>'")
         else()
-            message(STATUS "All coverage tools found")
-        endif()
-
-        # Only set flags if we're still doing coverage
-        if(FEM_NUMERIC_ENABLE_COVERAGE)
-            set(COVERAGE_FLAGS "--coverage -fprofile-arcs -ftest-coverage")
-            set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${COVERAGE_FLAGS}")
-            set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${COVERAGE_FLAGS}")
-            set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${COVERAGE_FLAGS}")
+            message(WARNING "Coverage enabled but lcov/genhtml not found. Coverage targets will not be available.")
         endif()
     endif()
 endif()
 
 # ============================================================================
-# Memory Check (Valgrind)
+# Memory Check (Valgrind) - From Original
 # ============================================================================
 
 if(FEM_NUMERIC_ENABLE_MEMCHECK)
@@ -337,20 +410,53 @@ if(FEM_NUMERIC_ENABLE_MEMCHECK)
                 CACHE STRING "Valgrind options"
         )
         include(CTest)
+
+        # Create memory check target for all tests
+        add_custom_target(memcheck
+                COMMAND ${CMAKE_CTEST_COMMAND} -T memcheck
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Running tests with Valgrind memory checking"
+                DEPENDS ${ALL_TEST_TARGETS}
+        )
+
+        # Category-specific memory check targets
+        foreach(CATEGORY ${TEST_CATEGORIES})
+            add_custom_target(memcheck_${CATEGORY}
+                    COMMAND ${CMAKE_CTEST_COMMAND} -T memcheck -R "^unit_${CATEGORY}_"
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                    COMMENT "Running ${CATEGORY} tests with Valgrind"
+                    DEPENDS ${${CATEGORY}_TEST_TARGETS}
+            )
+        endforeach()
     endif()
 endif()
 
 # ============================================================================
-# Benchmarks Support
+# Benchmarks Support - From Original
 # ============================================================================
 
 if(FEM_NUMERIC_BUILD_BENCHMARKS)
-    # Check for benchmark files
-    file(GLOB_RECURSE BENCHMARK_FILES
-            CONFIGURE_DEPENDS
-            "*benchmark*.cpp"
-            "*bench*.cpp"
-    )
+    # Check for benchmark files in unit test directories
+    set(BENCHMARK_FILES "")
+
+    # Search for benchmarks in unit test structure
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/unit")
+        file(GLOB_RECURSE BENCHMARK_FILES_UNIT
+                CONFIGURE_DEPENDS
+                "${CMAKE_CURRENT_SOURCE_DIR}/unit/*benchmark*.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/unit/*bench*.cpp"
+        )
+        list(APPEND BENCHMARK_FILES ${BENCHMARK_FILES_UNIT})
+    endif()
+
+    # Also search in benchmarks directory if it exists
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks")
+        file(GLOB_RECURSE BENCHMARK_FILES_DEDICATED
+                CONFIGURE_DEPENDS
+                "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/*.cpp"
+        )
+        list(APPEND BENCHMARK_FILES ${BENCHMARK_FILES_DEDICATED})
+    endif()
 
     if(BENCHMARK_FILES)
         # Fetch Google Benchmark if needed
@@ -364,43 +470,89 @@ if(FEM_NUMERIC_BUILD_BENCHMARKS)
         set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(googlebenchmark)
 
+        set(BENCHMARK_TARGETS "")
+
         # Add each benchmark
         foreach(BENCH_FILE ${BENCHMARK_FILES})
             get_filename_component(BENCH_NAME ${BENCH_FILE} NAME_WE)
-            add_executable(${BENCH_NAME} ${BENCH_FILE})
-            target_link_libraries(${BENCH_NAME} PRIVATE
+            get_filename_component(BENCH_DIR ${BENCH_FILE} DIRECTORY)
+            get_filename_component(BENCH_CATEGORY ${BENCH_DIR} NAME)
+
+            # Create benchmark executable with naming convention
+            set(BENCH_EXEC_NAME "benchmark_${BENCH_CATEGORY}_${BENCH_NAME}")
+
+            add_executable(${BENCH_EXEC_NAME} ${BENCH_FILE})
+
+            # Set output directory for benchmarks
+            set_target_properties(${BENCH_EXEC_NAME} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks/${BENCH_CATEGORY}"
+                    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/benchmarks/${BENCH_CATEGORY}"
+                    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/benchmarks/${BENCH_CATEGORY}"
+            )
+
+            target_link_libraries(${BENCH_EXEC_NAME} PRIVATE
                     fem::numeric
                     benchmark::benchmark
                     benchmark::benchmark_main
             )
 
             # Register as test for CTest
-            add_test(NAME ${BENCH_NAME} COMMAND ${BENCH_NAME})
-            set_tests_properties(${BENCH_NAME} PROPERTIES
-                    LABELS "numeric;benchmark"
+            add_test(NAME ${BENCH_EXEC_NAME} COMMAND ${BENCH_EXEC_NAME})
+            set_tests_properties(${BENCH_EXEC_NAME} PROPERTIES
+                    LABELS "numeric;benchmark;${BENCH_CATEGORY}"
                     TIMEOUT 300
             )
+
+            list(APPEND BENCHMARK_TARGETS ${BENCH_EXEC_NAME})
         endforeach()
 
         # Create target to run all benchmarks
+        add_custom_target(run_benchmarks
+                COMMAND ${CMAKE_CTEST_COMMAND} -L benchmark --verbose
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Running FEM Numeric benchmarks"
+                DEPENDS ${BENCHMARK_TARGETS}
+        )
+
+        # Also keep original target name for compatibility
         add_custom_target(fem_numeric_benchmarks
                 COMMAND ${CMAKE_CTEST_COMMAND} -L benchmark --verbose
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 COMMENT "Running FEM Numeric benchmarks"
+                DEPENDS ${BENCHMARK_TARGETS}
         )
+
+        message(STATUS "  Benchmarks:            ${BENCHMARK_TARGETS}")
     endif()
 endif()
 
 # ============================================================================
-# Test Installation (optional)
+# Test Installation - From Original
 # ============================================================================
 
 option(FEM_NUMERIC_INSTALL_TESTS "Install test executables" OFF)
 
 if(FEM_NUMERIC_INSTALL_TESTS)
-    install(TARGETS ${ALL_TEST_TARGETS}
-            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/tests/numeric
-    )
+    # Install test executables preserving directory structure
+    foreach(TEST_TARGET ${ALL_TEST_TARGETS})
+        # Extract category from target name (unit_<category>_<test>)
+        string(REGEX REPLACE "^unit_([^_]+)_.*" "\\1" TEST_CATEGORY ${TEST_TARGET})
+
+        install(TARGETS ${TEST_TARGET}
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/tests/numeric/unit/${TEST_CATEGORY}
+        )
+    endforeach()
+
+    # Install benchmark executables if they exist
+    if(BENCHMARK_TARGETS)
+        foreach(BENCH_TARGET ${BENCHMARK_TARGETS})
+            string(REGEX REPLACE "^benchmark_([^_]+)_.*" "\\1" BENCH_CATEGORY ${BENCH_TARGET})
+
+            install(TARGETS ${BENCH_TARGET}
+                    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/tests/numeric/benchmarks/${BENCH_CATEGORY}
+            )
+        endforeach()
+    endif()
 
     # Install test data if it exists
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data)
@@ -408,25 +560,117 @@ if(FEM_NUMERIC_INSTALL_TESTS)
                 DESTINATION ${CMAKE_INSTALL_DATADIR}/fem_numeric/test_data
         )
     endif()
+
+    # Create a test runner script
+    file(WRITE ${CMAKE_BINARY_DIR}/run_installed_tests.sh
+            "#!/bin/bash
+# Run installed FEM Numeric tests
+TEST_DIR=\"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/tests/numeric\"
+if [ -d \"\$TEST_DIR\" ]; then
+    echo \"Running tests from \$TEST_DIR\"
+    find \"\$TEST_DIR\" -type f -executable -exec {} \\;
+else
+    echo \"Test directory not found: \$TEST_DIR\"
+    exit 1
+fi
+")
+
+    install(PROGRAMS ${CMAKE_BINARY_DIR}/run_installed_tests.sh
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            RENAME fem_numeric_run_tests
+    )
 endif()
 
 # ============================================================================
-# Status Output
+# Status Output - Enhanced from Original
 # ============================================================================
 
 if(NOT DEFINED FEM_NUMERIC_QUIET_TESTS)
-    message(STATUS "FEM Numeric Tests Configuration:")
-    message(STATUS "  Test Framework:    ${FEM_NUMERIC_TEST_FRAMEWORK}")
-    message(STATUS "  Test Files Found:  ${CMAKE_CURRENT_SOURCE_DIR}")
+    message(STATUS "")
+    message(STATUS "================================================================================")
+    message(STATUS "FEM Numeric Tests Configuration Summary")
+    message(STATUS "================================================================================")
+    message(STATUS "  Test Framework:        ${FEM_NUMERIC_TEST_FRAMEWORK}")
+    message(STATUS "  Test Directory:        ${CMAKE_CURRENT_SOURCE_DIR}")
+    message(STATUS "  Output Directory:      ${CMAKE_BINARY_DIR}/tests/unit/<category>/")
+    message(STATUS "  Naming Convention:     unit_<category>_<test>")
+    message(STATUS "")
+
+    if(TEST_CATEGORIES)
+        message(STATUS "  Test Categories Found:")
+        foreach(CATEGORY ${TEST_CATEGORIES})
+            list(LENGTH ${CATEGORY}_TEST_TARGETS CATEGORY_COUNT)
+            message(STATUS "    - ${CATEGORY}: ${CATEGORY_COUNT} tests")
+        endforeach()
+    endif()
 
     list(LENGTH ALL_TEST_TARGETS NUM_TESTS)
-    message(STATUS "  Number of Tests:   ${NUM_TESTS}")
+    message(STATUS "  Total Test Count:      ${NUM_TESTS}")
+    message(STATUS "")
+
+    message(STATUS "  Features:")
 
     if(FEM_NUMERIC_ENABLE_COVERAGE)
-        message(STATUS "  Coverage:          ENABLED")
+        message(STATUS "    ✓ Coverage:          ENABLED")
+        if(LCOV_EXECUTABLE)
+            message(STATUS "      Tool:              lcov ${LCOV_VERSION}")
+        endif()
+        message(STATUS "      Targets:")
+        message(STATUS "        make coverage                   - Full coverage report")
+        foreach(CATEGORY ${TEST_CATEGORIES})
+            message(STATUS "        make coverage_${CATEGORY}            - ${CATEGORY} coverage only")
+        endforeach()
+    else()
+        message(STATUS "    ✗ Coverage:          DISABLED")
     endif()
 
-    if(VALGRIND)
-        message(STATUS "  Memory Checking:   Available (valgrind)")
+    if(FEM_NUMERIC_ENABLE_MEMCHECK AND VALGRIND_EXECUTABLE)
+        message(STATUS "    ✓ Memory Checking:   ENABLED (Valgrind)")
+        message(STATUS "      Targets:")
+        message(STATUS "        make memcheck                   - Check all tests")
+        foreach(CATEGORY ${TEST_CATEGORIES})
+            message(STATUS "        make memcheck_${CATEGORY}            - Check ${CATEGORY} tests")
+        endforeach()
+    else()
+        message(STATUS "    ✗ Memory Checking:   DISABLED")
     endif()
+
+    if(FEM_NUMERIC_BUILD_BENCHMARKS AND BENCHMARK_TARGETS)
+        list(LENGTH BENCHMARK_TARGETS NUM_BENCHMARKS)
+        message(STATUS "    ✓ Benchmarks:        ENABLED (${NUM_BENCHMARKS} found)")
+        message(STATUS "      Target: make run_benchmarks")
+    else()
+        message(STATUS "    ✗ Benchmarks:        DISABLED or none found")
+    endif()
+
+    if(FEM_NUMERIC_INSTALL_TESTS)
+        message(STATUS "    ✓ Test Installation: ENABLED")
+        message(STATUS "      Install to: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/tests/numeric/")
+    else()
+        message(STATUS "    ✗ Test Installation: DISABLED")
+    endif()
+
+    message(STATUS "")
+    message(STATUS "  Available Targets:")
+    message(STATUS "    make build_all_tests         - Build all test executables")
+    message(STATUS "    make run_all_tests           - Run all tests")
+
+    foreach(CATEGORY ${TEST_CATEGORIES})
+        message(STATUS "    make run_${CATEGORY}_tests          - Run ${CATEGORY} tests only")
+    endforeach()
+
+    if(FEM_NUMERIC_ENABLE_COVERAGE AND LCOV_EXECUTABLE)
+        message(STATUS "    make coverage                - Generate full coverage report")
+    endif()
+
+    if(FEM_NUMERIC_ENABLE_MEMCHECK AND VALGRIND_EXECUTABLE)
+        message(STATUS "    make memcheck                - Run tests with memory checking")
+    endif()
+
+    if(BENCHMARK_TARGETS)
+        message(STATUS "    make run_benchmarks          - Run performance benchmarks")
+    endif()
+
+    message(STATUS "================================================================================")
+    message(STATUS "")
 endif()
