@@ -17,6 +17,7 @@
 #include <iostream>
 #include <array>
 #include <stdexcept>
+#include <optional>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -147,11 +148,11 @@ namespace fem::numeric {
 
         // Constructor for lvalue references - stores reference
         explicit TerminalExpression(const Container& data)
-            : data_ptr_(&data), owns_data_(false) {}
+            : data_ptr_(&data) {}
 
         // Constructor for rvalue references - moves data
         explicit TerminalExpression(Container&& data)
-            : owned_data_(std::move(data)), data_ptr_(&owned_data_), owns_data_(true) {}
+            : owned_data_(std::move(data)), data_ptr_(&*owned_data_) {}
 
         Shape shape() const { return data().shape(); }
 
@@ -187,11 +188,11 @@ namespace fem::numeric {
         size_t complexity() const noexcept { return data().size(); }
 
         const Container& data() const {
-            return owns_data_ ? owned_data_ : *data_ptr_;
+            return owned_data_ ? *owned_data_ : *data_ptr_;
         }
 
     private:
-        Container owned_data_;  // Storage for moved/copied data (used when owns_data_ is true)
+        std::optional<Container> owned_data_;  // Storage for moved/copied data when owning
         const Container* data_ptr_;  // Pointer to either owned_data_ or external data
         bool owns_data_;  // Whether we own the data
     };
