@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <memory>
 #include <concepts>
+#include <cstring>  // Added for std::memcpy
 
 #include "../base/iterator_base.h"
 #include "../base/numeric_base.h"
@@ -76,6 +77,20 @@ namespace fem::numeric::traits {
     template<typename T>
     inline constexpr bool is_iterator_v = is_iterator<T>::value;
 
+    // Forward declarations for template variables
+    template<typename Iterator>
+    inline constexpr bool is_checked_iterator_v = false;
+
+    template<typename Iterator>
+    inline constexpr bool is_multidim_iterator_v = false;
+
+    // Specializations for our custom iterator types
+    template<typename BaseIt>
+    inline constexpr bool is_checked_iterator_v<fem::numeric::CheckedIterator<BaseIt>> = true;
+
+    template<typename T, size_t Rank>
+    inline constexpr bool is_multidim_iterator_v<fem::numeric::MultiDimIterator<T, Rank>> = true;
+
     /**
      * @brief Detect iterator category with numeric extensions
      * Builds upon numeric_iterator_traits from iterator_base.h
@@ -86,23 +101,23 @@ namespace fem::numeric::traits {
         using base_traits = numeric_iterator_traits<Iterator>;
 
         static constexpr NumericIteratorCategory value = [] {
+            // Check for pointers first (always contiguous)
+            if constexpr (std::is_pointer_v<Iterator>) {
+                return NumericIteratorCategory::Contiguous;
+            }
             // Check for our custom iterator types from iterator_base.h
-            if constexpr (base_traits::is_contiguous) {
+            else if constexpr (base_traits::is_contiguous) {
                 return NumericIteratorCategory::Contiguous;
             }
             else if constexpr (base_traits::is_strided) {
                 return NumericIteratorCategory::Strided;
             }
             // Check for MultiDimIterator
-            else if constexpr (requires {
-                        typename Iterator::index_type;
-                        std::declval<Iterator>().indices();}) {
+            else if constexpr (is_multidim_iterator_v<Iterator>) {
                 return NumericIteratorCategory::Indexed;
             }
             // Check for CheckedIterator
-            else if constexpr (requires(Iterator it) {
-                                it.base();  // CheckedIterator has base() method
-                                requires std::is_same_v<decltype(it.base()), typename Iterator::iterator>;}) {
+            else if constexpr (is_checked_iterator_v<Iterator>) {
                 return NumericIteratorCategory::Checked;
             }
             // Check for contiguous iterator (C++20)
@@ -148,15 +163,87 @@ namespace fem::numeric::traits {
     template<typename Iterator>
     inline constexpr bool is_random_access_iterator_v = is_random_access_iterator<Iterator>::value;
 
+
+
     /**
      * @brief Check if iterator points to contiguous memory
      */
     template<typename Iterator>
     struct is_contiguous_iterator {
-        static constexpr bool value =
-                numeric_iterator_traits<Iterator>::is_contiguous ||
-                numeric_iterator_category_v<Iterator> == NumericIteratorCategory::Contiguous ||
-                std::is_pointer_v<Iterator>;
+    private:
+        // Helper to check if iterator behaves like it points to contiguous memory
+        // This is a heuristic for pre-C++20 code
+        template<typename It>
+        static constexpr bool has_contiguous_behavior() {
+            if constexpr (std::is_pointer_v<It>) {
+                return true;
+            }
+            // Random access iterators from vector/array are typically contiguous
+            // This is a reasonable assumption for standard library implementations
+            else if constexpr (std::is_same_v<typename std::iterator_traits<It>::iterator_category,
+                                            std::random_access_iterator_tag> ||
+                             std::is_base_of_v<std::random_access_iterator_tag,
+                                             typename std::iterator_traits<It>::iterator_category>) {
+                // Additional check: if we can get a pointer and the value type is trivial,
+                // it's very likely contiguous (covers vector, array, string iterators)
+                if constexpr (requires(It it) {
+                    { &(*it) } -> std::convertible_to<typename std::iterator_traits<It>::pointer>;
+                }) {
+                    // For trivially copyable types with random access, assume contiguous
+                    // This is true for std::vector and std::array in practice
+                    if constexpr (std::is_trivially_copyable_v<typename std::iterator_traits<It>::value_type>) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+    public:
+        static constexpr bool value = [] {
+            // Check if it's a pointer (always contiguous)
+            if constexpr (std::is_pointer_v<Iterator>) {
+                return true;
+            }
+            // Check numeric_iterator_traits from base first
+            else if constexpr (numeric_iterator_traits<Iterator>::is_contiguous) {
+                return true;
+            }
+            // Check our custom numeric category (but avoid circular dependency)
+            else if constexpr (requires {
+                numeric_iterator_category<Iterator>::value;
+            }) {
+                // Only check if the category is already determined to be Contiguous
+                // from other sources (not from is_contiguous_iterator itself)
+                using base_traits = numeric_iterator_traits<Iterator>;
+                if constexpr (base_traits::is_contiguous) {
+                    return true;
+                }
+            }
+            // For C++20, use the contiguous_iterator concept if available
+            #ifdef __cpp_lib_concepts
+            #if __cpp_lib_concepts >= 202002L
+            else if constexpr (requires { std::contiguous_iterator<Iterator>; }) {
+                if constexpr (std::contiguous_iterator<Iterator>) {
+                    return true;
+                }
+            }
+            #endif
+            #endif
+            // Check for C++20 contiguous_iterator_tag if available
+            else if constexpr (requires { typename std::contiguous_iterator_tag; }) {
+                using cat = typename std::iterator_traits<Iterator>::iterator_category;
+                if constexpr (std::is_base_of_v<std::contiguous_iterator_tag, cat>) {
+                    return true;
+                }
+            }
+            // Heuristic for pre-C++20: assume standard random access iterators are contiguous
+            else if constexpr (has_contiguous_behavior<Iterator>()) {
+                return true;
+            }
+
+            return false;
+        }();
     };
 
     template<typename Iterator>
@@ -184,12 +271,12 @@ namespace fem::numeric::traits {
     template<typename Iterator>
     struct iterator_stride {
         static constexpr std::ptrdiff_t value = [] {
-            if constexpr (is_strided_iterator_v<Iterator>) {
+            if constexpr (is_contiguous_iterator_v<Iterator>) {
+                return 1;  // Contiguous iterators always have stride 1
+            } else if constexpr (is_strided_iterator_v<Iterator>) {
                 return 1;  // Would need instance to get actual stride
-            } else if constexpr (is_contiguous_iterator_v<Iterator>) {
-                return 1;
             } else {
-                return 0;  // Unknown or variable stride
+                return 1;  // Default stride is 1 for most iterators
             }
         }();
 
@@ -209,7 +296,7 @@ namespace fem::numeric::traits {
     struct is_parallel_safe_iterator {
         static constexpr bool value =
                 is_random_access_iterator_v<Iterator> &&
-                !requires(Iterator it) { it.is_checked(); };  // Checked iterators may have state
+                !is_checked_iterator_v<Iterator>;  // Checked iterators may have state
     };
 
     template<typename Iterator>
@@ -247,20 +334,20 @@ namespace fem::numeric::traits {
                                               std::is_arithmetic_v<value_type> &&
                                               is_ieee_compliant;
 
-        // Memory access pattern
-        static constexpr IteratorAccessPattern access_pattern = [] {
+        // Memory access pattern - using immediate invocation
+        static constexpr IteratorAccessPattern access_pattern = ([]() constexpr {
             if constexpr (is_contiguous) {
-            return IteratorAccessPattern::Sequential;
-        } else if constexpr (is_strided) {
-            return IteratorAccessPattern::Strided;
-        } else if constexpr (is_multidim) {
-            return IteratorAccessPattern::Blocked;
-        } else if constexpr (is_random_access) {
-            return IteratorAccessPattern::Random;
-        } else {
-            return IteratorAccessPattern::Unknown;
-        }
-        }();
+                return IteratorAccessPattern::Sequential;
+            } else if constexpr (is_strided) {
+                return IteratorAccessPattern::Strided;
+            } else if constexpr (is_multidim) {
+                return IteratorAccessPattern::Blocked;
+            } else if constexpr (is_random_access) {
+                return IteratorAccessPattern::Random;
+            } else {
+                return IteratorAccessPattern::Unknown;
+            }
+        })();
     };
 
     /**
@@ -399,18 +486,18 @@ namespace fem::numeric::traits {
     struct multidim_iterator_traits {
         static constexpr bool is_multidim = is_multidim_iterator_v<Iterator>;
 
-        static constexpr size_t dimensionality = [] {
+        static constexpr size_t dimensionality = ([]() constexpr {
             if constexpr (is_multidim) {
-            // MultiDimIterator has index_type = std::array<size_t, Rank>
-            if constexpr (requires {
-                        typename Iterator::index_type;
-                        std::tuple_size<typename Iterator::index_type>::value;
+                // MultiDimIterator has index_type = std::array<size_t, Rank>
+                if constexpr (requires {
+                    typename Iterator::index_type;
+                    std::tuple_size<typename Iterator::index_type>::value;
                 }) {
-                return std::tuple_size<typename Iterator::index_type>::value;
+                    return std::tuple_size<typename Iterator::index_type>::value;
+                }
             }
-        }
             return size_t(1);  // Default to 1D
-        }();
+        })();
 
         // Get current indices from MultiDimIterator
         template<typename It>
@@ -529,11 +616,15 @@ namespace fem::numeric::traits {
     struct checked_iterator_traits {
         static constexpr bool is_checked = is_checked_iterator_v<Iterator>;
 
-        static constexpr bool has_debug_info = requires(Iterator it) {{ it.base() };};
+        static constexpr bool has_debug_info = is_checked;
 
         // Extract the underlying iterator type from CheckedIterator
         template<typename It>
-        using base_iterator_t = std::conditional_t<is_checked,decltype(std::declval<It>().base()),It>;
+        using base_iterator_t = std::conditional_t<
+            is_checked_iterator_v<It>,
+            typename It::iterator,  // CheckedIterator has 'iterator' typedef
+            It
+        >;
 
         // Cost of bounds checking (CheckedIterator adds runtime checks)
         static constexpr double overhead_factor = is_checked ? 1.2 : 1.0;
@@ -550,7 +641,7 @@ namespace fem::numeric::traits {
     struct is_zip_iterator {
         static constexpr bool value = requires(Iterator it) {
             typename Iterator::iterator_tuple;  // Tuple of iterators
-            { it.get<0>() };  // Access individual iterators
+            { it.template get<0>() };  // Access individual iterators - fixed template keyword
         };
     };
 
