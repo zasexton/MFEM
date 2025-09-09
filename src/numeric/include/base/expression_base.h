@@ -519,12 +519,12 @@ namespace fem::numeric {
 
         // For lvalue expressions - store reference
         UnaryExpression(const Expr& expr, Op op = Op{})
-            : expr_ptr_(&expr), op_(op), owns_expr_(false) {}
+            : expr_ptr_(&expr), op_(op) {}
 
         // For rvalue expressions - move/copy
         UnaryExpression(Expr&& expr, Op op = Op{})
-            : expr_storage_(std::make_unique<Expr>(std::move(expr))),
-              expr_ptr_(expr_storage_.get()), op_(op), owns_expr_(true) {}
+            : expr_storage_(std::in_place, std::move(expr)),
+              expr_ptr_(nullptr), op_(op) {}
 
         Shape shape() const { return expr().shape(); }
 
@@ -573,13 +573,12 @@ namespace fem::numeric {
         }
 
     private:
-        std::unique_ptr<Expr> expr_storage_;  // Storage for moved expression
+        std::optional<std::decay_t<Expr>> expr_storage_;  // Storage for moved expression
         const Expr* expr_ptr_;                // Pointer to either expr_storage_ or external
         Op op_;
-        bool owns_expr_;
 
         const Expr& expr() const {
-            return *expr_ptr_;
+            return expr_storage_ ? *expr_storage_ : *expr_ptr_;
         }
 
         template<typename T>
