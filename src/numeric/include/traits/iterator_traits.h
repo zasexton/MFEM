@@ -170,35 +170,6 @@ namespace fem::numeric::traits {
      */
     template<typename Iterator>
     struct is_contiguous_iterator {
-    private:
-        // Helper to check if iterator behaves like it points to contiguous memory
-        // This is a heuristic for pre-C++20 code
-        template<typename It>
-        static constexpr bool has_contiguous_behavior() {
-            if constexpr (std::is_pointer_v<It>) {
-                return true;
-            }
-            // Random access iterators from vector/array are typically contiguous
-            // This is a reasonable assumption for standard library implementations
-            else if constexpr (std::is_same_v<typename std::iterator_traits<It>::iterator_category,
-                                            std::random_access_iterator_tag> ||
-                             std::is_base_of_v<std::random_access_iterator_tag,
-                                             typename std::iterator_traits<It>::iterator_category>) {
-                // Additional check: if we can get a pointer and the value type is trivial,
-                // it's very likely contiguous (covers vector, array, string iterators)
-                if constexpr (requires(It it) {
-                    { &(*it) } -> std::convertible_to<typename std::iterator_traits<It>::pointer>;
-                }) {
-                    // For trivially copyable types with random access, assume contiguous
-                    // This is true for std::vector and std::array in practice
-                    if constexpr (std::is_trivially_copyable_v<typename std::iterator_traits<It>::value_type>) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
     public:
         static constexpr bool value = [] {
             // Check if it's a pointer (always contiguous)
@@ -232,11 +203,6 @@ namespace fem::numeric::traits {
                     return true;
                 }
             }
-            // Heuristic for pre-C++20: assume standard random access iterators are contiguous
-            if constexpr (has_contiguous_behavior<Iterator>()) {
-                return true;
-            }
-
             return false;
         }();
     };
