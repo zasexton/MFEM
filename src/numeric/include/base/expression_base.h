@@ -14,11 +14,9 @@
 #include <any>
 #include <tuple>
 #include <memory>
-#include <optional>
 #include <iostream>
 #include <array>
 #include <stdexcept>
-#include <optional>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -153,7 +151,42 @@ namespace fem::numeric {
 
         // Constructor for rvalue references - moves data
         explicit TerminalExpression(Container&& data)
-            : owned_data_(std::move(data)), data_ptr_(&*owned_data_) {}
+            : owned_data_(std::make_unique<Container>(std::move(data))),
+              data_ptr_(owned_data_.get()) {}
+
+        TerminalExpression(const TerminalExpression& other) {
+            if (other.owned_data_) {
+                owned_data_ = std::make_unique<Container>(*other.owned_data_);
+                data_ptr_ = owned_data_.get();
+            } else {
+                data_ptr_ = other.data_ptr_;
+            }
+        }
+
+        TerminalExpression(TerminalExpression&& other) noexcept
+            : owned_data_(std::move(other.owned_data_)),
+              data_ptr_(owned_data_ ? owned_data_.get() : other.data_ptr_) {}
+
+        TerminalExpression& operator=(const TerminalExpression& other) {
+            if (this != &other) {
+                if (other.owned_data_) {
+                    owned_data_ = std::make_unique<Container>(*other.owned_data_);
+                    data_ptr_ = owned_data_.get();
+                } else {
+                    owned_data_.reset();
+                    data_ptr_ = other.data_ptr_;
+                }
+            }
+            return *this;
+        }
+
+        TerminalExpression& operator=(TerminalExpression&& other) noexcept {
+            if (this != &other) {
+                owned_data_ = std::move(other.owned_data_);
+                data_ptr_ = owned_data_ ? owned_data_.get() : other.data_ptr_;
+            }
+            return *this;
+        }
 
         Shape shape() const { return data().shape(); }
 
@@ -193,9 +226,8 @@ namespace fem::numeric {
         }
 
     private:
-        std::optional<Container> owned_data_;  // Storage for moved/copied data when owning
-        const Container* data_ptr_;  // Pointer to either owned_data_ or external data
-        bool owns_data_;  // Whether we own the data
+        std::unique_ptr<Container> owned_data_{};  // Storage when owning data
+        const Container* data_ptr_{};              // Pointer to either owned or external data
     };
 
     /**
@@ -294,33 +326,13 @@ namespace fem::numeric {
         using rhs_type = RHS;
         using operation_type = Op;
 
-        // All combinations of lvalue/rvalue
-        BinaryExpression(const LHS& lhs, const RHS& rhs, Op op = Op{})
-            : lhs_ptr_(&lhs), rhs_ptr_(&rhs), op_(op) {
-            shape_ = compute_broadcast_shape(lhs.shape(), rhs.shape());
-            init_broadcast(lhs.shape(), rhs.shape());
-        }
-
-        BinaryExpression(LHS&& lhs, const RHS& rhs, Op op = Op{})
-            : lhs_storage_(std::move(lhs)),
-              lhs_ptr_(&*lhs_storage_), rhs_ptr_(&rhs), op_(op) {
-            shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs.shape());
-            init_broadcast(lhs_ptr_->shape(), rhs.shape());
-        }
-
-        BinaryExpression(const LHS& lhs, RHS&& rhs, Op op = Op{})
-            : rhs_storage_(std::move(rhs)),
-              lhs_ptr_(&lhs), rhs_ptr_(&*rhs_storage_), op_(op) {
-            shape_ = compute_broadcast_shape(lhs.shape(), rhs_ptr_->shape());
-            init_broadcast(lhs.shape(), rhs_ptr_->shape());
-        }
-
-        BinaryExpression(LHS&& lhs, RHS&& rhs, Op op = Op{})
-            : lhs_storage_(std::move(lhs)),
-              rhs_storage_(std::move(rhs)),
-              lhs_ptr_(&*lhs_storage_), rhs_ptr_(&*rhs_storage_), op_(op) {
-            shape_ = compute_broadcast_shape(lhs_ptr_->shape(), rhs_ptr_->shape());
-            init_broadcast(lhs_ptr_->shape(), rhs_ptr_->shape());
+        template<typename LHSArg, typename RHSArg>
+        BinaryExpression(LHSArg&& lhs, RHSArg&& rhs, Op op = Op{})
+            : lhs_(std::forward<LHSArg>(lhs)),
+              rhs_(std::forward<RHSArg>(rhs)),
+              op_(op) {
+            shape_ = compute_broadcast_shape(lhs_.shape(), rhs_.shape());
+            init_broadcast(lhs_.shape(), rhs_.shape());
         }
 
         Shape shape() const { return shape_; }
@@ -333,11 +345,11 @@ namespace fem::numeric {
             //          << " broadcast_shape=" << shape_.to_string() << std::endl;
 
             // Handle broadcasting
-            size_t lhs_idx = lhs_broadcast_ ? map_index(i, lhs_strides_) : i;
-            size_t rhs_idx = rhs_broadcast_ ? map_index(i, rhs_strides_) : i;
+            size_t lhs_idx = lhs_broadcast_ ? map_index(i, lhs_strides_.get()) : i;
+            size_t rhs_idx = rhs_broadcast_ ? map_index(i, rhs_strides_.get()) : i;
 
-            auto lhs_val = lhs().template eval<T>(lhs_idx);
-            auto rhs_val = rhs().template eval<T>(rhs_idx);
+            auto lhs_val = lhs_.template eval<T>(lhs_idx);
+            auto rhs_val = rhs_.template eval<T>(rhs_idx);
 
             // Add debugging output
             // std::cout << "Debug: i=" << i
@@ -376,24 +388,21 @@ namespace fem::numeric {
         }
 
         bool is_parallelizable() const noexcept {
-            return lhs().is_parallelizable() && rhs().is_parallelizable();
+            return lhs_.is_parallelizable() && rhs_.is_parallelizable();
         }
 
         bool is_vectorizable() const noexcept {
-            return lhs().is_vectorizable() && rhs().is_vectorizable();
+            return lhs_.is_vectorizable() && rhs_.is_vectorizable();
         }
 
         size_t complexity() const noexcept {
-            return lhs().complexity() + rhs().complexity() + shape_.size();
+            return lhs_.complexity() + rhs_.complexity() + shape_.size();
         }
 
     private:
-        std::optional<std::decay_t<LHS>> lhs_storage_;
-        std::optional<std::decay_t<RHS>> rhs_storage_;
-        static constexpr size_t MAX_RANK = 8;
+        LHS lhs_;
+        RHS rhs_;
 
-        const LHS* lhs_ptr_;
-        const RHS* rhs_ptr_;
         Op op_;
         Shape shape_;
 
@@ -401,11 +410,8 @@ namespace fem::numeric {
         size_t rank_{};
         bool lhs_broadcast_{};
         bool rhs_broadcast_{};
-        std::array<size_t, MAX_RANK> lhs_strides_{};
-        std::array<size_t, MAX_RANK> rhs_strides_{};
-
-        const LHS& lhs() const { return *lhs_ptr_; }
-        const RHS& rhs() const { return *rhs_ptr_; }
+        std::unique_ptr<size_t[]> lhs_strides_;
+        std::unique_ptr<size_t[]> rhs_strides_;
 
         static Shape compute_broadcast_shape(const Shape& s1, const Shape& s2) {
             // Get the maximum rank
@@ -433,25 +439,23 @@ namespace fem::numeric {
 
         void init_broadcast(const Shape& lhs_shape, const Shape& rhs_shape) {
             rank_ = shape_.rank();
-            if (rank_ > MAX_RANK) {
-                throw std::runtime_error("Rank exceeds MAX_RANK");
-            }
 
             lhs_broadcast_ = (lhs_shape != shape_);
             rhs_broadcast_ = (rhs_shape != shape_);
 
             if (lhs_broadcast_) {
-                compute_broadcast_strides(lhs_shape, lhs_strides_);
+                lhs_strides_ = std::make_unique<size_t[]>(rank_);
+                compute_broadcast_strides(lhs_shape, lhs_strides_.get());
             }
 
             if (rhs_broadcast_) {
-                compute_broadcast_strides(rhs_shape, rhs_strides_);
+                rhs_strides_ = std::make_unique<size_t[]>(rank_);
+                compute_broadcast_strides(rhs_shape, rhs_strides_.get());
             }
         }
 
-        void compute_broadcast_strides(const Shape& from_shape,
-                                       std::array<size_t, MAX_RANK>& out) {
-            std::fill(out.begin(), out.end(), size_t{0});
+        void compute_broadcast_strides(const Shape& from_shape, size_t* out) {
+            std::fill(out, out + rank_, size_t{0});
 
             if (from_shape.size() == 1 || from_shape.rank() == 0) {
                 return;
@@ -460,8 +464,7 @@ namespace fem::numeric {
             size_t from_rank = from_shape.rank();
             size_t offset = rank_ - from_rank;
 
-            // Compute strides for source shape
-            std::array<size_t, MAX_RANK> temp{};
+            std::vector<size_t> temp(from_rank);
             size_t stride = 1;
             for (size_t i = from_rank; i > 0; --i) {
                 size_t dim = i - 1;
@@ -477,7 +480,7 @@ namespace fem::numeric {
             }
         }
 
-        size_t map_index(size_t idx, const std::array<size_t, MAX_RANK>& strides) const {
+        size_t map_index(size_t idx, const size_t* strides) const {
             if (!rank_) { return 0; }
             size_t temp = idx;
             size_t result = 0;
@@ -517,20 +520,15 @@ namespace fem::numeric {
         using expression_type = Expr;
         using operation_type = Op;
 
-        // For lvalue expressions - store reference
-        UnaryExpression(const Expr& expr, Op op = Op{})
-            : expr_ptr_(&expr), op_(op) {}
+        template<typename ExprArg>
+        UnaryExpression(ExprArg&& expr, Op op = Op{})
+            : expr_(std::forward<ExprArg>(expr)), op_(op) {}
 
-        // For rvalue expressions - move/copy
-        UnaryExpression(Expr&& expr, Op op = Op{})
-            : expr_storage_(std::in_place, std::move(expr)),
-              expr_ptr_(nullptr), op_(op) {}
-
-        Shape shape() const { return expr().shape(); }
+        Shape shape() const { return expr_.shape(); }
 
         template<typename T>
         auto eval(size_t i) const {
-            auto val = expr().template eval<T>(i);
+            auto val = expr_.template eval<T>(i);
 
             // Check for IEEE compliance
             if constexpr (std::is_floating_point_v<T>) {
@@ -561,25 +559,20 @@ namespace fem::numeric {
         }
 
         bool is_parallelizable() const noexcept {
-            return expr().is_parallelizable();
+            return expr_.is_parallelizable();
         }
 
         bool is_vectorizable() const noexcept {
-            return expr().is_vectorizable();
+            return expr_.is_vectorizable();
         }
 
         size_t complexity() const noexcept {
-            return expr().complexity() + shape().size();
+            return expr_.complexity() + shape().size();
         }
 
     private:
-        std::optional<std::decay_t<Expr>> expr_storage_;  // Storage for moved expression
-        const Expr* expr_ptr_;                // Pointer to either expr_storage_ or external
+        Expr expr_;
         Op op_;
-
-        const Expr& expr() const {
-            return expr_storage_ ? *expr_storage_ : *expr_ptr_;
-        }
 
         template<typename T>
         void check_operation_validity(T val) const {
