@@ -206,24 +206,19 @@ namespace fem::numeric::traits {
                 return true;
             }
             // Check numeric_iterator_traits from base first
-            else if constexpr (numeric_iterator_traits<Iterator>::is_contiguous) {
+            if constexpr (numeric_iterator_traits<Iterator>::is_contiguous) {
                 return true;
             }
-            // Check our custom numeric category (but avoid circular dependency)
-            else if constexpr (requires {
-                numeric_iterator_category<Iterator>::value;
-            }) {
-                // Only check if the category is already determined to be Contiguous
-                // from other sources (not from is_contiguous_iterator itself)
-                using base_traits = numeric_iterator_traits<Iterator>;
-                if constexpr (base_traits::is_contiguous) {
-                    return true;
-                }
+            // Check our custom numeric category directly
+            if constexpr (
+                numeric_iterator_category_v<Iterator> ==
+                NumericIteratorCategory::Contiguous) {
+                return true;
             }
             // For C++20, use the contiguous_iterator concept if available
             #ifdef __cpp_lib_concepts
             #if __cpp_lib_concepts >= 202002L
-            else if constexpr (requires { std::contiguous_iterator<Iterator>; }) {
+            if constexpr (requires { std::contiguous_iterator<Iterator>; }) {
                 if constexpr (std::contiguous_iterator<Iterator>) {
                     return true;
                 }
@@ -231,14 +226,14 @@ namespace fem::numeric::traits {
             #endif
             #endif
             // Check for C++20 contiguous_iterator_tag if available
-            else if constexpr (requires { typename std::contiguous_iterator_tag; }) {
+            if constexpr (requires { typename std::contiguous_iterator_tag; }) {
                 using cat = typename std::iterator_traits<Iterator>::iterator_category;
                 if constexpr (std::is_base_of_v<std::contiguous_iterator_tag, cat>) {
                     return true;
                 }
             }
             // Heuristic for pre-C++20: assume standard random access iterators are contiguous
-            else if constexpr (has_contiguous_behavior<Iterator>()) {
+            if constexpr (has_contiguous_behavior<Iterator>()) {
                 return true;
             }
 

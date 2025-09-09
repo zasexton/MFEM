@@ -151,6 +151,7 @@ TEST_F(IteratorTraitsTest, IsContiguousIterator) {
     using ArrayIter = std::array<int, 5>::iterator;
     EXPECT_TRUE(is_contiguous_iterator_v<ArrayIter>);
     EXPECT_TRUE(is_contiguous_iterator_v<std::vector<int>::iterator>);
+    EXPECT_TRUE(is_contiguous_iterator_v<std::vector<int>::const_iterator>);
 
     EXPECT_FALSE(is_contiguous_iterator_v<std::list<int>::iterator>);
     EXPECT_FALSE(is_contiguous_iterator_v<std::deque<int>::iterator>);
