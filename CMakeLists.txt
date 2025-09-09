@@ -14,6 +14,7 @@ option (BUNDLED_MPI             "Build our own MPI"                        OFF)
 option (WARNINGS_AS_ERRORS      "Treat warnings as errors"                 ON)
 option (BUILD_UNIT_TESTS        "Build unit tests"                         ON)
 option (BUILD_PERFORMANCE_TESTS "Build Catch2 micro-benchmarks"            ON)
+option (TBB_FETCH              "Automatically download oneTBB if missing" ON)
 # -----------------------------------------------------------------------------
 #  Compiler & language standard
 # -----------------------------------------------------------------------------
@@ -90,6 +91,7 @@ target_include_directories(femsolver_options INTERFACE
 #  Third-party header-only deps via FetchContent
 # -----------------------------------------------------------------------------
 include(FetchContent)
+include(cmake/FetchTBB.cmake)
 
 # Catch2 (tests)
 if (BUILD_UNIT_TESTS OR BUILD_PERFORMANCE_TESTS OR
@@ -98,7 +100,6 @@ if (BUILD_UNIT_TESTS OR BUILD_PERFORMANCE_TESTS OR
             GIT_REPOSITORY https://github.com/catchorg/Catch2.git
             GIT_TAG        v3.6.0)
     FetchContent_MakeAvailable(Catch2)
-    find_package(TBB 2020 REQUIRED)
     enable_testing()
     add_subdirectory(tests)
 endif()
