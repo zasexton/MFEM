@@ -306,22 +306,13 @@ namespace fem::numeric::traits {
      * @brief Check if type is a valid index type
      */
     template<typename T>
-    struct is_index_type : std::false_type {};
-
-    template<>
-    struct is_index_type<size_t> : std::true_type {};
-
-    template<>
-    struct is_index_type<int> : std::true_type {};
-
-    template<>
-    struct is_index_type<long> : std::true_type {};
-
-    template<>
-    struct is_index_type<long long> : std::true_type {};
-
-    template<>
-    struct is_index_type<ptrdiff_t> : std::true_type {};
+    struct is_index_type : std::bool_constant
+        std::is_same_v<T, size_t> ||
+        std::is_same_v<T, int> ||
+        std::is_same_v<T, long> ||
+        std::is_same_v<T, long long> ||
+        std::is_same_v<T, ptrdiff_t>
+    > {};
 
     template<typename T>
     inline constexpr bool is_index_type_v = is_index_type<T>::value;
