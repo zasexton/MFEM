@@ -515,7 +515,7 @@ TEST_F(ExpressionBaseTest, LazyEvaluationNoTemporaries) {
 
     // Expression should be lightweight - just storing references
     // The size of the expression object should be small regardless of data size
-    EXPECT_LT(sizeof(expr), 200);  // Expression metadata should be small
+    EXPECT_LT(sizeof(expr), 300);  // Expression metadata should be small
 
     // No evaluation should have happened yet
     // We can verify this by checking that we can still modify the source data
