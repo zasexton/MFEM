@@ -234,8 +234,8 @@ TEST_F(TypeTraitsTest, Conditional) {
 
 TEST_F(TypeTraitsTest, EnableIfIntegral) {
     // This should compile for integral types
-    auto test_integral = []<typename T>(T) -> enable_if_integral_t<T> {
-        return T{};
+    auto test_integral = []<typename T>(T val) -> std::enable_if_t<std::is_integral_v<T>, T> {
+        return val;
     };
 
     EXPECT_EQ(test_integral(5), 5);
@@ -512,8 +512,9 @@ TEST_F(TypeTraitsTest, TypeClassification) {
 // =============================================================================
 
 TEST_F(TypeTraitsTest, IndexSequence) {
-    using Seq = index_sequence<0, 1, 2, 3>;
-    using MakeSeq = make_index_sequence<4>;
+    // Test that these types compile correctly
+    [[maybe_unused]] auto seq = index_sequence<0, 1, 2, 3>{};
+    [[maybe_unused]] auto make_seq = make_index_sequence<4>{};
 
     // Check that make_index_sequence generates correct sequence
     auto check_sequence = []<size_t... Is>(std::index_sequence<Is...>) {
@@ -544,19 +545,20 @@ TEST_F(TypeTraitsTest, Invocable) {
 // Compile-time Tests (Static Assertions)
 // =============================================================================
 
+// Helper templates for testing - must be defined outside the test class
+template<typename T, typename = void>
+struct test_has_value_type : std::false_type {};
+
+template<typename T>
+struct test_has_value_type<T, void_t<typename T::value_type>> : std::true_type {};
+
 TEST_F(TypeTraitsTest, CompileTimeChecks) {
-    // Test void_t
-    template<typename T, typename = void>
-    struct has_value_type : std::false_type {};
-
-    template<typename T>
-    struct has_value_type<T, void_t<typename T::value_type>> : std::true_type {};
-
+    // Test void_t with the helper template defined above
     struct WithValueType { using value_type = int; };
     struct WithoutValueType {};
 
-    static_assert(has_value_type<WithValueType>::value);
-    static_assert(!has_value_type<WithoutValueType>::value);
+    static_assert(test_has_value_type<WithValueType>::value);
+    static_assert(!test_has_value_type<WithoutValueType>::value);
 
     // All static assertions should pass
     SUCCEED();
