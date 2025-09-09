@@ -26,6 +26,10 @@ namespace fem::numeric {
     template<typename T> class Matrix;
     template<typename T, size_t Rank> class Tensor;
 
+    namespace autodiff {
+        template<typename T, size_t N> class DualBase;
+    }
+
     /**
      * @brief Concept for number-like types that can be used in numeric containers
      *
@@ -68,6 +72,16 @@ namespace fem::numeric {
 
     template<typename T>
     struct is_complex<std::complex<T>> : std::true_type {};
+
+    // Trait to detect dual number types
+    template<typename T>
+    struct is_dual : std::false_type {};
+
+    template<typename T, size_t N>
+    struct is_dual<autodiff::DualBase<T, N>> : std::true_type {};
+
+    template<typename T>
+    inline constexpr bool is_dual_v = is_dual<T>::value;
 
     /**
      * @brief Extended concept for IEEE floating-point compliant types
@@ -498,6 +512,8 @@ namespace fem::numeric {
                 return std::numeric_limits<T>::is_iec559;
             } else if constexpr (is_complex_v<T>) {
                 return std::numeric_limits<typename T::value_type>::is_iec559;
+            } else if constexpr (is_dual<T>::value) {
+                return std::numeric_limits<typename T::value_type>::is_iec559;
             }
             return false;
         }
@@ -508,6 +524,12 @@ namespace fem::numeric {
                 return std::isfinite(value);
             } else if constexpr (is_complex_v<T>) {
                 return std::isfinite(value.real()) && std::isfinite(value.imag());
+            } else if constexpr (is_dual<T>::value) {
+                if (!std::isfinite(value.value())) return false;
+                for (size_t i = 0; i < T::num_derivatives; ++i) {
+                    if (!std::isfinite(value.derivative(i))) return false;
+                }
+                return true;
             }
             return true;
         }
@@ -518,6 +540,12 @@ namespace fem::numeric {
                 return std::isnan(value);
             } else if constexpr (is_complex_v<T>) {
                 return std::isnan(value.real()) || std::isnan(value.imag());
+            } else if constexpr (is_dual<T>::value) {
+                if (std::isnan(value.value())) return true;
+                for (size_t i = 0; i < T::num_derivatives; ++i) {
+                    if (std::isnan(value.derivative(i))) return true;
+                }
+                return false;
             }
             return false;
         }
@@ -528,6 +556,12 @@ namespace fem::numeric {
                 return std::isinf(value);
             } else if constexpr (is_complex_v<T>) {
                 return std::isinf(value.real()) || std::isinf(value.imag());
+            } else if constexpr (is_dual<T>::value) {
+                if (std::isinf(value.value())) return true;
+                for (size_t i = 0; i < T::num_derivatives; ++i) {
+                    if (std::isinf(value.derivative(i))) return true;
+                }
+                return false;
             }
             return false;
         }
@@ -540,6 +574,14 @@ namespace fem::numeric {
                 using value_type = typename T::value_type;
                 return T(std::numeric_limits<value_type>::quiet_NaN(),
                          std::numeric_limits<value_type>::quiet_NaN());
+            } else if constexpr (is_dual<T>::value) {
+                using value_type = typename T::value_type;
+                T result{};
+                result.value() = std::numeric_limits<value_type>::quiet_NaN();
+                for (size_t i = 0; i < T::num_derivatives; ++i) {
+                    result.derivative(i) = std::numeric_limits<value_type>::quiet_NaN();
+                }
+                return result;
             }
             return T{};
         }
@@ -551,6 +593,14 @@ namespace fem::numeric {
             } else if constexpr (is_complex_v<T>) {
                 using value_type = typename T::value_type;
                 return T(std::numeric_limits<value_type>::infinity(), 0);
+            } else if constexpr (is_dual<T>::value) {
+                using value_type = typename T::value_type;
+                T result{};
+                result.value() = std::numeric_limits<value_type>::infinity();
+                for (size_t i = 0; i < T::num_derivatives; ++i) {
+                    result.derivative(i) = std::numeric_limits<value_type>::infinity();
+                }
+                return result;
             }
             return T{};
         }
