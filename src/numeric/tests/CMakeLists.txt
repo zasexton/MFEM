@@ -93,6 +93,37 @@ get_target_property(NUMERIC_INCLUDE_DIRS fem::numeric INTERFACE_INCLUDE_DIRECTOR
 message(STATUS "FEM Numeric include directories: ${NUMERIC_INCLUDE_DIRS}")
 
 # ============================================================================
+# Function to Add Unit Headers for Tests with Proper Naming and Organization
+# ============================================================================
+
+function(add_headers_for_coverage TEST_EXEC_NAME CATEGORY)
+    # Find all headers in the category
+    file(GLOB CATEGORY_HEADERS
+            "${CMAKE_SOURCE_DIR}/include/${CATEGORY}/*.h"
+            "${CMAKE_SOURCE_DIR}/include/${CATEGORY}/*.hpp"
+    )
+
+    if(CATEGORY_HEADERS)
+        # Add headers as sources to make them visible to coverage tools
+        target_sources(${TEST_EXEC_NAME} PRIVATE ${CATEGORY_HEADERS})
+
+        # Mark headers as header-only to avoid compilation issues
+        set_source_files_properties(${CATEGORY_HEADERS} PROPERTIES
+                HEADER_FILE_ONLY TRUE
+        )
+
+        # Ensure headers are instrumented for coverage
+        if(FEM_NUMERIC_ENABLE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            foreach(HEADER ${CATEGORY_HEADERS})
+                set_property(SOURCE ${HEADER} APPEND PROPERTY
+                        COMPILE_FLAGS "--coverage -fprofile-arcs -ftest-coverage"
+                )
+            endforeach()
+        endif()
+    endif()
+endfunction()
+
+# ============================================================================
 # Function to Add Unit Tests with Proper Naming and Organization
 # ============================================================================
 
@@ -107,6 +138,9 @@ function(add_unit_test_executable TEST_CATEGORY TEST_NAME TEST_FILE)
 
     # Create test executable
     add_executable(${TEST_EXEC_NAME} ${TEST_FILE})
+
+    # add headers for the associated test executables
+    add_headers_for_coverage(${TEST_EXEC_NAME} ${TEST_CATEGORY})
 
     # Set output directory to mirror test structure
     set_target_properties(${TEST_EXEC_NAME} PROPERTIES
