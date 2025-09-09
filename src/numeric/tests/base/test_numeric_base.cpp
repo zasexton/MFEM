@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <base/numeric_base.h>
+#include <base/dual_base.h>
 #include <complex>
 #include <limits>
 #include <vector>
@@ -386,6 +387,38 @@ TEST(IEEEComplianceChecker, ComplexChecks) {
     // Complex with NaN in imaginary part
     Complex c_nan_imag(0.0, std::numeric_limits<double>::quiet_NaN());
     EXPECT_TRUE(IEEEComplianceChecker::is_nan(c_nan_imag));
+}
+
+TEST(IEEEComplianceChecker, DualChecks) {
+    using Dual = autodiff::DualBase<double, 2>;
+
+    EXPECT_TRUE(IEEEComplianceChecker::is_compliant<Dual>());
+
+    Dual d_norm(1.0, 0.5, -0.3);
+    EXPECT_TRUE(IEEEComplianceChecker::is_finite(d_norm));
+    EXPECT_FALSE(IEEEComplianceChecker::is_nan(d_norm));
+    EXPECT_FALSE(IEEEComplianceChecker::is_inf(d_norm));
+
+    Dual d_val_nan(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0);
+    EXPECT_TRUE(IEEEComplianceChecker::is_nan(d_val_nan));
+
+    Dual d_deriv_nan(1.0, std::numeric_limits<double>::quiet_NaN(), 0.0);
+    EXPECT_TRUE(IEEEComplianceChecker::is_nan(d_deriv_nan));
+
+    Dual d_val_inf(std::numeric_limits<double>::infinity(), 0.0, 0.0);
+    EXPECT_TRUE(IEEEComplianceChecker::is_inf(d_val_inf));
+    EXPECT_FALSE(IEEEComplianceChecker::is_finite(d_val_inf));
+
+    Dual d_deriv_inf(1.0, 0.0, std::numeric_limits<double>::infinity());
+    EXPECT_TRUE(IEEEComplianceChecker::is_inf(d_deriv_inf));
+    EXPECT_FALSE(IEEEComplianceChecker::is_finite(d_deriv_inf));
+
+    Dual qn = IEEEComplianceChecker::quiet_nan<Dual>();
+    EXPECT_TRUE(IEEEComplianceChecker::is_nan(qn));
+
+    Dual inf = IEEEComplianceChecker::infinity<Dual>();
+    EXPECT_TRUE(IEEEComplianceChecker::is_inf(inf));
+    EXPECT_FALSE(IEEEComplianceChecker::is_finite(inf));
 }
 
 // ============================================================================
