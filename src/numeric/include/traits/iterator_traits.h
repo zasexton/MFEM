@@ -189,7 +189,7 @@ namespace fem::numeric::traits {
             // For C++20, use the contiguous_iterator concept if available
             #ifdef __cpp_lib_concepts
             #if __cpp_lib_concepts >= 202002L
-            if constexpr (requires { std::contiguous_iterator<Iterator>; }) {
+            if constexpr (std::contiguous_iterator<Iterator>) {
                 if constexpr (std::contiguous_iterator<Iterator>) {
                     return true;
                 }
@@ -293,7 +293,7 @@ namespace fem::numeric::traits {
         static constexpr bool supports_fast_distance = is_random_access;
         static constexpr bool supports_simd = is_contiguous &&
                                               std::is_arithmetic_v<value_type> &&
-                                              is_ieee_compliant;
+                                              (std::is_integral_v<value_type> || is_ieee_compliant);
 
         // Memory access pattern - using immediate invocation
         static constexpr IteratorAccessPattern access_pattern = ([]() constexpr {
@@ -540,7 +540,7 @@ namespace fem::numeric::traits {
                           is_contiguous_iterator_v<OutputIterator>) {
                 // Use memcpy for POD types
                 if constexpr (std::is_trivially_copyable_v<typename props::value_type>) {
-                    size_t n = distance_traits<Iterator>::compute(first, last);
+                    size_t n = static_cast<size_t>(distance_traits<Iterator>::compute(first, last));
                     std::memcpy(&(*out), &(*first), n * sizeof(typename props::value_type));
                     return;
                 }
