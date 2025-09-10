@@ -201,7 +201,7 @@ namespace fem::numeric::traits {
         static size_t next_capacity(size_t current) {
             switch (strategy) {
                 case Geometric:
-                    return static_cast<size_t>(current * growth_factor);
+                    return static_cast<size_t>(static_cast<double>(current) * growth_factor);
                 case Linear:
                     return current + 1024;  // Example linear growth
                 case Chunked:
@@ -337,7 +337,7 @@ namespace fem::numeric::traits {
             if (n == 0) return 0.0;
             size_t useful = n * sizeof(value_type);
             size_t total = bytes_required(n);
-            return static_cast<double>(useful) / total;
+            return static_cast<double>(useful) / static_cast<double>(total);
         }
     };
 
