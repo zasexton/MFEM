@@ -98,6 +98,18 @@ namespace fem::numeric::traits {
     template<typename T>
     inline constexpr bool is_view_base_v = is_view_base<T>::value;
 
+    namespace detail {
+        template<typename, typename = void>
+        struct iterator_type_helper {
+            using type = void*;
+        };
+
+        template<typename U>
+        struct iterator_type_helper<U, std::void_t<typename U::iterator>> {
+            using type = typename U::iterator;
+        };
+    } // namespace detail
+
     /**
      * @brief Extended container properties
      * Builds upon the basic container_traits in traits_base.hpp
@@ -127,18 +139,20 @@ namespace fem::numeric::traits {
         static constexpr bool satisfies_numeric_container = NumericContainer<T>;
 
         // Storage properties (if applicable)
-        using storage_type = std::conditional_t<
-                is_container_base_v<T>,
-                typename T::storage_type,
-                void
-        >;
+        template<typename C, typename = void>
+        struct storage_type_helper {
+            using type = void;
+        };
+
+        template<typename C>
+        struct storage_type_helper<C, std::void_t<typename C::storage_type>> {
+            using type = typename C::storage_type;
+        };
+
+        using storage_type = typename storage_type_helper<T>::type;
 
         // Iterator properties
-        using iterator_type = std::conditional_t<
-                requires { typename T::iterator; },
-                typename T::iterator,
-                void*
-        >;
+        using iterator_type = typename detail::iterator_type_helper<T>::type;
 
         using iterator_category = std::conditional_t<
                 !std::is_same_v<iterator_type, void*>,
@@ -183,7 +197,7 @@ namespace fem::numeric::traits {
 
         static constexpr bool supports_simd =
                 is_contiguous &&
-                is_numeric_type_v<value_type> &&
+                is_numeric_v<value_type> &&
                 alignof(T) >= 16;  // At least SSE alignment
 
         static constexpr bool is_lazy = is_expression_base_v<T>;
@@ -219,10 +233,10 @@ namespace fem::numeric::traits {
                 Container<C1> && Container<C2> &&
                 std::is_convertible_v<
                         typename C1::value_type,
-                        typename promote_type<
+                        promote_t<
                                 typename C1::value_type,
                                 typename C2::value_type
-                        >::type
+                        >
                 >;
     };
 
@@ -242,7 +256,7 @@ namespace fem::numeric::traits {
             Vectorized     // Use SIMD
         };
 
-        static constexpr Strategy value = [] {
+        static constexpr Strategy value = []() constexpr {
             if constexpr (is_expression_base_v<Expr>) {
             // Already an expression, keep lazy
             return Lazy;
@@ -259,12 +273,16 @@ namespace fem::numeric::traits {
     /**
      * @brief Helper to extract shape type
      */
-    template<typename Container>
-    using shape_type = std::conditional_t<
-            requires { typename Container::shape_type; },
-            typename Container::shape_type,
-            Shape  // Use Shape from numeric_base.hpp
-    >;
+    template<typename C, typename = void>
+    struct shape_type_helper { using type = Shape; };
+
+    template<typename C>
+    struct shape_type_helper<C, std::void_t<typename C::shape_type>> {
+        using type = typename C::shape_type;
+    };
+
+    template<typename C>
+    using shape_type = typename shape_type_helper<C>::type;
 
     /**
      * @brief Get container dimensionality at compile time if possible
@@ -333,23 +351,29 @@ namespace fem::numeric::traits {
      */
     template<typename T, size_t Size = 0, bool NeedsSIMD = false>
     struct optimal_container_selector {
-        using type = std::conditional_t<
-        Size == 0,
-        // Dynamic size - use ContainerBase with DynamicStorage
-        ContainerBase<void, T, DynamicStorage<T>>,
-        // Static size
-        std::conditional_t<
-        NeedsSIMD,
-        // Need SIMD alignment
-        ContainerBase<void, T, AlignedStorage<T, 32>>,
-        // Small size optimization
-        std::conditional_t<
-                Size * sizeof(T) <= 256,
-                ContainerBase<void, T, StaticStorage<T, Size>>,
-        ContainerBase<void, T, DynamicStorage<T>>
-        >
-        >
+        using chosen_storage = std::conditional_t<
+            Size == 0,
+            // Dynamic size storage
+            DynamicStorage<T>,
+            // Static size
+            std::conditional_t<
+                NeedsSIMD,
+                // Need SIMD alignment
+                AlignedStorage<T, 32>,
+                // Small size optimization
+                std::conditional_t<
+                    Size * sizeof(T) <= 256,
+                    StaticStorage<T, Size>,
+                    DynamicStorage<T>
+                >
+            >
         >;
+
+        template<typename U, typename Storage>
+        struct selected_container
+            : ContainerBase<selected_container<U, Storage>, U, Storage> {};
+
+        using type = selected_container<T, chosen_storage>;
     };
 
     template<typename T, size_t Size = 0, bool NeedsSIMD = false>

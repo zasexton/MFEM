@@ -4,82 +4,8 @@
 #include <array>
 
 #include <traits/container_traits.h>
+#include <traits/storage_traits.h>
 
-// Mock implementations of base classes for testing
-namespace fem::numeric {
-
-// Mock Shape class
-class Shape {
-public:
-    Shape() = default;
-    explicit Shape(std::initializer_list<size_t> dims) : dims_(dims) {}
-    size_t rank() const { return dims_.size(); }
-
-private:
-    std::vector<size_t> dims_;
-};
-
-// Mock storage types
-template<typename T>
-class DynamicStorage {
-public:
-    using value_type = T;
-    static constexpr size_t alignment = alignof(T);
-    static constexpr bool is_dynamic = true;
-};
-
-template<typename T, size_t N>
-class StaticStorage {
-public:
-    using value_type = T;
-    static constexpr size_t alignment = alignof(T);
-    static constexpr bool is_dynamic = false;
-    static constexpr size_t capacity = N;
-};
-
-template<typename T, size_t Align>
-class AlignedStorage {
-public:
-    using value_type = T;
-    static constexpr size_t alignment = Align;
-    static constexpr bool is_dynamic = true;
-};
-
-// Mock base classes
-template<typename Derived, typename ValueType, typename Storage>
-class ContainerBase {
-public:
-    using value_type = ValueType;
-    using storage_type = Storage;
-    using size_type = std::size_t;
-    using iterator = ValueType*;
-
-    size_type size() const { return size_; }
-
-protected:
-    size_type size_ = 0;
-};
-
-template<typename Derived>
-class ExpressionBase {
-public:
-    using derived_type = Derived;
-};
-
-template<typename Derived>
-class ViewBase {
-public:
-    using derived_type = Derived;
-};
-
-// Storage traits for mock storage types
-template<typename Storage>
-struct storage_traits {
-    static constexpr size_t alignment = Storage::alignment;
-    static constexpr bool is_dynamic = Storage::is_dynamic;
-};
-
-} // namespace fem::numeric
 
 // Test fixtures and mock types
 namespace {
@@ -183,7 +109,7 @@ TEST(ContainerTraitsTest, IsViewBase) {
     EXPECT_FALSE(is_view_base_v<MockDenseContainer>);
     EXPECT_FALSE(is_view_base_v<MockExpression>);
     EXPECT_FALSE(is_view_base_v<NotAContainer>);
-    EXPECT_FALSE(is_view_base_v<std::array<int, 5>>);
+    EXPECT_FALSE((is_view_base_v<std::array<int, 5>>));
 }
 
 // Test extended container traits
