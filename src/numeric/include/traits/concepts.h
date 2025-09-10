@@ -13,6 +13,7 @@
 #include "../base/storage_base.h"
 #include "../base/expression_base.h"
 #include "../base/iterator_base.h"
+#include "../base/broadcast_base.h"
 
 #include "type_traits.h"
 #include "numeric_traits.h"
