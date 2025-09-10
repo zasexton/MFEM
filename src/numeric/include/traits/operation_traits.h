@@ -199,6 +199,20 @@ namespace fem::numeric::traits {
     template<typename Op, typename... Args>
     using operation_result_t = typename operation_result<Op, Args...>::type;
 
+    // Helper to compute result type based on operation arity
+    template<bool IsUnary, bool IsBinary, typename Op, typename T>
+    struct operation_result_helper { using type = void; };
+
+    template<bool IsBinary, typename Op, typename T>
+    struct operation_result_helper<true, IsBinary, Op, T> {
+        using type = operation_result_t<Op, T>;
+    };
+
+    template<typename Op, typename T>
+    struct operation_result_helper<false, true, Op, T> {
+        using type = operation_result_t<Op, T, T>;
+    };
+
     /**
      * @brief Operation category detection
      */
@@ -563,11 +577,7 @@ namespace fem::numeric::traits {
 
         // Type behavior
         static constexpr bool preserves_type = preserves_type_v<Op, T>;
-        using result_type = std::conditional_t<is_unary,
-                                              operation_result_t<Op, T>,
-                                              std::conditional_t<is_binary,
-                                                                operation_result_t<Op, T, T>,
-                                                                void>>;
+        using result_type = typename operation_result_helper<is_unary, is_binary, Op, T>::type;
 
         // Algebraic properties
         static constexpr auto algebra = algebraic_properties<Op>::value;
