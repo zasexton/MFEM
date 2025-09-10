@@ -934,29 +934,31 @@ namespace fem::numeric::traits {
         static constexpr bool needs_extended_precision = true;
     };
 
+    enum class DispatchStrategy {
+        Scalar,             // Simple scalar loop
+        Vectorized,         // SIMD vectorization
+        Parallel,           // Multithreaded
+        ParallelVectorized, // Both parallel and SIMD
+        Specialized,        // Use specialized library (BLAS, etc.)
+        Lazy                // Defer evaluation
+    };
+
     /**
      * @brief Operation dispatch strategy selector
      */
     template<typename Op, typename T, size_t Size = 0>
     struct dispatch_strategy {
-        enum Strategy {
-            Scalar,             // Simple scalar loop
-            Vectorized,         // SIMD vectorization
-            Parallel,           // Multithreaded
-            ParallelVectorized, // Both parallel and SIMD
-            Specialized,        // Use specialized library (BLAS, etc.)
-            Lazy                // Defer evaluation
-        };
+        using Strategy = DispatchStrategy;
 
         static constexpr Strategy select() {
             // Size-based heuristics
             if constexpr (Size > 0 && Size < 16) {
-                return Scalar;  // Too small for optimization overhead
+                return Strategy::Scalar;  // Too small for optimization overhead
             }
 
             // Check for specialized implementations
             if constexpr (use_specialized_impl<Op, T>::use_blas) {
-                return Specialized;
+                return Strategy::Specialized;
             }
 
             // Check vectorization
@@ -966,13 +968,13 @@ namespace fem::numeric::traits {
                     operation_complexity_v<Op> >= operation_complexity<Op>::Complex;
 
             if constexpr (can_vectorize && is_large && is_thread_safe_v<Op>) {
-                return ParallelVectorized;
+                return Strategy::ParallelVectorized;
             } else if constexpr (can_vectorize) {
-                return Vectorized;
+                return Strategy::Vectorized;
             } else if constexpr (is_large && is_complex_op && is_thread_safe_v<Op>) {
-                return Parallel;
+                return Strategy::Parallel;
             } else {
-                return Scalar;
+                return Strategy::Scalar;
             }
         }
 
