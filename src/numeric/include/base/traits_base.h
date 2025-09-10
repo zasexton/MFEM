@@ -302,7 +302,7 @@ namespace fem::numeric {
         };
 
         static constexpr bool is_aligned = requires {
-                typename Storage::alignment;
+            Storage::alignment;
         };
 
         static constexpr size_t alignment = [] {
