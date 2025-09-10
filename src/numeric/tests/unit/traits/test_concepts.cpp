@@ -1,4 +1,3 @@
-/*
 #include <gtest/gtest.h>
 #include <complex>
 #include <vector>
@@ -727,4 +726,3 @@ TEST(ConceptsTest, NegativeTests) {
     EXPECT_FALSE(NumericIterator<InvalidType>);
     EXPECT_FALSE(NumericRange<InvalidType>);
 }
-*/
