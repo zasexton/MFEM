@@ -696,9 +696,9 @@ namespace fem::numeric::traits {
             if constexpr (benefits_from_vectorization_v<Op, T>) {
                 // SIMD operations need aligned memory
                 if constexpr (sizeof(T) == 4) {
-                    return 16;  // SSE alignment for float
+                    return size_t{16};  // SSE alignment for float
                 } else if constexpr (sizeof(T) == 8) {
-                    return 32;  // AVX alignment for double
+                    return size_t{32};  // AVX alignment for double
                 } else {
                     return alignof(T);
                 }
