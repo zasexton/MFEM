@@ -99,16 +99,12 @@ namespace fem::numeric::traits {
      */
     template<typename Op>
     struct is_elementwise_operation {
-        static constexpr bool value = [] {
-            if constexpr (is_valid_operation_v<Op>) {
-                return operation_category_v<Op> == OperationCategory::Arithmetic ||
-                       operation_category_v<Op> == OperationCategory::Transcendental ||
-                       operation_category_v<Op> == OperationCategory::Comparison ||
-                       std::is_same_v<Op, ops::abs_op<>> ||
-                       std::is_same_v<Op, ops::sign_op<>>;
-            }
-            return false;
-        }();
+        static constexpr bool value =
+            operation_category_v<Op> == OperationCategory::Arithmetic ||
+            operation_category_v<Op> == OperationCategory::Transcendental ||
+            operation_category_v<Op> == OperationCategory::Comparison ||
+            std::is_same_v<Op, ops::abs_op<>> ||
+            std::is_same_v<Op, ops::sign_op<>>;
     };
 
     /**
