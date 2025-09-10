@@ -78,6 +78,24 @@ struct MockDualNumber {
     }
     MockDualNumber operator-() const { return {-real_part, -dual_part}; }
     MockDualNumber operator+() const { return *this; }
+
+    // Comparison operations
+    bool operator==(const MockDualNumber& other) const {
+        return real_part == other.real_part && dual_part == other.dual_part;
+    }
+    bool operator!=(const MockDualNumber& other) const { return !(*this == other); }
+    bool operator<(const MockDualNumber& other) const {
+        return real_part < other.real_part;
+    }
+    bool operator>(const MockDualNumber& other) const {
+        return real_part > other.real_part;
+    }
+    bool operator<=(const MockDualNumber& other) const {
+        return !(*this > other);
+    }
+    bool operator>=(const MockDualNumber& other) const {
+        return !(*this < other);
+    }
 };
 
 // Mock reverse-mode AD type
@@ -105,6 +123,14 @@ struct MockReverseAD {
     MockReverseAD operator/(const MockReverseAD& other) const { return {val / other.val}; }
     MockReverseAD operator-() const { return {-val}; }
     MockReverseAD operator+() const { return *this; }
+
+    // Comparison operations
+    bool operator==(const MockReverseAD& other) const { return val == other.val; }
+    bool operator!=(const MockReverseAD& other) const { return !(*this == other); }
+    bool operator<(const MockReverseAD& other) const { return val < other.val; }
+    bool operator>(const MockReverseAD& other) const { return val > other.val; }
+    bool operator<=(const MockReverseAD& other) const { return !(*this > other); }
+    bool operator>=(const MockReverseAD& other) const { return !(*this < other); }
 };
 
 template<typename T>
@@ -237,6 +263,7 @@ struct MockMatrix {
     T l2_norm() const { return T(0); }
     T inf_norm() const { return T(0); }
     T frobenius_norm() const { return T(0); }
+    T spectral_norm() const { return T(0); }
 
     // Decomposition methods
     MockMatrix lu() const { return *this; }
@@ -256,26 +283,48 @@ struct MockSparseMatrix : public MockMatrix<T> {
 
     size_t nnz() const { return 10; }
     double sparsity() const { return 0.1; }
+
+    MockSparseMatrix transpose() const {
+        MockSparseMatrix result(this->m_cols, this->m_rows);
+        for (size_t i = 0; i < this->m_rows; ++i) {
+            for (size_t j = 0; j < this->m_cols; ++j) {
+                result(j, i) = (*this)(i, j);
+            }
+        }
+        return result;
+    }
+
+    // Override arithmetic operations to preserve type
+    MockSparseMatrix operator+(const MockSparseMatrix& other) const { return *this; }
+    MockSparseMatrix operator-(const MockSparseMatrix& other) const { return *this; }
+    MockSparseMatrix operator*(T scalar) const { return *this; }
+    MockSparseMatrix operator/(T scalar) const { return *this; }
+    friend MockSparseMatrix operator*(T scalar, const MockSparseMatrix& m) { return m; }
 };
 
 // Mock tensor type
 struct MockTensor {
     using value_type = double;
     using size_type = size_t;
+    using pointer = double*;
+    using const_pointer = const double*;
 
     fem::numeric::Shape m_shape;
-    std::vector<double> data;
+    std::vector<double> buffer;
 
-    size_t size() const { return data.size(); }
-    bool empty() const { return data.empty(); }
+    size_t size() const { return buffer.size(); }
+    bool empty() const { return buffer.empty(); }
     fem::numeric::Shape shape() const { return m_shape; }
     size_t ndim() const { return m_shape.size(); }
     MockTensor reshape(const fem::numeric::Shape& new_shape) const { return *this; }
 
-    auto begin() { return data.begin(); }
-    auto end() { return data.end(); }
-    auto begin() const { return data.begin(); }
-    auto end() const { return data.end(); }
+    double* data() { return buffer.data(); }
+    const double* data() const { return buffer.data(); }
+
+    auto begin() { return buffer.begin(); }
+    auto end() { return buffer.end(); }
+    auto begin() const { return buffer.begin(); }
+    auto end() const { return buffer.end(); }
 };
 
 // Mock expression type
