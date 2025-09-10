@@ -117,6 +117,7 @@ struct MockVector {
     using size_type = size_t;
     using pointer = T*;
     using const_pointer = const T*;
+    using Shape = fem::numeric::Shape;
 
     std::vector<T> data_storage;
 
@@ -125,7 +126,7 @@ struct MockVector {
     MockVector(size_t n) : data_storage(n) {}
 
     // Required methods for NumericContainer
-    fem::numeric::Shape shape() const { return {data_storage.size()}; }
+    Shape shape() const { return Shape{data_storage.size()}; }
     T* data() { return data_storage.data(); }
     const T* data() const { return data_storage.data(); }
 
@@ -181,6 +182,7 @@ struct MockMatrix {
     using size_type = size_t;
     using pointer = T*;
     using const_pointer = const T*;
+    using Shape = fem::numeric::Shape;
 
     std::vector<T> data_storage;  // Flattened storage
     size_t m_rows, m_cols;
@@ -189,7 +191,7 @@ struct MockMatrix {
         : data_storage(r * c), m_rows(r), m_cols(c) {}
 
     // Required methods for NumericContainer
-    fem::numeric::Shape shape() const { return {m_rows, m_cols}; }
+    Shape shape() const { return Shape{m_rows, m_cols}; }
     T* data() { return data_storage.data(); }
     const T* data() const { return data_storage.data(); }
 
