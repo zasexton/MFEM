@@ -7,6 +7,7 @@
 #include <ranges>
 #include <concepts>
 
+#include <base/numeric_base.h>
 #include <traits/concepts.h>
 
 using namespace fem::numeric::concepts;
@@ -116,7 +117,6 @@ struct MockVector {
     using size_type = size_t;
     using pointer = T*;
     using const_pointer = const T*;
-    using Shape = std::vector<size_t>;
 
     std::vector<T> data_storage;
 
@@ -125,7 +125,7 @@ struct MockVector {
     MockVector(size_t n) : data_storage(n) {}
 
     // Required methods for NumericContainer
-    Shape shape() const { return {data_storage.size()}; }
+    fem::numeric::Shape shape() const { return {data_storage.size()}; }
     T* data() { return data_storage.data(); }
     const T* data() const { return data_storage.data(); }
 
@@ -181,7 +181,6 @@ struct MockMatrix {
     using size_type = size_t;
     using pointer = T*;
     using const_pointer = const T*;
-    using Shape = std::vector<size_t>;
 
     std::vector<T> data_storage;  // Flattened storage
     size_t m_rows, m_cols;
@@ -190,7 +189,7 @@ struct MockMatrix {
         : data_storage(r * c), m_rows(r), m_cols(c) {}
 
     // Required methods for NumericContainer
-    Shape shape() const { return {m_rows, m_cols}; }
+    fem::numeric::Shape shape() const { return {m_rows, m_cols}; }
     T* data() { return data_storage.data(); }
     const T* data() const { return data_storage.data(); }
 
@@ -261,16 +260,15 @@ struct MockSparseMatrix : public MockMatrix<T> {
 struct MockTensor {
     using value_type = double;
     using size_type = size_t;
-    using Shape = std::vector<size_t>;
 
-    Shape m_shape;
+    fem::numeric::Shape m_shape;
     std::vector<double> data;
 
     size_t size() const { return data.size(); }
     bool empty() const { return data.empty(); }
-    Shape shape() const { return m_shape; }
+    fem::numeric::Shape shape() const { return m_shape; }
     size_t ndim() const { return m_shape.size(); }
-    MockTensor reshape(const Shape& new_shape) const { return *this; }
+    MockTensor reshape(const fem::numeric::Shape& new_shape) const { return *this; }
 
     auto begin() { return data.begin(); }
     auto end() { return data.end(); }
@@ -282,10 +280,9 @@ struct MockTensor {
 template<typename T>
 struct MockExpression {
     using value_type = T;
-    using Shape = std::vector<size_t>;
     using result_type = MockVector<T>;
 
-    Shape shape() const { return {10}; }
+    fem::numeric::Shape shape() const { return {10}; }
     void eval() {}
     bool is_lazy() const { return true; }
     void eval_to(result_type& result) {}
@@ -656,7 +653,7 @@ TEST(ConceptsTest, ConceptConstrainedFunctions) {
     EXPECT_EQ(get_rows(mat), 3u);
 
     MockVector<double> vec;
-    vec.data = {3.0, 4.0};
+    vec.data_storage = {3.0, 4.0};
     EXPECT_DOUBLE_EQ(get_norm(vec), 5.0);
 }
 
