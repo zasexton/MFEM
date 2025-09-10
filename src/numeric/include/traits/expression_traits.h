@@ -102,8 +102,8 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_scalar_expression : std::false_type {};
 
-    template<typename Expr, typename Scalar>
-    struct is_scalar_expression<ScalarExpression<Expr, Scalar>> : std::true_type {};
+    template<typename Expr>
+    struct is_scalar_expression<ScalarExpression<Expr>> : std::true_type {};
 
     template<typename T>
     inline constexpr bool is_scalar_expression_v = is_scalar_expression<T>::value;
