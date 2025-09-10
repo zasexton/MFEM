@@ -5,6 +5,7 @@
 
 #include <iterator>
 #include <type_traits>
+#include <utility>
 
 #include "../base/container_base.h"
 #include "../base/storage_base.h"
@@ -241,10 +242,10 @@ namespace fem::numeric::traits {
         struct supports_arithmetic_ops_helper<
             T,
             std::void_t<
-                decltype(static_cast<T& (T::*)(const T&)>(&T::operator+=)),
-                decltype(static_cast<T& (T::*)(const T&)>(&T::operator-=)),
-                decltype(static_cast<T& (T::*)(const typename T::value_type&)>(&T::operator*=)),
-                decltype(static_cast<T& (T::*)(const typename T::value_type&)>(&T::operator/=))
+                decltype(std::declval<T&>() += std::declval<const T&>()),
+                decltype(std::declval<T&>() -= std::declval<const T&>()),
+                decltype(std::declval<T&>() *= std::declval<typename T::value_type>()),
+                decltype(std::declval<T&>() /= std::declval<typename T::value_type>())
             >
         > : std::true_type {};
     } // namespace detail
