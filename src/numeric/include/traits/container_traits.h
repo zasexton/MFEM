@@ -231,18 +231,26 @@ namespace fem::numeric::traits {
     };
 
     /**
-     * @brief Check if container supports arithmetic operations
-     * Uses the operations defined in ops_base.hpp
+     * @brief Check if container defines required arithmetic member operators
      */
+    namespace detail {
+        template<typename, typename = void>
+        struct supports_arithmetic_ops_helper : std::false_type {};
+
+        template<typename T>
+        struct supports_arithmetic_ops_helper<
+            T,
+            std::void_t<
+                decltype(static_cast<T& (T::*)(const T&)>(&T::operator+=)),
+                decltype(static_cast<T& (T::*)(const T&)>(&T::operator-=)),
+                decltype(static_cast<T& (T::*)(const typename T::value_type&)>(&T::operator*=)),
+                decltype(static_cast<T& (T::*)(const typename T::value_type&)>(&T::operator/=))
+            >
+        > : std::true_type {};
+    } // namespace detail
+
     template<typename T>
-    struct supports_arithmetic_ops {
-        static constexpr bool value = requires(T t) {
-            { t += t } -> std::same_as<T&>;
-            { t -= t } -> std::same_as<T&>;
-            { t *= typename T::value_type{} } -> std::same_as<T&>;
-            { t /= typename T::value_type{} } -> std::same_as<T&>;
-        };
-    };
+    struct supports_arithmetic_ops : detail::supports_arithmetic_ops_helper<T> {};
 
     template<typename T>
     inline constexpr bool supports_arithmetic_ops_v = supports_arithmetic_ops<T>::value;
