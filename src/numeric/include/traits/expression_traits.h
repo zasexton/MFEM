@@ -102,8 +102,8 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_scalar_expression : std::false_type {};
 
-    template<typename Expr, typename Scalar>
-    struct is_scalar_expression<ScalarExpression<Expr, Scalar>> : std::true_type {};
+    template<typename T>
+    struct is_scalar_expression<ScalarExpression<T>> : std::true_type {};
 
     template<typename T>
     inline constexpr bool is_scalar_expression_v = is_scalar_expression<T>::value;
@@ -114,8 +114,7 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_broadcast_expression : std::false_type {};
 
-    template<typename Container>
-    struct is_broadcast_expression<BroadcastExpression<Container>> : std::true_type {};
+    // BroadcastExpression type is currently undefined; specialization omitted
 
     template<typename T>
     inline constexpr bool is_broadcast_expression_v = is_broadcast_expression<T>::value;
