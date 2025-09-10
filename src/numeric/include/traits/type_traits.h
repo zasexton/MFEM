@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "../base/numeric_base.h"
+#include "../base/traits_base.h"
 
 namespace fem::numeric::traits {
 
@@ -83,31 +84,23 @@ namespace fem::numeric::traits {
 
     /**
      * @brief Check if type is complex
+     * Alias to base is_complex_number
      */
     template<typename T>
-    struct is_complex : std::false_type {};
+    using is_complex = fem::numeric::is_complex_number<T>;
 
     template<typename T>
-    struct is_complex<std::complex<T>> : std::true_type {};
-
-    template<typename T>
-    inline constexpr bool is_complex_v = is_complex<T>::value;
+    inline constexpr bool is_complex_v = fem::numeric::is_complex_number_v<T>;
 
     /**
      * @brief Get the underlying real type from a potentially complex type
+     * Alias to base scalar_type
      */
     template<typename T>
-    struct real_type {
-        using type = T;
-    };
+    using real_type = fem::numeric::scalar_type<T>;
 
     template<typename T>
-    struct real_type<std::complex<T>> {
-    using type = T;
-    };
-
-    template<typename T>
-    using real_type_t = typename real_type<T>::type;
+    using real_type_t = fem::numeric::scalar_type_t<T>;
 
     /**
      * @brief Get the complex type for a given real type
@@ -321,19 +314,13 @@ namespace fem::numeric::traits {
 
     /**
      * @brief Get the scalar type from a potentially complex type
+     * Alias to base scalar_type
      */
     template<typename T>
-    struct scalar_type {
-        using type = T;
-    };
+    using scalar_type = fem::numeric::scalar_type<T>;
 
     template<typename T>
-    struct scalar_type<std::complex<T>> {
-    using type = typename scalar_type<T>::type;
-    };
-
-    template<typename T>
-    using scalar_type_t = typename scalar_type<T>::type;
+    using scalar_type_t = fem::numeric::scalar_type_t<T>;
 
     /**
      * @brief Check if type supports arithmetic operations
