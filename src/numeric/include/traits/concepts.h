@@ -6,6 +6,7 @@
 #include <concepts>
 #include <ranges>
 #include <type_traits>
+#include <utility>
 
 #include "../base/numeric_base.h"
 #include "../base/container_base.h"
@@ -476,7 +477,9 @@ namespace fem::numeric::concepts {
     template<typename T>
     concept Solvable = Matrix<T> && requires(T A) {
         typename T::value_type;
-        requires requires(T A, Vector<typename T::value_type> b) {
+        requires requires(VectorType b) {
+            requires Vector<VectorType>;
+            requires std::same_as<typename VectorType::value_type, typename T::value_type>;
             { A.solve(b) };      // Solve Ax = b
         };
         { A.inverse() };     // Matrix inverse
@@ -491,7 +494,9 @@ namespace fem::numeric::concepts {
     template<typename T>
     concept LinearSystemSolvable = Matrix<T> && requires(T A) {
         typename T::value_type;
-        requires requires(T A, Vector<typename T::value_type> b) {
+        requires requires(VectorType b) {
+            requires Vector<VectorType>;
+            requires std::same_as<typename VectorType::value_type, typename T::value_type>;
             { A.solve(b) };
         };
     };
