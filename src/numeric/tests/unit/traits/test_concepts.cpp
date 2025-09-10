@@ -7,6 +7,7 @@
 #include <ranges>
 #include <concepts>
 
+#include <base/numeric_base.h>
 #include <traits/concepts.h>
 
 using namespace fem::numeric::concepts;
@@ -261,16 +262,15 @@ struct MockSparseMatrix : public MockMatrix<T> {
 struct MockTensor {
     using value_type = double;
     using size_type = size_t;
-    using Shape = std::vector<size_t>;
 
-    Shape m_shape;
+    fem::numeric::Shape m_shape;
     std::vector<double> data;
 
     size_t size() const { return data.size(); }
     bool empty() const { return data.empty(); }
-    Shape shape() const { return m_shape; }
+    fem::numeric::Shape shape() const { return m_shape; }
     size_t ndim() const { return m_shape.size(); }
-    MockTensor reshape(const Shape& new_shape) const { return *this; }
+    MockTensor reshape(const fem::numeric::Shape& new_shape) const { return *this; }
 
     auto begin() { return data.begin(); }
     auto end() { return data.end(); }
@@ -282,10 +282,9 @@ struct MockTensor {
 template<typename T>
 struct MockExpression {
     using value_type = T;
-    using Shape = std::vector<size_t>;
     using result_type = MockVector<T>;
 
-    Shape shape() const { return {10}; }
+    fem::numeric::Shape shape() const { return {10}; }
     void eval() {}
     bool is_lazy() const { return true; }
     void eval_to(result_type& result) {}
