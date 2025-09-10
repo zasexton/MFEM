@@ -36,6 +36,23 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct UnaryOp<void> {
+            using value_type = void;
+            using result_type = void;
+
+            template<typename U>
+            void check_input(const U& val) const {
+                if (NumericOptions::defaults().check_finite) {
+                    if constexpr (std::is_floating_point_v<std::decay_t<U>>) {
+                        if (IEEEComplianceChecker::is_nan(val)) {
+                            // NaN propagation is allowed
+                        }
+                    }
+                }
+            }
+        };
+
         /**
          * @brief Base class for binary operations
          */
@@ -357,6 +374,24 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct sqrt_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    // IEEE 754: sqrt of negative produces NaN
+                    return std::sqrt(std::forward<U>(val));
+                } else {
+                    if (val < value_type{0}) {
+                        throw ComputationError("Square root of negative number");
+                    }
+                    return static_cast<value_type>(std::sqrt(static_cast<double>(val)));
+                }
+            }
+        };
+
         // ============================================================
         // Transcendental functions
         // ============================================================
@@ -373,6 +408,20 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct sin_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::sin(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(std::sin(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct cos_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -385,6 +434,20 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct cos_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::cos(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(std::cos(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct tan_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -393,6 +456,20 @@ namespace fem::numeric {
                     return std::tan(val);
                 } else {
                     return static_cast<T>(std::tan(static_cast<double>(val)));
+                }
+            }
+        };
+
+        template<>
+        struct tan_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::tan(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(std::tan(static_cast<double>(val)));
                 }
             }
         };
@@ -412,6 +489,24 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct asin_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::asin(std::forward<U>(val));
+                } else {
+                    if (val < value_type{-1} || val > value_type{1}) {
+                        throw ComputationError("asin domain error");
+                    }
+                    return static_cast<value_type>(
+                        std::asin(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct acos_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -427,6 +522,24 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct acos_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::acos(std::forward<U>(val));
+                } else {
+                    if (val < value_type{-1} || val > value_type{1}) {
+                        throw ComputationError("acos domain error");
+                    }
+                    return static_cast<value_type>(
+                        std::acos(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct atan_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -435,6 +548,21 @@ namespace fem::numeric {
                     return std::atan(val);
                 } else {
                     return static_cast<T>(std::atan(static_cast<double>(val)));
+                }
+            }
+        };
+
+        template<>
+        struct atan_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::atan(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::atan(static_cast<double>(val)));
                 }
             }
         };
@@ -452,6 +580,21 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct sinh_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::sinh(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::sinh(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct cosh_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -460,6 +603,21 @@ namespace fem::numeric {
                     return std::cosh(val);
                 } else {
                     return static_cast<T>(std::cosh(static_cast<double>(val)));
+                }
+            }
+        };
+
+        template<>
+        struct cosh_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::cosh(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::cosh(static_cast<double>(val)));
                 }
             }
         };
@@ -476,6 +634,21 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct tanh_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::tanh(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::tanh(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct exp_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -484,6 +657,21 @@ namespace fem::numeric {
                     return std::exp(val);
                 } else {
                     return static_cast<T>(std::exp(static_cast<double>(val)));
+                }
+            }
+        };
+
+        template<>
+        struct exp_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::exp(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::exp(static_cast<double>(val)));
                 }
             }
         };
@@ -508,6 +696,29 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct log_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if (val <= value_type{0}) {
+                    if constexpr (std::is_floating_point_v<value_type>) {
+                        return std::log(std::forward<U>(val));
+                    } else {
+                        throw ComputationError(
+                            "Logarithm of non-positive number");
+                    }
+                }
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::log(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::log(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct log10_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -527,6 +738,29 @@ namespace fem::numeric {
             }
         };
 
+        template<>
+        struct log10_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if (val <= value_type{0}) {
+                    if constexpr (std::is_floating_point_v<value_type>) {
+                        return std::log10(std::forward<U>(val));
+                    } else {
+                        throw ComputationError(
+                            "Log10 of non-positive number");
+                    }
+                }
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::log10(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::log10(static_cast<double>(val)));
+                }
+            }
+        };
+
         template<typename T = void>
         struct log2_op : UnaryOp<T> {
             T operator()(const T& val) const {
@@ -542,6 +776,29 @@ namespace fem::numeric {
                     return std::log2(val);
                 } else {
                     return static_cast<T>(std::log2(static_cast<double>(val)));
+                }
+            }
+        };
+
+        template<>
+        struct log2_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if (val <= value_type{0}) {
+                    if constexpr (std::is_floating_point_v<value_type>) {
+                        return std::log2(std::forward<U>(val));
+                    } else {
+                        throw ComputationError(
+                            "Log2 of non-positive number");
+                    }
+                }
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::log2(std::forward<U>(val));
+                } else {
+                    return static_cast<value_type>(
+                        std::log2(static_cast<double>(val)));
                 }
             }
         };
@@ -733,7 +990,7 @@ namespace fem::numeric {
         // Rounding operations
         // ============================================================
 
-        template<typename T>
+        template<typename T = void>
         struct round_op : UnaryOp<T> {
             T operator()(const T& val) const {
                 this->check_input(val);
@@ -745,7 +1002,21 @@ namespace fem::numeric {
             }
         };
 
-        template<typename T>
+        template<>
+        struct round_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::round(std::forward<U>(val));
+                } else {
+                    return std::forward<U>(val);
+                }
+            }
+        };
+
+        template<typename T = void>
         struct floor_op : UnaryOp<T> {
             T operator()(const T& val) const {
                 this->check_input(val);
@@ -757,7 +1028,21 @@ namespace fem::numeric {
             }
         };
 
-        template<typename T>
+        template<>
+        struct floor_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::floor(std::forward<U>(val));
+                } else {
+                    return std::forward<U>(val);
+                }
+            }
+        };
+
+        template<typename T = void>
         struct ceil_op : UnaryOp<T> {
             T operator()(const T& val) const {
                 this->check_input(val);
@@ -769,7 +1054,21 @@ namespace fem::numeric {
             }
         };
 
-        template<typename T>
+        template<>
+        struct ceil_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::ceil(std::forward<U>(val));
+                } else {
+                    return std::forward<U>(val);
+                }
+            }
+        };
+
+        template<typename T = void>
         struct trunc_op : UnaryOp<T> {
             T operator()(const T& val) const {
                 this->check_input(val);
@@ -777,6 +1076,20 @@ namespace fem::numeric {
                     return std::trunc(val);
                 } else {
                     return val;
+                }
+            }
+        };
+
+        template<>
+        struct trunc_op<void> : UnaryOp<void> {
+            template<typename U>
+            auto operator()(U&& val) const {
+                this->check_input(val);
+                using value_type = std::decay_t<U>;
+                if constexpr (std::is_floating_point_v<value_type>) {
+                    return std::trunc(std::forward<U>(val));
+                } else {
+                    return std::forward<U>(val);
                 }
             }
         };
