@@ -46,7 +46,34 @@ namespace fem::numeric {
 
             void check_inputs(T lhs, T rhs) const {
                 if (NumericOptions::defaults().check_finite) {
-                    // IEEE compliance checking
+                    if constexpr (std::is_floating_point_v<T>) {
+                        if (IEEEComplianceChecker::is_nan(lhs) ||
+                            IEEEComplianceChecker::is_nan(rhs)) {
+                            // NaN propagation is allowed
+                        }
+                    }
+                }
+            }
+        };
+
+        template<>
+        struct BinaryOp<void> {
+            using value_type = void;
+            using result_type = void;
+
+            template<typename L, typename R>
+            void check_inputs(const L& lhs, const R& rhs) const {
+                if (NumericOptions::defaults().check_finite) {
+                    if constexpr (std::is_floating_point_v<std::decay_t<L>>) {
+                        if (IEEEComplianceChecker::is_nan(lhs)) {
+                            // NaN propagation is allowed
+                        }
+                    }
+                    if constexpr (std::is_floating_point_v<std::decay_t<R>>) {
+                        if (IEEEComplianceChecker::is_nan(rhs)) {
+                            // NaN propagation is allowed
+                        }
+                    }
                 }
             }
         };
@@ -185,55 +212,69 @@ namespace fem::numeric {
 
         template<typename T = void>
         struct plus_assign : BinaryOp<T> {
-            T& operator()(T& lhs, const T& rhs) const {
+            template<typename L, typename R>
+            constexpr auto operator()(L&& lhs, R&& rhs) const -> decltype(lhs) {
                 this->check_inputs(lhs, rhs);
-                return lhs += rhs;
+                lhs += std::forward<R>(rhs);
+                return lhs;
             }
         };
 
         template<typename T = void>
         struct minus_assign : BinaryOp<T> {
-            T& operator()(T& lhs, const T& rhs) const {
+            template<typename L, typename R>
+            constexpr auto operator()(L&& lhs, R&& rhs) const -> decltype(lhs) {
                 this->check_inputs(lhs, rhs);
-                return lhs -= rhs;
+                lhs -= std::forward<R>(rhs);
+                return lhs;
             }
         };
 
         template<typename T = void>
         struct multiplies_assign : BinaryOp<T> {
-            T& operator()(T& lhs, const T& rhs) const {
+            template<typename L, typename R>
+            constexpr auto operator()(L&& lhs, R&& rhs) const -> decltype(lhs) {
                 this->check_inputs(lhs, rhs);
-                return lhs *= rhs;
+                lhs *= std::forward<R>(rhs);
+                return lhs;
             }
         };
 
         template<typename T = void>
         struct divides_assign : BinaryOp<T> {
-            T& operator()(T& lhs, const T& rhs) const {
+            template<typename L, typename R>
+            constexpr auto operator()(L&& lhs, R&& rhs) const -> decltype(lhs) {
                 this->check_inputs(lhs, rhs);
-                if (rhs == T{0}) {
-                    if constexpr (std::is_floating_point_v<T>) {
-                        return lhs /= rhs;  // Let IEEE handle it
+                using RVal = std::decay_t<R>;
+                if (rhs == RVal{0}) {
+                    if constexpr (std::is_floating_point_v<RVal>) {
+                        lhs /= std::forward<R>(rhs);  // IEEE handles div by zero
+                        return lhs;
                     } else {
                         throw ComputationError("Division by zero");
                     }
                 }
-                return lhs /= rhs;
+                lhs /= std::forward<R>(rhs);
+                return lhs;
             }
         };
 
         template<typename T = void>
         struct modulus_assign : BinaryOp<T> {
-            T& operator()(T& lhs, const T& rhs) const {
+            template<typename L, typename R>
+            constexpr auto operator()(L&& lhs, R&& rhs) const -> decltype(lhs) {
                 this->check_inputs(lhs, rhs);
-                if (rhs == T{0}) {
+                using RVal = std::decay_t<R>;
+                if (rhs == RVal{0}) {
                     throw ComputationError("Modulo by zero");
                 }
-                if constexpr (std::is_floating_point_v<T>) {
-                    return lhs = std::fmod(lhs, rhs);
+                if constexpr (std::is_floating_point_v<std::decay_t<L>> ||
+                              std::is_floating_point_v<RVal>) {
+                    lhs = std::fmod(lhs, rhs);
                 } else {
-                    return lhs %= rhs;
+                    lhs %= std::forward<R>(rhs);
                 }
+                return lhs;
             }
         };
 
