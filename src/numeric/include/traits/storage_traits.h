@@ -398,24 +398,33 @@ namespace fem::numeric::traits {
 
     /**
      * @brief Storage iterator traits
+     *
+     * Uses partial specialization to avoid requiring iterator types for
+     * contiguous storage.
      */
+    template<typename Storage, bool = storage_properties<Storage>::is_contiguous>
+    struct storage_iterator_traits_impl;
+
+    // Contiguous storage: iterators are raw pointers
     template<typename Storage>
-    struct storage_iterator_traits {
+    struct storage_iterator_traits_impl<Storage, true> {
         using value_type = storage_value_type_t<Storage>;
-
-        using iterator = std::conditional_t<
-                storage_properties<Storage>::is_contiguous,
-                value_type*,
-                typename Storage::iterator>;
-
-        using const_iterator = std::conditional_t<
-                storage_properties<Storage>::is_contiguous,
-                const value_type*,
-                typename Storage::const_iterator>;
-
-        static constexpr bool has_random_access =
-                storage_properties<Storage>::is_contiguous;
+        using iterator = value_type*;
+        using const_iterator = const value_type*;
+        static constexpr bool has_random_access = true;
     };
+
+    // Non-contiguous storage: require iterator types from Storage
+    template<typename Storage>
+    struct storage_iterator_traits_impl<Storage, false> {
+        using value_type = storage_value_type_t<Storage>;
+        using iterator = typename Storage::iterator;
+        using const_iterator = typename Storage::const_iterator;
+        static constexpr bool has_random_access = false;
+    };
+
+    template<typename Storage>
+    struct storage_iterator_traits : storage_iterator_traits_impl<Storage> {};
 
     /**
      * @brief Cache behavior hints
