@@ -13,6 +13,7 @@
 
 #include "type_traits.h"
 #include "numeric_traits.h"
+#include "storage_traits.h"
 
 namespace fem::numeric::traits {
 
@@ -332,7 +333,7 @@ namespace fem::numeric::traits {
 
     /**
      * @brief Storage requirements calculator
-     * Builds on storage_traits from traits_base.hpp
+     * Uses storage trait utilities for alignment and capacity
      */
     template<typename Container>
     struct container_storage_info {
@@ -342,7 +343,7 @@ namespace fem::numeric::traits {
         static constexpr size_t element_size = sizeof(value_type);
         static constexpr size_t alignment = [] {
             if constexpr (!std::is_void_v<storage_type>) {
-            return storage_traits<storage_type>::alignment;
+                return alignment_traits<storage_type>::required_alignment;
         } else {
             return alignof(value_type);
         }
@@ -350,7 +351,7 @@ namespace fem::numeric::traits {
 
         static constexpr bool is_dynamic = [] {
             if constexpr (!std::is_void_v<storage_type>) {
-            return storage_traits<storage_type>::is_dynamic;
+                return !storage_capacity<storage_type>::is_static;
         } else {
             return true;
         }
