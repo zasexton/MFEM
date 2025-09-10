@@ -12,6 +12,7 @@
 #include "../base/container_base.h"
 #include "../base/storage_base.h"
 #include "../base/traits_base.h"
+#include "type_traits.h"
 
 namespace fem::numeric::traits {
 
@@ -33,22 +34,7 @@ namespace fem::numeric::traits {
     template<typename...>
     inline constexpr bool always_false_v = false;
 
-    /**
-     * @brief Void type helper for SFINAE
-     */
-    template<typename... Ts>
-    using void_t = std::void_t<Ts...>;
-
-    /**
-     * @brief Identity type transformation
-     */
-    template<typename T>
-    struct type_identity {
-        using type = T;
-    };
-
-    template<typename T>
-    using type_identity_t = typename type_identity<T>::type;
+    // void_t and type_identity are provided by type_traits.h
 
     // ============================================================================
     // Detection idiom implementation
@@ -159,49 +145,6 @@ namespace fem::numeric::traits {
 
     template<typename T>
     inline constexpr bool has_end_v = is_detected_v<has_end_t, T>;
-
-    // ============================================================================
-    // Numeric operation detection
-    // ============================================================================
-
-    /**
-     * @brief Detect arithmetic operations
-     */
-    template<typename T>
-    using has_plus_t = decltype(std::declval<T>() + std::declval<T>());
-
-    template<typename T>
-    using has_minus_t = decltype(std::declval<T>() - std::declval<T>());
-
-    template<typename T>
-    using has_multiply_t = decltype(std::declval<T>() * std::declval<T>());
-
-    template<typename T>
-    using has_divide_t = decltype(std::declval<T>() / std::declval<T>());
-
-    template<typename T>
-    using has_negate_t = decltype(-std::declval<T>());
-
-    template<typename T>
-    inline constexpr bool has_arithmetic_ops_v =
-            is_detected_v<has_plus_t, T> &&
-            is_detected_v<has_minus_t, T> &&
-            is_detected_v<has_multiply_t, T> &&
-            is_detected_v<has_divide_t, T>;
-
-    /**
-     * @brief Detect comparison operations
-     */
-    template<typename T>
-    using has_equal_t = decltype(std::declval<T>() == std::declval<T>());
-
-    template<typename T>
-    using has_less_t = decltype(std::declval<T>() < std::declval<T>());
-
-    template<typename T>
-    inline constexpr bool has_comparison_ops_v =
-            is_detected_v<has_equal_t, T> &&
-            is_detected_v<has_less_t, T>;
 
     // ============================================================================
     // Container and storage detection
@@ -411,22 +354,6 @@ namespace fem::numeric::traits {
 
     template<typename... Types>
     using numeric_common_type_t = typename numeric_common_type<Types...>::type;
-
-    // ============================================================================
-    // Callable detection
-    // ============================================================================
-
-    /**
-     * @brief Detect if type is callable with given arguments
-     */
-    template<typename F, typename... Args>
-    using is_callable_helper = decltype(std::declval<F>()(std::declval<Args>()...));
-
-    template<typename F, typename... Args>
-    inline constexpr bool is_callable_v = is_detected_v<is_callable_helper, F, Args...>;
-
-    template<typename F, typename... Args>
-    using callable_result_t = detected_t<is_callable_helper, F, Args...>;
 
     // ============================================================================
     // Member type detection
