@@ -100,6 +100,22 @@ namespace fem::numeric::traits {
 
     namespace detail {
         template<typename, typename = void>
+        struct base_traits_helper {
+            using value_type = void;
+            using size_type = void;
+        };
+
+        template<typename T>
+        struct base_traits_helper<
+            T,
+            std::void_t<
+                typename T::value_type,
+                typename T::size_type,
+                std::enable_if_t<::fem::numeric::Container<T>, int>
+            >
+        > : container_traits<T> {};
+
+        template<typename, typename = void>
         struct iterator_type_helper {
             using type = void*;
         };
@@ -107,6 +123,17 @@ namespace fem::numeric::traits {
         template<typename U>
         struct iterator_type_helper<U, std::void_t<typename U::iterator>> {
             using type = typename U::iterator;
+        };
+
+        template<typename It, typename = void>
+        struct iterator_category_helper {
+            using type = void;
+        };
+
+        template<typename It>
+        struct iterator_category_helper<It,
+            std::void_t<typename std::iterator_traits<It>::iterator_category>> {
+            using type = typename std::iterator_traits<It>::iterator_category;
         };
     } // namespace detail
 
@@ -117,7 +144,7 @@ namespace fem::numeric::traits {
     template<typename T>
     struct extended_container_traits {
         // Import base traits
-        using base_traits = container_traits<T>;
+        using base_traits = detail::base_traits_helper<T>;
         using value_type = typename base_traits::value_type;
         using size_type = typename base_traits::size_type;
 
@@ -154,11 +181,7 @@ namespace fem::numeric::traits {
         // Iterator properties
         using iterator_type = typename detail::iterator_type_helper<T>::type;
 
-        using iterator_category = std::conditional_t<
-                !std::is_same_v<iterator_type, void*>,
-        typename std::iterator_traits<iterator_type>::iterator_category,
-        void
-        >;
+        using iterator_category = typename detail::iterator_category_helper<iterator_type>::type;
 
         static constexpr bool has_random_access = std::is_same_v<
                 iterator_category,
