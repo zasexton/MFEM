@@ -179,7 +179,7 @@ TEST(ContainerTraitsTest, SupportsArithmeticOps) {
 TEST(ContainerTraitsTest, EvaluationStrategy) {
     using expr_strategy = evaluation_strategy<MockExpression>;
     using static_strategy = evaluation_strategy<MockStaticContainer>;
-    using dense_strategy = evaluation_strategy<MockDenseContainer>;
+    using dense_strategy [[maybe_unused]] = evaluation_strategy<MockDenseContainer>;
 
     EXPECT_EQ(expr_strategy::value, evaluation_strategy<MockExpression>::Lazy);
     EXPECT_EQ(static_strategy::value, evaluation_strategy<MockStaticContainer>::Parallel);
@@ -263,8 +263,8 @@ TEST(ContainerTraitsTest, ShapeTypeExtraction) {
 
     // For types without shape_type, should default to Shape
     struct NoShapeContainer {
-        using value_type = int;
-        using size_type = size_t;
+        using value_type [[maybe_unused]] = int;
+        using size_type [[maybe_unused]] = size_t;
     };
     using default_shape = shape_type<NoShapeContainer>;
     EXPECT_TRUE((std::is_same_v<default_shape, Shape>));
