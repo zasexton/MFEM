@@ -359,7 +359,7 @@ namespace fem::numeric::traits {
 
         static constexpr bool is_dynamic = [] {
             if constexpr (!std::is_void_v<storage_type>) {
-                return !storage_capacity<storage_type>::is_static;
+                return is_dynamic_storage_v<storage_type>;
         } else {
             return true;
         }

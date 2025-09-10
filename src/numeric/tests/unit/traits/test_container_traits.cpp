@@ -76,8 +76,7 @@ struct NotAContainer {
 };
 
 // Container without arithmetic operations
-class NoArithmeticContainer : public ContainerBase<NoArithmeticContainer, int, DynamicStorage<int>> {
-public:
+struct NoArithmeticContainer {
     using value_type = int;
     using size_type = std::size_t;
 };
