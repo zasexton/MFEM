@@ -48,6 +48,25 @@ namespace fem::numeric::traits {
         bool involutive = false;        // f(f(a)) = a
     };
 
+    // Forward declarations
+    template<typename Op>
+    struct operation_category;
+
+    template<typename Op>
+    inline constexpr OperationCategory operation_category_v = operation_category<Op>::value;
+
+    template<typename Op>
+    struct is_reduction_operation;
+
+    template<typename Op>
+    inline constexpr bool is_reduction_operation_v = is_reduction_operation<Op>::value;
+
+    template<typename Op>
+    struct is_elementwise_operation;
+
+    template<typename Op>
+    inline constexpr bool is_elementwise_operation_v = is_elementwise_operation<Op>::value;
+
     /**
      * @brief Detect if operation is in-place (modifies first argument)
      */
@@ -65,20 +84,32 @@ namespace fem::numeric::traits {
     inline constexpr bool is_inplace_operation_v = is_inplace_operation<Op>::value;
 
     /**
+     * @brief Check if operation is valid for given types
+     */
+    template<typename Op, typename... Args>
+    struct is_valid_operation {
+        static constexpr bool value = std::is_invocable_v<Op, Args...>;
+    };
+
+    template<typename Op, typename... Args>
+    inline constexpr bool is_valid_operation_v = is_valid_operation<Op, Args...>::value;
+
+    /**
      * @brief Detect if operation is element-wise (for arrays/matrices)
      */
     template<typename Op>
     struct is_elementwise_operation {
-        static constexpr bool value =
-                operation_category_v<Op> == OperationCategory::Arithmetic ||
-                operation_category_v<Op> == OperationCategory::Transcendental ||
-                operation_category_v<Op> == OperationCategory::Comparison ||
-                std::is_same_v<Op, ops::abs_op<>> ||
-                std::is_same_v<Op, ops::sign_op<>>;
+        static constexpr bool value = [] {
+            if constexpr (is_valid_operation_v<Op>) {
+                return operation_category_v<Op> == OperationCategory::Arithmetic ||
+                       operation_category_v<Op> == OperationCategory::Transcendental ||
+                       operation_category_v<Op> == OperationCategory::Comparison ||
+                       std::is_same_v<Op, ops::abs_op<>> ||
+                       std::is_same_v<Op, ops::sign_op<>>;
+            }
+            return false;
+        }();
     };
-
-    template<typename Op>
-    inline constexpr bool is_elementwise_operation_v = is_elementwise_operation<Op>::value;
 
     /**
      * @brief Detect if operation requires special domain handling
@@ -90,7 +121,7 @@ namespace fem::numeric::traits {
                 std::is_same_v<Op, ops::log_op<>> ||     // x > 0
                 std::is_same_v<Op, ops::asin_op<>> ||    // |x| <= 1
                 std::is_same_v<Op, ops::acos_op<>> ||    // |x| <= 1
-                std::is_same_v<Op, ops::atanh_op<>>;     // |x| < 1
+                std::is_same_v<Op, ops::tanh_op<>>;      // Changed from atanh_op
     };
 
     template<typename Op>
@@ -169,17 +200,6 @@ namespace fem::numeric::traits {
     using operation_result_t = typename operation_result<Op, Args...>::type;
 
     /**
-     * @brief Check if operation is valid for given types
-     */
-    template<typename Op, typename... Args>
-    struct is_valid_operation {
-        static constexpr bool value = std::is_invocable_v<Op, Args...>;
-    };
-
-    template<typename Op, typename... Args>
-    inline constexpr bool is_valid_operation_v = is_valid_operation<Op, Args...>::value;
-
-    /**
      * @brief Operation category detection
      */
     template<typename Op>
@@ -203,14 +223,18 @@ namespace fem::numeric::traits {
                                std::is_same_v<Op, ops::not_equal_to<>>) {
                 return OperationCategory::Comparison;
             }
-            // Check transcendental operations
+            // Check transcendental operations - Fixed template parameters
             else if constexpr (std::is_same_v<Op, ops::sin_op<>> ||
-                                std::is_same_v<Op, ops::cos_op<>> ||
-                                std::is_same_v<Op, ops::tan_op<>> ||
-                                std::is_same_v<Op, ops::exp_op<>> ||
-                                std::is_same_v<Op, ops::log_op<>> ||
-                                std::is_same_v<Op, ops::sqrt_op<>> ||
-                                std::is_same_v<Op, ops::pow_op<>>) {
+                               std::is_same_v<Op, ops::cos_op<>> ||
+                               std::is_same_v<Op, ops::tan_op<>> ||
+                               std::is_same_v<Op, ops::exp_op<>> ||
+                               std::is_same_v<Op, ops::log_op<>> ||
+                               std::is_same_v<Op, ops::sqrt_op<>>) {
+                return OperationCategory::Transcendental;
+            }
+            // Handle power_op separately as it requires a template parameter
+            else if constexpr (requires { typename Op::result_type; }) {
+                // Check if it's a power operation by other means
                 return OperationCategory::Transcendental;
             }
             else {
@@ -219,8 +243,11 @@ namespace fem::numeric::traits {
         }();
     };
 
-    template<typename Op>
-    inline constexpr OperationCategory operation_category_v = operation_category<Op>::value;
+    // Specialization for power_op
+    template<typename T>
+    struct operation_category<ops::power_op<T>> {
+        static constexpr OperationCategory value = OperationCategory::Transcendental;
+    };
 
     /**
      * @brief Get algebraic properties of operation
@@ -267,23 +294,8 @@ namespace fem::numeric::traits {
                 props.has_identity = false; // no identity element
                 props.has_inverse = false;  // no inverse operation
             }
-            // Power
-            else if constexpr (std::is_same_v<Op, ops::pow_op<>>) {
-                props.commutative = false;  // a^b ≠ b^a (in general)
-                props.associative = false;  // (a^b)^c ≠ a^(b^c)
-                props.has_identity = true;  // identity = 1 (for right identity: a^1 = a)
-                props.has_inverse = false;  // logarithm is inverse but different operation
-            }
-            // Min/Max
-            else if constexpr (std::is_same_v<Op, ops::min_op<>> ||
-            std::is_same_v<Op, ops::max_op<>>) {
-                props.commutative = true;
-                props.associative = true;
-                props.idempotent = true;    // min(a,a) = a, max(a,a) = a
-                props.has_identity = false; // no universal identity (depends on type)
-            }
             // Logical AND
-            else if constexpr (std::is_same_v<Op, ops::logical_and<>>) {
+            else if constexpr (std::is_same_v<Op, ops::logical_and>) {
                 props.commutative = true;
                 props.associative = true;
                 props.idempotent = true;    // a && a = a
@@ -291,7 +303,7 @@ namespace fem::numeric::traits {
                 props.distributive = true;  // over OR
             }
             // Logical OR
-            else if constexpr (std::is_same_v<Op, ops::logical_or<>>) {
+            else if constexpr (std::is_same_v<Op, ops::logical_or>) {
                 props.commutative = true;
                 props.associative = true;
                 props.idempotent = true;    // a || a = a
@@ -327,6 +339,44 @@ namespace fem::numeric::traits {
         }();
     };
 
+    // Specializations for min/max with template parameter
+    template<typename T>
+    struct algebraic_properties<ops::min_op<T>> {
+        static constexpr AlgebraicProperties value = [] {
+            AlgebraicProperties props;
+            props.commutative = true;
+            props.associative = true;
+            props.idempotent = true;    // min(a,a) = a
+            props.has_identity = false; // no universal identity (depends on type)
+            return props;
+        }();
+    };
+
+    template<typename T>
+    struct algebraic_properties<ops::max_op<T>> {
+        static constexpr AlgebraicProperties value = [] {
+            AlgebraicProperties props;
+            props.commutative = true;
+            props.associative = true;
+            props.idempotent = true;    // max(a,a) = a
+            props.has_identity = false; // no universal identity (depends on type)
+            return props;
+        }();
+    };
+
+    // Specialization for power_op
+    template<typename T>
+    struct algebraic_properties<ops::power_op<T>> {
+        static constexpr AlgebraicProperties value = [] {
+            AlgebraicProperties props;
+            props.commutative = false;  // a^b ≠ b^a (in general)
+            props.associative = false;  // (a^b)^c ≠ a^(b^c)
+            props.has_identity = true;  // identity = 1 (for right identity: a^1 = a)
+            props.has_inverse = false;  // logarithm is inverse but different operation
+            return props;
+        }();
+    };
+
     /**
      * @brief Check if operation preserves type
      */
@@ -334,12 +384,12 @@ namespace fem::numeric::traits {
     struct preserves_type {
         static constexpr bool value = [] {
             if constexpr (is_unary_operation_v<Op, T>) {
-            return std::is_same_v<operation_result_t<Op, T>, T>;
-        } else if constexpr (is_binary_operation_v<Op, T>) {
-            return std::is_same_v<operation_result_t<Op, T, T>, T>;
-        } else {
-            return false;
-        }
+                return std::is_same_v<operation_result_t<Op, T>, T>;
+            } else if constexpr (is_binary_operation_v<Op, T>) {
+                return std::is_same_v<operation_result_t<Op, T, T>, T>;
+            } else {
+                return false;
+            }
         }();
     };
 
@@ -353,20 +403,19 @@ namespace fem::numeric::traits {
     struct is_ieee_safe {
         static constexpr bool value = [] {
             if constexpr (!IEEECompliant<T>) {
-            return true;  // Non-IEEE types are "safe" by default
-        }
+                return true;  // Non-IEEE types are "safe" by default
+            }
 
             // Most standard operations are IEEE-compliant
-            // Division by zero, sqrt of negative, etc. produce correct IEEE results
             if constexpr (operation_category_v<Op> == OperationCategory::Arithmetic ||
                           operation_category_v<Op> == OperationCategory::Transcendental) {
-            return true;
-        }
+                return true;
+            }
 
             // Comparisons need special handling for NaN
             if constexpr (operation_category_v<Op> == OperationCategory::Comparison) {
-            return std::is_same_v<Op, ops::not_equal_to<>>;  // != is the only one that works with NaN
-        }
+                return std::is_same_v<Op, ops::not_equal_to<>>;  // != is the only one that works with NaN
+            }
 
             return false;
         }();
@@ -382,19 +431,29 @@ namespace fem::numeric::traits {
     struct can_overflow {
         static constexpr bool value = [] {
             if constexpr (std::is_floating_point_v<T>) {
-            // Floating point "overflows" to infinity
-            return operation_category_v<Op> == OperationCategory::Arithmetic ||
-                   std::is_same_v<Op, ops::exp_op<>> ||
-            std::is_same_v<Op, ops::pow_op<>>;
-        } else if constexpr (std::is_integral_v<T>) {
-            // Integer overflow is undefined behavior
-            return std::is_same_v<Op, ops::plus<>> ||
-            std::is_same_v<Op, ops::minus<>> ||
-            std::is_same_v<Op, ops::multiplies<>> ||
-            std::is_same_v<Op, ops::negate<>>;
-        }
+                // Floating point "overflows" to infinity
+                if constexpr (operation_category_v<Op> == OperationCategory::Arithmetic) {
+                    return true;
+                }
+                else if constexpr (std::is_same_v<Op, ops::exp_op<>>) {
+                    return true;
+                }
+                return false;
+            } else if constexpr (std::is_integral_v<T>) {
+                // Integer overflow is undefined behavior
+                return std::is_same_v<Op, ops::plus<>> ||
+                       std::is_same_v<Op, ops::minus<>> ||
+                       std::is_same_v<Op, ops::multiplies<>> ||
+                       std::is_same_v<Op, ops::negate<>>;
+            }
             return false;
         }();
+    };
+
+    // Specialization for power_op
+    template<typename T>
+    struct can_overflow<ops::power_op<T>, T> {
+        static constexpr bool value = std::is_floating_point_v<T>;
     };
 
     template<typename Op, typename T>
@@ -407,17 +466,22 @@ namespace fem::numeric::traits {
     struct can_produce_nan {
         static constexpr bool value = [] {
             if constexpr (!std::is_floating_point_v<T> && !is_complex_v<T>) {
-            return false;
-        }
+                return false;
+            }
 
             // Operations that can produce NaN
             return std::is_same_v<Op, ops::divides<>> ||    // 0/0, inf/inf
-            std::is_same_v<Op, ops::sqrt_op<>> ||     // sqrt(negative)
-            std::is_same_v<Op, ops::log_op<>> ||      // log(negative)
-            std::is_same_v<Op, ops::asin_op<>> ||     // asin(|x| > 1)
-            std::is_same_v<Op, ops::acos_op<>> ||     // acos(|x| > 1)
-            std::is_same_v<Op, ops::pow_op<>>;        // 0^0, inf^0, etc.
+                   std::is_same_v<Op, ops::sqrt_op<>> ||     // sqrt(negative)
+                   std::is_same_v<Op, ops::log_op<>> ||      // log(negative)
+                   std::is_same_v<Op, ops::asin_op<>> ||     // asin(|x| > 1)
+                   std::is_same_v<Op, ops::acos_op<>>;       // acos(|x| > 1)
         }();
+    };
+
+    // Specialization for power_op
+    template<typename T>
+    struct can_produce_nan<ops::power_op<T>, T> {
+        static constexpr bool value = std::is_floating_point_v<T> || is_complex_v<T>;
     };
 
     template<typename Op, typename T>
@@ -433,33 +497,39 @@ namespace fem::numeric::traits {
         static constexpr Level value = [] {
             // Arithmetic operations
             if constexpr (std::is_same_v<Op, ops::plus<>> ||
-            std::is_same_v<Op, ops::minus<>>) {
-            return Trivial;
-        }
+                         std::is_same_v<Op, ops::minus<>>) {
+                return Trivial;
+            }
             else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
-            return Simple;
-        }
+                return Simple;
+            }
             else if constexpr (std::is_same_v<Op, ops::divides<>>) {
-            return Moderate;
-        }
+                return Moderate;
+            }
             // Transcendental operations
             else if constexpr (std::is_same_v<Op, ops::sqrt_op<>>) {
-            return Moderate;
-        }
+                return Moderate;
+            }
             else if constexpr (std::is_same_v<Op, ops::sin_op<>> ||
-            std::is_same_v<Op, ops::cos_op<>> ||
-            std::is_same_v<Op, ops::exp_op<>> ||
-            std::is_same_v<Op, ops::log_op<>>) {
-            return Complex;
-        }
-            else if constexpr (std::is_same_v<Op, ops::pow_op<>> ||
-            std::is_same_v<Op, ops::tan_op<>>) {
-            return VeryComplex;
-        }
+                             std::is_same_v<Op, ops::cos_op<>> ||
+                             std::is_same_v<Op, ops::exp_op<>> ||
+                             std::is_same_v<Op, ops::log_op<>>) {
+                return Complex;
+            }
+            else if constexpr (std::is_same_v<Op, ops::tan_op<>>) {
+                return VeryComplex;
+            }
             else {
-            return Simple;
-        }
+                return Simple;
+            }
         }();
+    };
+
+    // Specialization for power_op
+    template<typename T>
+    struct operation_complexity<ops::power_op<T>> {
+        enum Level { Trivial, Simple, Moderate, Complex, VeryComplex };
+        static constexpr Level value = VeryComplex;
     };
 
     template<typename Op>
@@ -493,9 +563,11 @@ namespace fem::numeric::traits {
 
         // Type behavior
         static constexpr bool preserves_type = preserves_type_v<Op, T>;
-        using result_type = std::conditional_t<is_unary,operation_result_t<Op, T>,
-                                                std::conditional_t<is_binary,
-                                                                    operation_result_t<Op, T, T>,void>>;
+        using result_type = std::conditional_t<is_unary,
+                                              operation_result_t<Op, T>,
+                                              std::conditional_t<is_binary,
+                                                                operation_result_t<Op, T, T>,
+                                                                void>>;
 
         // Algebraic properties
         static constexpr auto algebra = algebraic_properties<Op>::value;
@@ -519,20 +591,38 @@ namespace fem::numeric::traits {
                 return T{1};  // Right identity: a / 1 = a
             } else if constexpr (std::is_same_v<Op, ops::minus<>>) {
                 return T{0};  // Right identity: a - 0 = a
-            } else if constexpr (std::is_same_v<Op, ops::pow_op<>>) {
-                return T{1};  // Right identity: a^1 = a
             } else if constexpr (std::is_same_v<Op, std::bit_and<>>) {
                 return ~T{0};  // All bits set
             } else if constexpr (std::is_same_v<Op, std::bit_or<>> ||
-            std::is_same_v<Op, std::bit_xor<>>) {
+                                std::is_same_v<Op, std::bit_xor<>>) {
                 return T{0};
-            } else if constexpr (std::is_same_v<Op, ops::logical_and<>>) {
+            } else if constexpr (std::is_same_v<Op, ops::logical_and>) {
                 return true;
-            } else if constexpr (std::is_same_v<Op, ops::logical_or<>>) {
+            } else if constexpr (std::is_same_v<Op, ops::logical_or>) {
                 return false;
             } else {
                 return T{};  // No identity element
             }
+        }
+    };
+
+    // Specialization for power_op identity
+    template<typename T>
+    struct operation_properties<ops::power_op<T>, T> {
+        static constexpr bool is_unary = false;
+        static constexpr bool is_binary = true;
+        static constexpr OperationCategory category = OperationCategory::Transcendental;
+        static constexpr bool preserves_type = preserves_type_v<ops::power_op<T>, T>;
+        using result_type = T;
+        static constexpr auto algebra = algebraic_properties<ops::power_op<T>>::value;
+        static constexpr bool ieee_safe = is_ieee_safe_v<ops::power_op<T>, T>;
+        static constexpr bool might_overflow = can_overflow_v<ops::power_op<T>, T>;
+        static constexpr bool might_produce_nan = can_produce_nan_v<ops::power_op<T>, T>;
+        static constexpr auto complexity = operation_complexity_v<ops::power_op<T>>;
+        static constexpr bool vectorizable = benefits_from_vectorization_v<ops::power_op<T>, T>;
+
+        static constexpr T identity() {
+            return T{1};  // Right identity: a^1 = a
         }
     };
 
@@ -554,17 +644,9 @@ namespace fem::numeric::traits {
      */
     template<typename Op, typename T>
     struct use_specialized_impl {
-        static constexpr bool use_blas = [] {
-            // Matrix operations that benefit from BLAS
-            if constexpr (std::is_same_v<Op, ops::matmul_op<>> ||
-            std::is_same_v<Op, ops::dot_op<>>) {
-                return std::is_floating_point_v<T> || is_complex_v<T>;
-            }
-            return false;
-        }();
-
+        // These would need actual matrix operations to be defined
+        static constexpr bool use_blas = false;
         static constexpr bool use_simd = benefits_from_vectorization_v<Op, T>;
-
         static constexpr bool use_parallel =
                 operation_complexity_v<Op> >= operation_complexity<Op>::Complex;
     };
@@ -577,7 +659,7 @@ namespace fem::numeric::traits {
         // Condition number estimation for the operation
         static constexpr double condition_number() {
             if constexpr (std::is_same_v<Op, ops::plus<>> ||
-            std::is_same_v<Op, ops::minus<>>) {
+                         std::is_same_v<Op, ops::minus<>>) {
                 return 1.0;  // Well-conditioned
             } else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
                 return 1.0;  // Well-conditioned for moderate values
@@ -598,6 +680,8 @@ namespace fem::numeric::traits {
      */
     template<typename Op, typename T>
     struct requires_alignment {
+        static constexpr size_t cache_line = 64;  // Define cache_line constant
+
         static constexpr size_t value = [] {
             if constexpr (benefits_from_vectorization_v<Op, T>) {
                 // SIMD operations need aligned memory
@@ -641,6 +725,24 @@ namespace fem::numeric::traits {
     };
 
     /**
+     * @brief Reduction operation traits
+     */
+    template<typename Op>
+    struct is_reduction_operation {
+        static constexpr bool value =
+                std::is_same_v<Op, ops::sum_op<>> ||
+                std::is_same_v<Op, ops::product_op<>> ||
+                std::is_same_v<Op, ops::mean_op<>>;
+    };
+
+    // Specializations for min/max with template parameter
+    template<typename T>
+    struct is_reduction_operation<ops::min_op<T>> : std::true_type {};
+
+    template<typename T>
+    struct is_reduction_operation<ops::max_op<T>> : std::true_type {};
+
+    /**
      * @brief Determine memory access pattern for operation
      */
     template<typename Op>
@@ -658,18 +760,18 @@ namespace fem::numeric::traits {
 
     template<typename Op>
     inline constexpr MemoryAccessPattern memory_access_pattern_v =
-    memory_access_pattern<Op>::value;
+        memory_access_pattern<Op>::value;
 
     /**
      * @brief Batch processing hints
      */
     template<typename Op, typename T>
     struct batch_processing_hints {
+        static constexpr size_t cache_line = 64;  // Typical cache line size
+        static constexpr size_t l1_cache = 32768; // Typical L1 cache size
+
         // Optimal batch size for cache efficiency
         static constexpr size_t optimal_batch_size = [] {
-            constexpr size_t cache_line = 64;  // Typical cache line size
-            constexpr size_t l1_cache = 32768; // Typical L1 cache size
-
             if constexpr (operation_complexity_v<Op> >= operation_complexity<Op>::Complex) {
                 // Complex operations: smaller batches to fit in L1
                 return l1_cache / (sizeof(T) * 4);
@@ -735,8 +837,7 @@ namespace fem::numeric::traits {
         // Needs special handling for negative values
         static constexpr bool handle_negative =
                 std::is_same_v<Op, ops::sqrt_op<>> ||
-                std::is_same_v<Op, ops::log_op<>> ||
-                (std::is_same_v<Op, ops::pow_op<>> && std::is_integral_v<T>);
+                std::is_same_v<Op, ops::log_op<>>;
 
         // Needs special handling for infinity
         static constexpr bool handle_infinity =
@@ -751,21 +852,14 @@ namespace fem::numeric::traits {
                 operation_category_v<Op> != OperationCategory::Comparison;
     };
 
-    /**
-     * @brief Reduction operation traits
-     */
-    template<typename Op>
-    struct is_reduction_operation {
-        static constexpr bool value =
-                std::is_same_v<Op, ops::sum_op<>> ||
-                std::is_same_v<Op, ops::product_op<>> ||
-                std::is_same_v<Op, ops::min_op<>> ||
-                std::is_same_v<Op, ops::max_op<>> ||
-                std::is_same_v<Op, ops::mean_op<>>;
+    // Specialization for power_op special value handling
+    template<typename T>
+    struct special_value_handling<ops::power_op<T>, T> {
+        static constexpr bool handle_zero = false;
+        static constexpr bool handle_negative = std::is_integral_v<T>;
+        static constexpr bool handle_infinity = IEEECompliant<T>;
+        static constexpr bool handle_nan = IEEECompliant<T>;
     };
-
-    template<typename Op>
-    inline constexpr bool is_reduction_operation_v = is_reduction_operation<Op>::value;
 
     /**
      * @brief Get initial value for reduction
@@ -774,17 +868,28 @@ namespace fem::numeric::traits {
     struct reduction_identity {
         static constexpr T value() {
             if constexpr (std::is_same_v<Op, ops::sum_op<>> ||
-            std::is_same_v<Op, ops::mean_op<>>) {
+                         std::is_same_v<Op, ops::mean_op<>>) {
                 return T{0};
             } else if constexpr (std::is_same_v<Op, ops::product_op<>>) {
                 return T{1};
-            } else if constexpr (std::is_same_v<Op, ops::min_op<>>) {
-                return std::numeric_limits<T>::max();
-            } else if constexpr (std::is_same_v<Op, ops::max_op<>>) {
-                return std::numeric_limits<T>::lowest();
             } else {
                 return T{};
             }
+        }
+    };
+
+    // Specializations for min/max
+    template<typename T>
+    struct reduction_identity<ops::min_op<T>, T> {
+        static constexpr T value() {
+            return std::numeric_limits<T>::max();
+        }
+    };
+
+    template<typename T>
+    struct reduction_identity<ops::max_op<T>, T> {
+        static constexpr T value() {
+            return std::numeric_limits<T>::lowest();
         }
     };
 
@@ -813,8 +918,14 @@ namespace fem::numeric::traits {
 
         // Whether operation requires extended precision internally
         static constexpr bool needs_extended_precision =
-                std::is_same_v<Op, ops::pow_op<>> ||
-        (std::is_same_v<Op, ops::sum_op<>> && std::is_floating_point_v<T>);
+                (std::is_same_v<Op, ops::sum_op<>> && std::is_floating_point_v<T>);
+    };
+
+    // Specialization for power_op
+    template<typename T>
+    struct accuracy_requirements<ops::power_op<T>, T> {
+        static constexpr int max_ulp_error = 4;
+        static constexpr bool needs_extended_precision = true;
     };
 
     /**
