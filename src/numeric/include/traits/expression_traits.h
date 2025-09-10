@@ -9,7 +9,6 @@
 #include "../base/expression_base.h"
 #include "../base/container_base.h"
 #include "../base/ops_base.h"
-#include "../base/broadcast_base.h"
 
 #include "type_traits.h"
 #include "numeric_traits.h"
@@ -114,8 +113,9 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_broadcast_expression : std::false_type {};
 
-    template<typename Container>
-    struct is_broadcast_expression<BroadcastExpression<Container>> : std::true_type {};
+    // TODO: Define BroadcastExpression and re-enable specialization
+    // template<typename Container>
+    // struct is_broadcast_expression<BroadcastExpression<Container>> : std::true_type {};
 
     template<typename T>
     inline constexpr bool is_broadcast_expression_v = is_broadcast_expression<T>::value;
