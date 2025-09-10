@@ -472,7 +472,7 @@ TEST(OperationTraitsTest, AccuracyRequirements) {
 
 // Test dispatch strategy
 TEST(OperationTraitsTest, DispatchStrategy) {
-    using Strategy = dispatch_strategy<ops::plus<>, double, 10>::Strategy;
+    using Strategy = DispatchStrategy;
 
     // Small size uses scalar
     EXPECT_EQ((dispatch_strategy<ops::plus<>, double, 10>::value), Strategy::Scalar);
