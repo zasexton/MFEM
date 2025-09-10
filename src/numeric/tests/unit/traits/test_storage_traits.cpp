@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <vector>
 #include <array>
+#include <initializer_list>
 
 #include <traits/storage_traits.h>
 
@@ -18,8 +19,9 @@ template<typename T>
 class ViewStorage : public fem::numeric::StorageBase<T> {
 public:
     using value_type = T;
-    T* data() { return ptr_; }
-    size_t size() const { return size_; }
+    T* data() noexcept override { return ptr_; }
+    const T* data() const noexcept override { return ptr_; }
+    size_t size() const noexcept override { return size_; }
 
 private:
     T* ptr_ = nullptr;
@@ -34,7 +36,7 @@ public:
 
     size_t nnz() const { return nnz_; }
     const char* format() const { return "CSR"; }
-    size_t size() const { return rows_ * cols_; }
+    size_t size() const noexcept override { return rows_ * cols_; }
 
 private:
     size_t rows_ = 0;
@@ -50,7 +52,7 @@ public:
 
     void* pool() { return pool_; }
     size_t chunk_size() const { return chunk_size_; }
-    size_t size() const { return size_; }
+    size_t size() const noexcept override { return size_; }
 
 private:
     void* pool_ = nullptr;
@@ -67,7 +69,7 @@ public:
     static constexpr fem::numeric::Device device_type_value = fem::numeric::Device::GPU;
     static constexpr bool is_unified = false;
 
-    size_t size() const { return size_; }
+    size_t size() const noexcept override { return size_; }
 
 private:
     size_t size_ = 0;
@@ -81,7 +83,7 @@ public:
     using device_type = fem::numeric::Device;
     static constexpr bool is_unified = true;
 
-    size_t size() const { return size_; }
+    size_t size() const noexcept override { return size_; }
 
 private:
     size_t size_ = 0;
@@ -99,6 +101,88 @@ struct ParallelOperation {
 struct BasicOperation {};
 
 } // namespace test_storage
+
+// Custom numeric types for testing conversions and cache hints
+namespace custom_types {
+
+struct CustomType {
+    double value;
+    explicit CustomType(double v = 0.0) : value(v) {}
+
+    CustomType operator+(const CustomType& other) const { return CustomType(value + other.value); }
+    CustomType operator-(const CustomType& other) const { return CustomType(value - other.value); }
+    CustomType operator*(const CustomType& other) const { return CustomType(value * other.value); }
+    CustomType operator/(const CustomType& other) const { return CustomType(value / other.value); }
+
+    bool operator==(const CustomType& other) const { return value == other.value; }
+    bool operator!=(const CustomType& other) const { return value != other.value; }
+    bool operator<(const CustomType& other) const { return value < other.value; }
+    bool operator<=(const CustomType& other) const { return value <= other.value; }
+    bool operator>(const CustomType& other) const { return value > other.value; }
+    bool operator>=(const CustomType& other) const { return value >= other.value; }
+};
+
+struct LargeElement {
+    double data[8];
+
+    explicit LargeElement(double v = 0.0) {
+        for (double &d : data) { d = v; }
+    }
+
+    explicit LargeElement(std::initializer_list<double> init) {
+        size_t i = 0;
+        for (double x : init) {
+            if (i < 8) { data[i++] = x; }
+        }
+        for (; i < 8; ++i) { data[i] = 0.0; }
+    }
+
+    LargeElement operator+(const LargeElement& other) const {
+        LargeElement r;
+        for (int i = 0; i < 8; ++i) { r.data[i] = data[i] + other.data[i]; }
+        return r;
+    }
+
+    LargeElement operator-(const LargeElement& other) const {
+        LargeElement r;
+        for (int i = 0; i < 8; ++i) { r.data[i] = data[i] - other.data[i]; }
+        return r;
+    }
+
+    LargeElement operator*(const LargeElement& other) const {
+        LargeElement r;
+        for (int i = 0; i < 8; ++i) { r.data[i] = data[i] * other.data[i]; }
+        return r;
+    }
+
+    LargeElement operator/(const LargeElement& other) const {
+        LargeElement r;
+        for (int i = 0; i < 8; ++i) { r.data[i] = data[i] / other.data[i]; }
+        return r;
+    }
+
+    bool operator==(const LargeElement& other) const {
+        for (int i = 0; i < 8; ++i) {
+            if (data[i] != other.data[i]) { return false; }
+        }
+        return true;
+    }
+
+    bool operator!=(const LargeElement& other) const { return !(*this == other); }
+
+    bool operator<(const LargeElement& other) const {
+        for (int i = 0; i < 8; ++i) {
+            if (data[i] != other.data[i]) { return data[i] < other.data[i]; }
+        }
+        return false;
+    }
+
+    bool operator>(const LargeElement& other) const { return other < *this; }
+    bool operator<=(const LargeElement& other) const { return !(*this > other); }
+    bool operator>=(const LargeElement& other) const { return !(*this < other); }
+};
+
+} // namespace custom_types
 
 // Bring namespaces into scope for tests
 using namespace fem::numeric;
@@ -292,7 +376,7 @@ TEST_F(StorageTraitsTest, StorageConversion) {
 
     // Incompatible value types
     struct CustomType {};
-    using DynamicCustom = DynamicStorage<CustomType>;
+    using DynamicCustom = DynamicStorage<custom_types::CustomType>;
     EXPECT_FALSE((can_convert_storage_v<DynamicInt, DynamicCustom>));
 }
 
@@ -336,7 +420,7 @@ TEST_F(StorageTraitsTest, StorageIteratorTraits) {
 // Tests for cache_hints
 TEST_F(StorageTraitsTest, CacheHints) {
     using FloatStore = DynamicStorage<float>;
-    using LargeStore = DynamicStorage<std::array<double, 8>>;
+    using LargeStore = DynamicStorage<custom_types::LargeElement>;
 
     // Elements per cache line
     constexpr size_t float_per_line = cache_hints<FloatStore>::elements_per_cache_line;

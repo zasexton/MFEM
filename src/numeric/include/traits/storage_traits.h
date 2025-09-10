@@ -481,8 +481,12 @@ namespace fem::numeric::traits {
         static constexpr bool is_device_memory =
                 requires { typename Storage::device_type; };
 
-        static constexpr bool is_unified_memory =
-                requires { Storage::is_unified; } && Storage::is_unified;
+        static constexpr bool is_unified_memory = [] {
+            if constexpr (requires { Storage::is_unified; })
+                return Storage::is_unified;
+            else
+                return false;
+        }();
 
         static constexpr bool requires_explicit_transfer =
                 is_device_memory && !is_unified_memory;
