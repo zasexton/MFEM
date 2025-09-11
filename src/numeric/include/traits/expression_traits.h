@@ -78,6 +78,7 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_binary_expression : std::false_type {};
 
+    // BinaryExpression is parameterized as <Op, Left, Right>
     template<typename Op, typename Left, typename Right>
     struct is_binary_expression<BinaryExpression<Op, Left, Right>> : std::true_type {};
 
@@ -90,8 +91,8 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_unary_expression : std::false_type {};
 
-    template<typename Op, typename Arg>
-    struct is_unary_expression<UnaryExpression<Op, Arg>> : std::true_type {};
+    template<typename Expr, typename Op>
+    struct is_unary_expression<UnaryExpression<Expr, Op>> : std::true_type {};
 
     template<typename T>
     inline constexpr bool is_unary_expression_v = is_unary_expression<T>::value;
@@ -179,9 +180,9 @@ namespace fem::numeric::traits {
     static constexpr size_t value = 1;
     };
 
-    template<typename Op, typename Arg>
-    struct expression_depth<UnaryExpression<Op, Arg>> {
-    static constexpr size_t value = 1 + expression_depth<Arg>::value;
+    template<typename Expr, typename Op>
+    struct expression_depth<UnaryExpression<Expr, Op>> {
+    static constexpr size_t value = 1 + expression_depth<Expr>::value;
     };
 
     template<typename Op, typename Left, typename Right>
@@ -208,9 +209,9 @@ namespace fem::numeric::traits {
     static constexpr size_t value = 0;
     };
 
-    template<typename Op, typename Arg>
-    struct operation_count<UnaryExpression<Op, Arg>> {
-    static constexpr size_t value = 1 + operation_count<Arg>::value;
+    template<typename Expr, typename Op>
+    struct operation_count<UnaryExpression<Expr, Op>> {
+    static constexpr size_t value = 1 + operation_count<Expr>::value;
     };
 
     template<typename Op, typename Left, typename Right>
@@ -231,9 +232,9 @@ namespace fem::numeric::traits {
         static constexpr bool value = is_broadcast_expression_v<Expr>;
     };
 
-    template<typename Op, typename Arg>
-    struct has_broadcast<UnaryExpression<Op, Arg>> {
-    static constexpr bool value = has_broadcast<Arg>::value;
+    template<typename Expr, typename Op>
+    struct has_broadcast<UnaryExpression<Expr, Op>> {
+    static constexpr bool value = has_broadcast<Expr>::value;
     };
 
     template<typename Op, typename Left, typename Right>
@@ -307,8 +308,8 @@ namespace fem::numeric::traits {
         using type = void;
     };
 
-    template<typename Op, typename Arg>
-    struct expression_operation<UnaryExpression<Op, Arg>> {
+    template<typename Expr, typename Op>
+    struct expression_operation<UnaryExpression<Expr, Op>> {
         using type = Op;
     };
 
@@ -420,9 +421,9 @@ namespace fem::numeric::traits {
         static constexpr size_t value = is_terminal_expression_v<Expr> ? 1 : 0;
     };
 
-    template<typename Op, typename Arg>
-    struct terminal_count<UnaryExpression<Op, Arg>> {
-        static constexpr size_t value = terminal_count<Arg>::value;
+    template<typename Expr, typename Op>
+    struct terminal_count<UnaryExpression<Expr, Op>> {
+    static constexpr size_t value = terminal_count<Expr>::value;
     };
 
     template<typename Op, typename Left, typename Right>
