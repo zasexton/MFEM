@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/CoreTargets.cmake")
+
+check_required_components(Core)
+
+# Propagate threading requirement
+find_package(Threads REQUIRED)
+
+# Optional: fmt
+find_package(fmt QUIET)
