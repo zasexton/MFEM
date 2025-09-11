@@ -78,8 +78,8 @@ namespace fem::numeric::traits {
     template<typename T>
     struct is_binary_expression : std::false_type {};
 
-    template<typename Op, typename LHS, typename RHS>
-    struct is_binary_expression<BinaryExpression<Op, LHS, RHS>> : std::true_type {};
+    template<typename Op, typename Left, typename Right>
+    struct is_binary_expression<BinaryExpression<Op, Left, Right>> : std::true_type {};
 
     template<typename T>
     inline constexpr bool is_binary_expression_v = is_binary_expression<T>::value;
@@ -184,11 +184,11 @@ namespace fem::numeric::traits {
     static constexpr size_t value = 1 + expression_depth<Arg>::value;
     };
 
-    template<typename Op, typename LHS, typename RHS>
-    struct expression_depth<BinaryExpression<Op, LHS, RHS>> {
+    template<typename Op, typename Left, typename Right>
+    struct expression_depth<BinaryExpression<Op, Left, Right>> {
     static constexpr size_t value = 1 + std::max(
-            expression_depth<LHS>::value,
-            expression_depth<RHS>::value
+            expression_depth<Left>::value,
+            expression_depth<Right>::value
     );
     };
 
@@ -213,11 +213,11 @@ namespace fem::numeric::traits {
     static constexpr size_t value = 1 + operation_count<Arg>::value;
     };
 
-    template<typename Op, typename LHS, typename RHS>
-    struct operation_count<BinaryExpression<Op, LHS, RHS>> {
+    template<typename Op, typename Left, typename Right>
+    struct operation_count<BinaryExpression<Op, Left, Right>> {
     static constexpr size_t value = 1 +
-                                    operation_count<LHS>::value +
-                                    operation_count<RHS>::value;
+                                    operation_count<Left>::value +
+                                    operation_count<Right>::value;
     };
 
     template<typename Expr>
@@ -236,10 +236,10 @@ namespace fem::numeric::traits {
     static constexpr bool value = has_broadcast<Arg>::value;
     };
 
-    template<typename Op, typename LHS, typename RHS>
-    struct has_broadcast<BinaryExpression<Op, LHS, RHS>> {
-    static constexpr bool value = has_broadcast<LHS>::value ||
-                                  has_broadcast<RHS>::value;
+    template<typename Op, typename Left, typename Right>
+    struct has_broadcast<BinaryExpression<Op, Left, Right>> {
+    static constexpr bool value = has_broadcast<Left>::value ||
+                                  has_broadcast<Right>::value;
     };
 
     template<typename Expr>
@@ -313,8 +313,8 @@ namespace fem::numeric::traits {
         using type = Op;
     };
 
-    template<typename Op, typename LHS, typename RHS>
-    struct expression_operation<BinaryExpression<Op, LHS, RHS>> {
+    template<typename Op, typename Left, typename Right>
+    struct expression_operation<BinaryExpression<Op, Left, Right>> {
         using type = Op;
     };
 
@@ -422,10 +422,10 @@ namespace fem::numeric::traits {
         static constexpr size_t value = terminal_count<Arg>::value;
     };
 
-    template<typename Op, typename LHS, typename RHS>
-    struct terminal_count<BinaryExpression<Op, LHS, RHS>> {
-        static constexpr size_t value = terminal_count<LHS>::value +
-                                        terminal_count<RHS>::value;
+    template<typename Op, typename Left, typename Right>
+    struct terminal_count<BinaryExpression<Op, Left, Right>> {
+        static constexpr size_t value = terminal_count<Left>::value +
+                                        terminal_count<Right>::value;
     };
 
     template<typename Expr>
