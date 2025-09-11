@@ -79,6 +79,16 @@ cmake .. \
     -DTBB_USE_MALLOC=ON       # Use TBB's scalable allocator
 ```
 
+#### Suppressing Atomic Assembly Warning
+When parallel assembly runs without atomic updates the library emits a compile-time
+note to remind you that external synchronization is required. If you deliberately
+handle synchronization yourself, this note can be silenced:
+```bash
+cmake .. -DFEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING=ON
+```
+Be aware that parallel assembly without atomics risks data races unless your code
+uses proper synchronization mechanisms.
+
 ## Runtime Configuration
 
 ### OpenMP Thread Control
