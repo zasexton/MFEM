@@ -403,6 +403,15 @@ namespace fem::numeric::traits {
     template<typename T, template<typename...> class Template>
     inline constexpr bool is_specialization_v = is_specialization<T, Template>::value;
 
+    template<typename T, template<typename, auto...> class Template>
+    struct is_specialization_nttp : std::false_type {};
+
+    template<template<typename, auto...> class Template, typename U, auto... Args>
+    struct is_specialization_nttp<Template<U, Args...>, Template> : std::true_type {};
+
+    template<typename T, template<typename, auto...> class Template>
+    inline constexpr bool is_specialization_nttp_v = is_specialization_nttp<T, Template>::value;
+
     // ============================================================================
     // Validation helpers
     // ============================================================================
