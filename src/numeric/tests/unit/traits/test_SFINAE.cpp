@@ -78,6 +78,30 @@ namespace test_types {
 using namespace fem::numeric::traits;
 using namespace test_types;
 
+namespace {
+
+    struct AddOp {
+        template<typename T, typename U>
+        auto operator()(T&& t, U&& u) -> decltype(t + u) { return t + u; }
+    };
+
+    struct DivOp {
+        template<typename T, typename U>
+        auto operator()(T&& t, U&& u) -> decltype(t / u) { return t / u; }
+    };
+
+    struct NegOp {
+        template<typename T>
+        auto operator()(T&& t) -> decltype(-t) { return -t; }
+    };
+
+    struct DerefOp {
+        template<typename T>
+        auto operator()(T&& t) -> decltype(*t) { return *t; }
+    };
+
+} // namespace
+
 // ============================================================================
 // Basic SFINAE utilities tests
 // ============================================================================
@@ -208,16 +232,6 @@ TEST(SFINAETest, HasStorageType) {
 // ============================================================================
 
 TEST(SFINAETest, BinaryOperations) {
-    struct AddOp {
-        template<typename T, typename U>
-        auto operator()(T&& t, U&& u) -> decltype(t + u) { return t + u; }
-    };
-
-    struct DivOp {
-        template<typename T, typename U>
-        auto operator()(T&& t, U&& u) -> decltype(t / u) { return t / u; }
-    };
-
     // Arithmetic types
     static_assert(has_binary_op_v<int, int, AddOp>);
     static_assert(has_binary_op_v<double, float, AddOp>);
@@ -232,16 +246,6 @@ TEST(SFINAETest, BinaryOperations) {
 }
 
 TEST(SFINAETest, UnaryOperations) {
-    struct NegOp {
-        template<typename T>
-        auto operator()(T&& t) -> decltype(-t) { return -t; }
-    };
-
-    struct DerefOp {
-        template<typename T>
-        auto operator()(T&& t) -> decltype(*t) { return *t; }
-    };
-
     // Arithmetic negation
     static_assert(has_unary_op_v<int, NegOp>);
     static_assert(has_unary_op_v<double, NegOp>);
