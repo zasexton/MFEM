@@ -7,6 +7,7 @@
 #include <functional>
 #include <cmath>
 #include <tuple>
+#include <limits>
 
 #include "../base/ops_base.h"
 #include "../base/numeric_base.h"
