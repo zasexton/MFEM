@@ -377,10 +377,12 @@ namespace fem::numeric::traits {
         using value_type1 = expression_value_type_t<Expr1>;
         using value_type2 = expression_value_type_t<Expr2>;
 
-        static constexpr bool value =
-                !std::is_void_v<value_type1> &&
-                !std::is_void_v<value_type2> &&
-                are_compatible_v<value_type1, value_type2>;
+        static constexpr bool value = []{
+            if constexpr (std::is_void_v<value_type1> || std::is_void_v<value_type2>)
+                return false;
+            else
+                return are_compatible_v<value_type1, value_type2>;
+        }();
     };
 
     template<typename Expr1, typename Expr2>
