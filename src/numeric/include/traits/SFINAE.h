@@ -157,12 +157,13 @@ namespace fem::numeric::traits {
      * @brief Detect if type is derived from ContainerBase
      */
     template<typename T>
-    using is_container_base_helper = std::enable_if_t<
+    using detect_container_base_helper = std::enable_if_t<
             std::is_base_of_v<ContainerBase<typename T::value_type, T>, T>
     >;
 
     template<typename T>
-    inline constexpr bool is_container_base_v = is_detected_v<is_container_base_helper, T>;
+    inline constexpr bool detect_container_base_v =
+            is_detected_v<detect_container_base_helper, T>;
 
     /**
      * @brief Detect if type has storage_type member
@@ -177,12 +178,13 @@ namespace fem::numeric::traits {
      * @brief Detect if type is a storage type
      */
     template<typename T>
-    using is_storage_helper = std::enable_if_t<
+    using detect_storage_helper = std::enable_if_t<
             std::is_base_of_v<StorageBase<typename T::value_type>, T>
     >;
 
     template<typename T>
-    inline constexpr bool is_storage_v = is_detected_v<is_storage_helper, T>;
+    inline constexpr bool detect_storage_v =
+            is_detected_v<detect_storage_helper, T>;
 
     // ============================================================================
     // Expression template detection
@@ -192,12 +194,13 @@ namespace fem::numeric::traits {
      * @brief Detect if type is an expression
      */
     template<typename T>
-    using is_expression_base_helper = std::enable_if_t<
+    using detect_expression_base_helper = std::enable_if_t<
             std::is_base_of_v<ExpressionBase<T>, T>
     >;
 
     template<typename T>
-    inline constexpr bool is_expression_base_v = is_detected_v<is_expression_base_helper, T>;
+    inline constexpr bool detect_expression_base_v =
+            is_detected_v<detect_expression_base_helper, T>;
 
     /**
      * @brief Detect if type has eval() method
@@ -216,12 +219,13 @@ namespace fem::numeric::traits {
      * @brief Detect if type is a view
      */
     template<typename T>
-    using is_view_base_helper = std::enable_if_t<
+    using detect_view_base_helper = std::enable_if_t<
             std::is_base_of_v<ViewBase<typename T::value_type>, T>
     >;
 
     template<typename T>
-    inline constexpr bool is_view_base_v = is_detected_v<is_view_base_helper, T>;
+    inline constexpr bool detect_view_base_v =
+            is_detected_v<detect_view_base_helper, T>;
 
     /**
      * @brief Detect if type has is_view() method
@@ -265,11 +269,12 @@ namespace fem::numeric::traits {
     using iterator_category_t = typename std::iterator_traits<T>::iterator_category;
 
     template<typename T>
-    inline constexpr bool is_iterator_v = is_detected_v<iterator_category_t, T>;
+    inline constexpr bool detect_iterator_v =
+            is_detected_v<iterator_category_t, T>;
 
     template<typename T>
-    inline constexpr bool is_random_access_iterator_v =
-            is_iterator_v<T> &&
+    inline constexpr bool detect_random_access_iterator_v =
+            detect_iterator_v<T> &&
             std::is_base_of_v<std::random_access_iterator_tag,
                     detected_t<iterator_category_t, T>>;
 
