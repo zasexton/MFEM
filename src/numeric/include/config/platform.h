@@ -195,9 +195,19 @@
 
 // Check for atomic double support
 #include <atomic>
-#if defined(__cpp_lib_atomic_is_always_lock_free) && \
-    ATOMIC_DOUBLE_LOCK_FREE == 2
-  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+// A value of 2 means the operations are always lock-free.  A value of 1
+// indicates that a lock may be used on some platforms which can impact
+// performance, but the type is still available.
+#if defined(__cpp_lib_atomic_is_always_lock_free)
+  #if ATOMIC_DOUBLE_LOCK_FREE == 2
+    #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+  #elif ATOMIC_DOUBLE_LOCK_FREE == 1
+    // std::atomic<double> may fall back to locks on this platform.
+    // Performance of atomic assembly could be affected.
+    #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+  #else
+    #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
+  #endif
 #else
   #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
 #endif
