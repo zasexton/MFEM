@@ -3,9 +3,9 @@
 #ifndef NUMERIC_BASE_H
 #define NUMERIC_BASE_H
 
-#if __cplusplus < 202002L
-#error "MFEM numeric requires C++20 or later"
-#endif
+#include "../config/compiler.h"
+
+MFEM_REQUIRE_CXX20;
 
 #include <complex>
 #include <concepts>
@@ -99,7 +99,8 @@ public:
   inline size_t &operator[](size_t i) { return dims_[i]; }
 
   size_t size() const noexcept {
-    if (dims_.empty()) {
+    FEM_NUMERIC_PREFETCH(dims_.data(), 0, 1);
+    if (MFEM_UNLIKELY(dims_.empty())) {
       return 1;
     }
     size_t result = 1;
@@ -129,7 +130,7 @@ public:
     if (axis < 0) {
       axis += static_cast<int>(dims_.size());
     }
-    if (axis < 0 || axis >= static_cast<int>(dims_.size())) {
+    if (MFEM_UNLIKELY(axis < 0 || axis >= static_cast<int>(dims_.size()))) {
       throw std::out_of_range("Axis out of range");
     }
     return static_cast<size_t>(axis);
@@ -141,7 +142,7 @@ public:
     if (axis < 0) {
       // Handle negative axis
       int adjusted = axis + static_cast<int>(dims_.size()) + 1;
-      if (adjusted < 0) {
+      if (MFEM_UNLIKELY(adjusted < 0)) {
         throw std::out_of_range("Axis out of range for unsqueeze");
       }
       norm_axis = static_cast<size_t>(adjusted);
@@ -149,7 +150,7 @@ public:
       norm_axis = static_cast<size_t>(axis);
     }
 
-    if (norm_axis > dims_.size()) {
+    if (MFEM_UNLIKELY(norm_axis > dims_.size())) {
       throw std::out_of_range("Axis out of range for unsqueeze");
     }
 
