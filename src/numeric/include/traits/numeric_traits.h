@@ -36,7 +36,7 @@ namespace fem::numeric::traits {
         // Machine epsilon for comparisons
         static constexpr T machine_epsilon() noexcept {
             if constexpr (std::is_floating_point_v<T>) {
-                return ::numeric::precision::machine_epsilon<T>::value;
+                return ::fem::numeric::precision::machine_epsilon<T>::value;
             } else {
                 return T{1};
             }
@@ -45,7 +45,7 @@ namespace fem::numeric::traits {
         // Safe comparison tolerance
         static constexpr T comparison_tolerance() noexcept {
             if constexpr (std::is_floating_point_v<T>) {
-                return ::numeric::precision::tolerance<T>::absolute;
+                return ::fem::numeric::precision::tolerance<T>::absolute;
             } else {
                 return T{0};
             }
@@ -112,11 +112,11 @@ namespace fem::numeric::traits {
         }
 
         static constexpr std::complex<T> machine_epsilon() noexcept {
-            return {::numeric::precision::machine_epsilon<T>::value, T{0}};
+            return {::fem::numeric::precision::machine_epsilon<T>::value, T{0}};
         }
 
         static constexpr std::complex<T> comparison_tolerance() noexcept {
-            return {::numeric::precision::tolerance<T>::absolute, T{0}};
+            return {::fem::numeric::precision::tolerance<T>::absolute, T{0}};
         }
 
         static constexpr std::complex<T> quiet_NaN() noexcept {
