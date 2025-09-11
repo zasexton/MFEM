@@ -69,6 +69,7 @@ numeric/
 │   │   ├── type_traits.h             # Basic type traits ✓
 │   │   ├── numeric_traits.h          # Numeric properties ✓
 │   │   ├── container_traits.h        # Container detection ✓
+│   │   ├── container_utils.h        # Evaluation strategy utilities ✓
 │   │   ├── expression_traits.h       # Expression traits ✓
 │   │   ├── operation_traits.h        # Operation compatibility ✓
 │   │   ├── storage_traits.h          # Storage characteristics ✓
