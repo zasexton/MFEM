@@ -13,20 +13,22 @@ Compile-time type introspection and trait system enabling template metaprogrammi
 ## Files Overview
 
 ### Core Type System
-- **type_traits.hpp**: Basic type properties (is_complex, is_pod, real_type)
-- **numeric_traits.hpp**: Math properties (IEEE compliance, precision, limits)
-- **sfinae_helpers.hpp**: Detection idiom and SFINAE utilities
+- **type_traits.h**: Basic type properties (is_complex, is_pod, real_type)
+- **numeric_traits.h**: Math properties (IEEE compliance, precision, limits)
+- **SFINAE.h**: Detection idiom and SFINAE utilities
+- **ad_traits.h**: Automatic differentiation type traits
 
 ### Container & Storage
-- **container_traits.hpp**: Container properties (dense/sparse, layout, dimensions)
+- **container_traits.h**: Container properties (dense/sparse, layout, dimensions)
 - **container_utils.h**: Evaluation strategy and container selection helpers
-- **storage_traits.hpp**: Memory characteristics (alignment, contiguous, growth)
-- **iterator_traits.hpp**: Iterator patterns (strided, checked, parallel-safe)
+- **storage_traits.h**: Memory characteristics (alignment, contiguous, growth)
+- **iterator_traits.h**: Iterator patterns (strided, checked, parallel-safe)
+- **iterator_algorithms.h**: Generic algorithms for iterator-based traversal
 
 ### Operations & Expressions
-- **operation_traits.hpp**: Operation compatibility (addable, multiplicable, broadcastable)
-- **expression_traits.hpp**: Expression template properties (lazy, broadcasting, SIMD)
-- **concepts.hpp**: C++20 concepts combining all traits
+- **operation_traits.h**: Operation compatibility (addable, multiplicable, broadcastable)
+- **expression_traits.h**: Expression template properties (lazy, broadcasting, SIMD)
+- **concepts.h**: C++20 concepts combining all traits
 
 ## Key Patterns & Usage
 
