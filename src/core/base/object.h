@@ -12,6 +12,9 @@
 #include <format>
 #include <source_location>
 
+#include <config/config.h>
+#include <config/debug.h>
+
 namespace fem::core::base {
     // Type trait to check if a type is derived from Object
     template<typename T>
@@ -32,7 +35,7 @@ namespace fem::core::base {
      */
     class Object {
     public:
-        using id_type = std::uint64_t;
+        using id_type = mfem::config::index_t;
         using ref_count_type = std::atomic<std::size_t>;
 
         /**
@@ -109,18 +112,18 @@ namespace fem::core::base {
          */
         template<ObjectDerived T>
         [[nodiscard]] T& as_ref() {
-            if (auto* ptr = dynamic_cast<T*>(this)) {
-                return *ptr;
-            }
-            throw std::bad_cast{};
+            auto* ptr = dynamic_cast<T*>(this);
+            FEM_NUMERIC_ASSERT_MSG(ptr != nullptr, "Invalid object cast");
+            if (!ptr) { throw std::bad_cast{}; }
+            return *ptr;
         }
 
         template<ObjectDerived T>
         [[nodiscard]] const T& as_ref() const {
-            if (auto* ptr = dynamic_cast<const T*>(this)) {
-                return *ptr;
-            }
-            throw std::bad_cast{};
+            auto* ptr = dynamic_cast<const T*>(this);
+            FEM_NUMERIC_ASSERT_MSG(ptr != nullptr, "Invalid object cast");
+            if (!ptr) { throw std::bad_cast{}; }
+            return *ptr;
         }
 
         // === Reference Counting ===
@@ -271,8 +274,14 @@ namespace fem::core::base {
         }
 
         [[nodiscard]] T* get() const noexcept { return ptr_; }
-        [[nodiscard]] T* operator->() const noexcept { return ptr_; }
-        [[nodiscard]] T& operator*() const noexcept { return *ptr_; }
+        [[nodiscard]] T* operator->() const noexcept {
+            FEM_NUMERIC_ASSERT_MSG(ptr_ != nullptr, "Dereferencing null object_ptr");
+            return ptr_;
+        }
+        [[nodiscard]] T& operator*() const noexcept {
+            FEM_NUMERIC_ASSERT_MSG(ptr_ != nullptr, "Dereferencing null object_ptr");
+            return *ptr_;
+        }
         [[nodiscard]] explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
         void reset(T* ptr = nullptr) noexcept {
