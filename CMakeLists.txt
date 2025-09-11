@@ -3,18 +3,25 @@ project (MFEMSolver
         VERSION 0.1.0
         LANGUAGES C CXX)                # we’ll add Fortran/C later if needed
 
-# ───────────────────────────────────────────────────────────────
-#  ── Build-time feature toggles (all OFF by default) ───────────
-# ───────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# ----------- Build-time feature toggles (all OFF by default) -----------------
+# -----------------------------------------------------------------------------
 option (BUILD_EXAMPLES          "Build tiny driver examples"               OFF)
 option (BUILD_PYTHON            "Expose pybind11 bindings"                 OFF)
 option (ENABLE_SANITIZERS       "Add address/undefined sanitizers (Debug)" ON)
-option (ENABLE_MPI              "Build distributed-memory layer"           ON)
-option (BUNDLED_MPI             "Build our own MPI"                        OFF)
 option (WARNINGS_AS_ERRORS      "Treat warnings as errors"                 ON)
 option (BUILD_UNIT_TESTS        "Build unit tests"                         ON)
 option (BUILD_PERFORMANCE_TESTS "Build Catch2 micro-benchmarks"            ON)
-option (TBB_FETCH              "Automatically download oneTBB if missing" ON)
+
+# -----------------------------------------------------------------------------
+# ------------------------ Parallelism Options --------------------------------
+# -----------------------------------------------------------------------------
+option (ENABLE_MPI              "Build distributed-memory layer"           ON)
+option (BUNDLED_MPI             "Build our own MPI"                        OFF)
+option (ENABLE_OPENMP           "Enable OpenMP shared-memory parallelism"  ON)
+option (FETCH_OPENMP            "Download LLVM OpenMP if not found"        OFF)
+option (ENABLE_HYBRID_PARALLEL  "Enable MPI+OpenMP hybrid parallelism"     ON)
+option (TBB_FETCH               "Automatically download oneTBB if missing" ON)
 # -----------------------------------------------------------------------------
 #  Compiler & language standard
 # -----------------------------------------------------------------------------
@@ -88,10 +95,51 @@ target_include_directories(femsolver_options INTERFACE
         $<INSTALL_INTERFACE:include>)   # future install()
 
 # -----------------------------------------------------------------------------
+#  Load parallelism modules
+# -----------------------------------------------------------------------------
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# OpenMP (shared memory)
+if (ENABLE_OPENMP)
+    include(EnableMP)
+endif()
+
+# MPI (distributed memory)
+if (ENABLE_MPI)
+    include(EnableMPI)
+endif()
+
+if (TBB_FETCH)
+    include(FetchTBB)
+endif()
+
+# -----------------------------------------------------------------------------
+#  Define hybrid parallelism target
+# -----------------------------------------------------------------------------
+add_library(femsolver_parallel INTERFACE)
+
+if (ENABLE_OPENMP AND TARGET openmp::openmp)
+    target_link_libraries(femsolver_parallel INTERFACE openmp::openmp)
+    message(STATUS "Shared-memory parallelism: OpenMP enabled")
+endif()
+
+if (ENABLE_MPI AND TARGET mpi::bundled)
+    target_link_libraries(femsolver_parallel INTERFACE mpi::bundled)
+    message(STATUS "Distributed-memory parallelism: MPI enabled")
+endif()
+
+if (ENABLE_HYBRID_PARALLEL AND ENABLE_MPI AND ENABLE_OPENMP)
+    target_compile_definitions(femsolver_parallel INTERFACE ENABLE_HYBRID_PARALLEL)
+    message(STATUS "Hybrid parallelism: MPI+OpenMP enabled")
+endif()
+
+# Link the parallel support to your options library
+target_link_libraries(femsolver_options INTERFACE femsolver_parallel)
+
+# -----------------------------------------------------------------------------
 #  Third-party header-only deps via FetchContent
 # -----------------------------------------------------------------------------
 include(FetchContent)
-include(cmake/FetchTBB.cmake)
 
 # Catch2 (tests)
 if (BUILD_UNIT_TESTS OR BUILD_PERFORMANCE_TESTS OR
@@ -114,18 +162,18 @@ FetchContent_MakeAvailable(fmtlib)
 # -----------------------------------------------------------------------------
 #  Sub-directories (layer order bottom → top)
 # -----------------------------------------------------------------------------
-add_subdirectory(src/numeric)
-add_subdirectory(src/continuum)
-add_subdirectory(src/core)
-add_subdirectory(src/algebra)
-add_subdirectory(src/physics)
+#add_subdirectory(src/numeric)
+#add_subdirectory(src/continuum)
+#add_subdirectory(src/core)
+#add_subdirectory(src/algebra)
+#add_subdirectory(src/physics)
 
 # Only add 'parallel' when user wants it
-if (ENABLE_MPI)
-    add_subdirectory(src/parallel)
-else()
-    message(STATUS "MPI disabled via ENABLE_MPI=OFF")
-endif()
+#if (ENABLE_MPI)
+#    add_subdirectory(src/parallel)
+#else()
+#    message(STATUS "MPI disabled via ENABLE_MPI=OFF")
+#endif()
 
 #if (BUILD_EXAMPLES)
 #    add_subdirectory(src/examples)
