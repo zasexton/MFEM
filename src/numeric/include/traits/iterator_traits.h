@@ -4,7 +4,7 @@
 #define NUMERIC_ITERATOR_TRAITS_H
 
 #include <concepts>
-#include <cstring> // Added for std::memcpy
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <type_traits>
@@ -577,6 +577,6 @@ inline constexpr bool is_transform_iterator_v =
     is_transform_iterator<Iterator>::value;
 
 } // namespace fem::numeric::traits
-#include "../algorithms/iterator_algorithms.h"
+#include "iterator_algorithms.h"
 
 #endif // NUMERIC_ITERATOR_TRAITS_H

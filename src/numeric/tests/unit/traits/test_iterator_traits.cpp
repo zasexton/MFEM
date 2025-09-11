@@ -7,9 +7,9 @@
 #include <numeric>
 #include <vector>
 
-#include <algorithms/iterator_algorithms.h>
 #include <base/iterator_base.h>
 #include <base/numeric_base.h>
+#include <traits/iterator_algorithms.h>
 #include <traits/iterator_traits.h>
 
 using namespace fem::numeric::traits;
