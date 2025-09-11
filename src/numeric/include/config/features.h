@@ -384,7 +384,10 @@
 #endif
 
 #if FEM_NUMERIC_ENABLE_PARALLEL && !FEM_NUMERIC_ENABLE_ATOMIC_ASSEMBLY
-  FEM_NUMERIC_COMPILER_MSG("Parallel assembly without atomics may require additional synchronization")
+  // Parallel assembly without atomic updates relies on external synchronization
+  #ifndef FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING
+    FEM_NUMERIC_COMPILER_MSG("Parallel assembly without atomics may require additional synchronization")
+  #endif
 #endif
 
 // ============================================================================
