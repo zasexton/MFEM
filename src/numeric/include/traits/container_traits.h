@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "../base/numeric_base.h"
 #include "../base/container_base.h"
 #include "../base/storage_base.h"
 #include "../base/view_base.h"
@@ -278,32 +279,6 @@ namespace fem::numeric::traits {
             are_containers_compatible<C1, C2>::value;
 
     /**
-     * @brief Determine optimal evaluation strategy
-     */
-    template<typename Expr>
-    struct evaluation_strategy {
-        enum Strategy {
-            Immediate,      // Evaluate immediately
-            Lazy,          // Keep as expression
-            Parallel,      // Use parallel evaluation
-            Vectorized     // Use SIMD
-        };
-
-        static constexpr Strategy value = []() constexpr {
-            if constexpr (is_expression_base_v<Expr>) {
-            // Already an expression, keep lazy
-            return Lazy;
-        } else if constexpr (extended_container_traits<Expr>::supports_simd) {
-            return Vectorized;
-        } else if constexpr (requires { Expr::use_parallel; }) {
-            return Parallel;
-        } else {
-            return Immediate;
-        }
-        }();
-    };
-
-    /**
      * @brief Helper to extract shape type
      */
     template<typename C, typename = void>
@@ -378,39 +353,6 @@ namespace fem::numeric::traits {
             return bytes;
         }
     };
-
-    /**
-     * @brief Helper for selecting optimal container type based on requirements
-     */
-    template<typename T, size_t Size = 0, bool NeedsSIMD = false>
-    struct optimal_container_selector {
-        using chosen_storage = std::conditional_t<
-            Size == 0,
-            // Dynamic size storage
-            DynamicStorage<T>,
-            // Static size
-            std::conditional_t<
-                NeedsSIMD,
-                // Need SIMD alignment
-                AlignedStorage<T, 32>,
-                // Small size optimization
-                std::conditional_t<
-                    Size * sizeof(T) <= 256,
-                    StaticStorage<T, Size>,
-                    DynamicStorage<T>
-                >
-            >
-        >;
-
-        template<typename U, typename Storage>
-        struct selected_container
-            : ContainerBase<selected_container<U, Storage>, U, Storage> {};
-
-        using type = selected_container<T, chosen_storage>;
-    };
-
-    template<typename T, size_t Size = 0, bool NeedsSIMD = false>
-    using optimal_container_t = typename optimal_container_selector<T, Size, NeedsSIMD>::type;
 
 } // namespace fem::numeric::traits
 
