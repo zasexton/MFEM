@@ -10,6 +10,15 @@
 #ifndef FEM_NUMERIC_FEATURES_H
 #define FEM_NUMERIC_FEATURES_H
 
+#define FEM_NUMERIC_DO_PRAGMA(x) _Pragma(#x)
+#if __cplusplus >= 202302L
+  #define FEM_NUMERIC_COMPILER_MSG(msg) FEM_NUMERIC_DO_PRAGMA(warning(msg))
+#elif defined(_MSC_VER)
+  #define FEM_NUMERIC_COMPILER_MSG(msg) __pragma(message(msg))
+#else
+  #define FEM_NUMERIC_COMPILER_MSG(msg) FEM_NUMERIC_DO_PRAGMA(message(msg))
+#endif
+
 // ============================================================================
 // Core Feature Flags
 // ============================================================================
@@ -367,15 +376,15 @@
 
 // Validate feature combinations
 #if FEM_NUMERIC_ENABLE_AUTODIFF && !FEM_NUMERIC_ENABLE_EXPRESSION_TEMPLATES
-  #warning "Automatic differentiation works best with expression templates enabled"
+  FEM_NUMERIC_COMPILER_MSG("Automatic differentiation works best with expression templates enabled")
 #endif
 
 #if FEM_NUMERIC_ENABLE_MATRIX_FREE && !FEM_NUMERIC_ENABLE_SUM_FACTORIZATION
-  #warning "Matrix-free methods require sum factorization for optimal performance"
+  FEM_NUMERIC_COMPILER_MSG("Matrix-free methods require sum factorization for optimal performance")
 #endif
 
 #if FEM_NUMERIC_ENABLE_PARALLEL && !FEM_NUMERIC_ENABLE_ATOMIC_ASSEMBLY
-  #warning "Parallel assembly without atomics may require additional synchronization"
+  FEM_NUMERIC_COMPILER_MSG("Parallel assembly without atomics may require additional synchronization")
 #endif
 
 // ============================================================================
