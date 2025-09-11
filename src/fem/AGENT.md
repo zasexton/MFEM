@@ -213,14 +213,14 @@ fem/
 │   ├── fem_traits.hpp              # FEM type traits
 │   ├── fem_concepts.hpp            # C++20 concepts
 │   ├── reference_values.hpp        # Reference solutions
-│   ├── orientation.hpp        # Edge/Face orientation handling
+│   ├── orientation.hpp             # Edge/Face orientation handling
 │   └── fem_timers.hpp              # Performance timing
 │
-└── tests/                           # Testing
-    ├── unit/                        # Unit tests
-    ├── convergence/                 # Convergence tests
-    ├── patch/                       # Patch tests
-    └── benchmarks/                  # Performance benchmarks
+├── tests/                           # Testing
+│   ├── unit/                        # Unit tests
+│   ├── convergence/                 # Convergence tests
+│   └── patch/                       # Patch tests
+└── benchmarks/                      # Performance benchmarks
 ```
 
 ## Key Components
