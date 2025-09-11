@@ -21,7 +21,7 @@ using namespace fem::numeric::traits;
 
 // Mock container for testing
 template<typename T>
-class MockContainer : public ContainerBase<MockContainer<T>> {
+    class MockContainer : public ContainerBase<MockContainer<T>, T> {
 public:
     using value_type = T;
     using size_type = std::size_t;
