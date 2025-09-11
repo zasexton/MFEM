@@ -15,28 +15,32 @@ The traits system is organized into several layers:
 5. **Operation Traits** - Operation compatibility and results
 6. **Storage Traits** - Memory layout and storage properties
 7. **Iterator Traits** - Iterator capabilities and patterns
-8. **Concepts** - C++20 concepts for type constraints
-9. **SFINAE Helpers** - Utilities for compile-time detection
+8. **AD Traits** - Automatic differentiation utilities
+9. **Iterator Algorithms** - Algorithms operating on iterators
+10. **Concepts** - C++20 concepts for type constraints
+11. **SFINAE Helpers** - Utilities for compile-time detection
 
 ## File Structure
 
 ```
 numeric/traits/
-├── type_traits.hpp         # Basic type properties
-├── numeric_traits.hpp      # Numeric type characteristics
-├── container_traits.hpp    # Container properties
+├── type_traits.h           # Basic type properties
+├── numeric_traits.h        # Numeric type characteristics
+├── container_traits.h      # Container properties
 ├── container_utils.h       # Evaluation strategy & container selection
-├── expression_traits.hpp   # Expression template traits
-├── operation_traits.hpp    # Operation compatibility
-├── storage_traits.hpp      # Storage characteristics
-├── iterator_traits.hpp     # Iterator properties
-├── concepts.hpp            # C++20 concepts
-└── sfinae_helpers.hpp      # SFINAE utilities
+├── expression_traits.h     # Expression template traits
+├── operation_traits.h      # Operation compatibility
+├── storage_traits.h        # Storage characteristics
+├── iterator_traits.h       # Iterator properties
+├── ad_traits.h             # Automatic differentiation traits
+├── iterator_algorithms.h   # Iterator algorithm helpers
+├── concepts.h              # C++20 concepts
+└── SFINAE.h                # SFINAE utilities
 ```
 
 ## Core Components
 
-### 1. Type Traits (`type_traits.hpp`)
+### 1. Type Traits (`type_traits.h`)
 
 Provides fundamental type properties and classifications:
 
@@ -55,7 +59,7 @@ fem::numeric::traits::is_arithmetic_v<double>  // true
 fem::numeric::traits::is_numeric_v<std::complex<float>>  // true
 ```
 
-### 2. Numeric Traits (`numeric_traits.hpp`)
+### 2. Numeric Traits (`numeric_traits.h`)
 
 Extends `std::numeric_limits` with additional numeric properties:
 
@@ -79,7 +83,7 @@ using promoted = fem::numeric::traits::promote_t<float, double>;  // double
 auto bytes = fem::numeric::traits::storage_requirements<float>::bytes_needed(100);
 ```
 
-### 3. Container Traits (`container_traits.hpp`)
+### 3. Container Traits (`container_traits.h`)
 
 Properties and capabilities of container types:
 
@@ -100,7 +104,7 @@ static_assert(traits::is_resizable);
 auto layout = traits::layout;  // MemoryLayout::RowMajor
 ```
 
-### 4. Expression Traits (`expression_traits.hpp`)
+### 4. Expression Traits (`expression_traits.h`)
 
 Properties of expression templates:
 
@@ -118,7 +122,7 @@ using result = fem::numeric::traits::expression_result_t<Add, Vector<float>, Vec
 // result is Vector<double> due to promotion
 ```
 
-### 5. Operation Traits (`operation_traits.hpp`)
+### 5. Operation Traits (`operation_traits.h`)
 
 Operation compatibility and result types:
 
@@ -137,7 +141,7 @@ constexpr bool can_broadcast = fem::numeric::traits::is_broadcastable_v<
 >;  // true - results in Shape{3, 5}
 ```
 
-### 6. Storage Traits (`storage_traits.hpp`)
+### 6. Storage Traits (`storage_traits.h`)
 
 Memory and storage characteristics:
 
@@ -155,7 +159,7 @@ auto min_size = traits::min_allocation_size;
 auto grow_factor = traits::growth_factor;  // 1.5x growth
 ```
 
-### 7. Iterator Traits (`iterator_traits.hpp`)
+### 7. Iterator Traits (`iterator_traits.h`)
 
 Iterator capabilities and patterns:
 
@@ -172,7 +176,15 @@ static_assert(traits::is_mutable);
 static_assert(traits::supports_parallel);
 ```
 
-### 8. Concepts (`concepts.hpp`)
+### 8. AD Traits (`ad_traits.h`)
+
+Traits for automatic differentiation types.
+
+### 9. Iterator Algorithms (`iterator_algorithms.h`)
+
+Helpers for iterator-based algorithms.
+
+### 10. Concepts (`concepts.h`)
 
 C++20 concepts for type constraints:
 
@@ -194,7 +206,7 @@ template<fem::numeric::concepts::SIMDCompatible T>
 void vectorized_compute(T* data, size_t n);
 ```
 
-### 9. SFINAE Helpers (`sfinae_helpers.hpp`)
+### 11. SFINAE Helpers (`SFINAE.h`)
 
 Utilities for compile-time detection and dispatch:
 
@@ -223,8 +235,8 @@ compute(T value);
 ### Example 1: Type-Safe Matrix Operations
 
 ```cpp
-#include <numeric/traits/concepts.hpp>
-#include <numeric/traits/operation_traits.hpp>
+#include <numeric/traits/concepts.h>
+#include <numeric/traits/operation_traits.h>
 
 template<fem::numeric::concepts::NumericMatrix M1,
          fem::numeric::concepts::NumericMatrix M2>
@@ -251,7 +263,7 @@ auto multiply(const M1& a, const M2& b)
 ### Example 2: Optimized Storage Selection
 
 ```cpp
-#include <numeric/traits/storage_traits.hpp>
+#include <numeric/traits/storage_traits.h>
 
 template<typename T, size_t N>
 class SmallVector {
@@ -280,7 +292,7 @@ public:
 ### Example 3: Expression Template Optimization
 
 ```cpp
-#include <numeric/traits/expression_traits.hpp>
+#include <numeric/traits/expression_traits.h>
 
 template<typename Expr>
 auto evaluate(const Expr& expr) {
@@ -306,8 +318,8 @@ auto evaluate(const Expr& expr) {
 ### Example 4: Generic Algorithm with Trait Detection
 
 ```cpp
-#include <numeric/traits/sfinae_helpers.hpp>
-#include <numeric/traits/container_traits.hpp>
+#include <numeric/traits/SFINAE.h>
+#include <numeric/traits/container_traits.h>
 
 template<typename Container>
 void optimize_layout(Container& c) {
