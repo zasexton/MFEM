@@ -12,6 +12,9 @@
 #include "../base/container_base.h"
 #include "../base/storage_base.h"
 #include "../base/traits_base.h"
+#include "../base/expression_base.h"
+#include "../base/view_base.h"
+
 #include "type_traits.h"
 
 namespace fem::numeric::traits {
