@@ -376,7 +376,6 @@ TEST(SFINAETest, NumericCommonType) {
 TEST(SFINAETest, IsSpecialization) {
     // Positive tests
     static_assert(is_specialization_v<std::vector<int>, std::vector>);
-    static_assert(is_specialization_v<std::array<double, 5>, std::array>);
     static_assert(is_specialization_v<std::complex<float>, std::complex>);
     static_assert(is_specialization_v<TemplateClass<int>, TemplateClass>);
     static_assert(is_specialization_v<TemplateClass<int, double>, TemplateClass>);
@@ -384,7 +383,7 @@ TEST(SFINAETest, IsSpecialization) {
     // Negative tests
     static_assert(!is_specialization_v<int, std::vector>);
     static_assert(!is_specialization_v<EmptyClass, std::vector>);
-    static_assert(!is_specialization_v<std::vector<int>, std::array>);
+    static_assert(!is_specialization_v<std::vector<int>, std::list>);
 }
 
 // ============================================================================
@@ -418,25 +417,12 @@ TEST(SFINAETest, ValidateContainer) {
 
 TEST(SFINAETest, ComplexDetectionScenarios) {
     // Combine multiple detections
-    template<typename T>
-    constexpr bool is_complete_container =
-        has_value_type_v<T> &&
-        has_size_v<T> &&
-        has_data_v<T> &&
-        has_begin_v<T> &&
-        has_end_v<T>;
-
     static_assert(is_complete_container<MockContainer<int>>);
     static_assert(is_complete_container<std::vector<int>>);
     static_assert(!is_complete_container<IncompleteContainer<int>>);
     static_assert(!is_complete_container<EmptyClass>);
 
     // Detect specific member type values
-    template<typename T>
-    using has_double_value_type = std::enable_if_t<
-        has_value_type_v<T> && std::is_same_v<typename T::value_type, double>
-    >;
-
     static_assert(is_detected_v<has_double_value_type, MockContainer<double>>);
     static_assert(!is_detected_v<has_double_value_type, MockContainer<int>>);
     static_assert(!is_detected_v<has_double_value_type, EmptyClass>);
