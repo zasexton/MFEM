@@ -250,18 +250,18 @@ TEST(ExpressionTraitsTest, ExpressionOperation) {
     EXPECT_TRUE((std::is_same_v<nt::expression_operation_t<TestScalar>, void>));
 }
 
-// TEST: Commutative operations check
-TEST(ExpressionTraitsTest, HasCommutativeOperations) {
+// TEST: Commutativity check across expression tree
+TEST(ExpressionTraitsTest, IsCommutativeExpression) {
     // Plus is commutative
-    EXPECT_TRUE(nt::has_commutative_operations_v<TestBinary>);
+    EXPECT_TRUE(nt::is_commutative_v<TestBinary>);
 
     // Create non-commutative binary expression
     using NonCommBinary = BinaryExpression<ops::minus<double>, TestTerminal, TestTerminal>;
-    EXPECT_FALSE(nt::has_commutative_operations_v<NonCommBinary>);
+    EXPECT_FALSE(nt::is_commutative_v<NonCommBinary>);
 
-    // Non-binary expressions return false
-    EXPECT_FALSE(nt::has_commutative_operations_v<TestUnary>);
-    EXPECT_FALSE(nt::has_commutative_operations_v<TestTerminal>);
+    // Expressions without binary operations are trivially commutative
+    EXPECT_TRUE(nt::is_commutative_v<TestUnary>);
+    EXPECT_TRUE(nt::is_commutative_v<TestTerminal>);
 }
 
 // TEST: Parallel safety
@@ -336,7 +336,7 @@ TEST(ExpressionTraitsTest, OptimizationHints) {
 
     EXPECT_TRUE(hints2::use_simd);
     EXPECT_FALSE(hints2::materialize);  // Still not deep enough (depth = 4)
-    EXPECT_TRUE(hints2::fuse_operations);  // depth <= 3 check will fail but no broadcasts
+    EXPECT_TRUE(hints2::fuse_operations);  // depth <= 4 check passes and no broadcasts
 }
 
 // TEST: Evaluation order

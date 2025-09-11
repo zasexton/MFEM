@@ -322,22 +322,26 @@ namespace fem::numeric::traits {
     using expression_operation_t = typename expression_operation<Expr>::type;
 
     /**
-     * @brief Check if expression operations are commutative
+     * @brief Check if all operations in an expression tree are commutative
      */
     template<typename Expr>
-    struct has_commutative_operations {
+    struct is_commutative_expression {
         static constexpr bool value = [] {
             if constexpr (is_binary_expression_v<Expr>) {
                 using Op = expression_operation_t<Expr>;
-                return algebraic_properties<Op>::value.commutative;
+                return algebraic_properties<Op>::value.commutative &&
+                       is_commutative_expression<typename Expr::left_type>::value &&
+                       is_commutative_expression<typename Expr::right_type>::value;
+            } else if constexpr (is_unary_expression_v<Expr>) {
+                return is_commutative_expression<typename Expr::expression_type>::value;
             } else {
-                return false;
+                return true;
             }
         }();
     };
 
     template<typename Expr>
-    inline constexpr bool has_commutative_operations_v = has_commutative_operations<Expr>::value;
+    inline constexpr bool is_commutative_v = is_commutative_expression<Expr>::value;
 
     /**
      * @brief Check if expression can be evaluated in parallel
@@ -456,9 +460,9 @@ namespace fem::numeric::traits {
                 is_parallel_safe_v<Expr> &&
                 operation_count_v<Expr> > 1000;
         static constexpr bool materialize = should_materialize_v<Expr>;
-        static constexpr bool can_reorder = has_commutative_operations_v<Expr>;
+        static constexpr bool can_reorder = is_commutative_v<Expr>;
         static constexpr bool fuse_operations =
-                expression_depth_v<Expr> <= 3 &&
+                expression_depth_v<Expr> <= 4 &&
                 !has_broadcast_v<Expr>;
     };
 
