@@ -7,7 +7,8 @@
 #include <type_traits>
 #include <memory>
 #include <concepts>
-#include <cstring>  // Added for std::memcpy
+#include <cstring>
+#include <algorithm>
 
 #include "../base/iterator_base.h"
 #include "../base/numeric_base.h"
