@@ -25,6 +25,7 @@ numeric/traits/
 ├── type_traits.hpp         # Basic type properties
 ├── numeric_traits.hpp      # Numeric type characteristics
 ├── container_traits.hpp    # Container properties
+├── container_utils.h       # Evaluation strategy & container selection
 ├── expression_traits.hpp   # Expression template traits
 ├── operation_traits.hpp    # Operation compatibility
 ├── storage_traits.hpp      # Storage characteristics
