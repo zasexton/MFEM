@@ -263,7 +263,7 @@ namespace fem::numeric::traits {
         // Memory layout
         static constexpr size_t size = sizeof(T);
         static constexpr size_t alignment = alignof(T);
-        static constexpr bool is_pod = is_pod_v<T>;
+        static constexpr bool is_pod = traits::is_pod_v<T>;
 
         // Special values (using base traits)
         static constexpr T zero() noexcept { return base_traits::zero(); }
