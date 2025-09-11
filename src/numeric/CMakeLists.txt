@@ -35,11 +35,50 @@ option(FEM_NUMERIC_ENABLE_MEMCHECK "Enable memory checking with Valgrind" OFF)
 option(FEM_NUMERIC_USE_SANITIZERS "Enable address and UB sanitizers" OFF)
 option(FEM_NUMERIC_HEADER_ONLY "Use as header-only library" OFF)
 option(FEM_NUMERIC_ENABLE_SIMD "Enable SIMD optimizations" ON)
-option(FEM_NUMERIC_ENABLE_OPENMP "Enable OpenMP parallelization" OFF)
-if(NOT DEFINED TBB_FETCH)
-    option(TBB_FETCH "Automatically download oneTBB if missing" ON)
+
+# ============================================================================
+# Parallel Computing Configuration
+# ============================================================================
+
+# Determine default parallel settings based on build type and parent project
+if(FEM_NUMERIC_STANDALONE)
+    # Standalone defaults
+    if(NOT DEFINED FEM_NUMERIC_ENABLE_PARALLEL)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+            set(FEM_NUMERIC_ENABLE_PARALLEL ON)
+        else()
+            set(FEM_NUMERIC_ENABLE_PARALLEL OFF)
+        endif()
+    endif()
+
+    option(FEM_NUMERIC_ENABLE_PARALLEL "Enable all parallelism" ${FEM_NUMERIC_ENABLE_PARALLEL})
+    option(FEM_NUMERIC_ENABLE_OPENMP "Enable OpenMP parallelism" ${FEM_NUMERIC_ENABLE_PARALLEL})
+    option(FEM_NUMERIC_ENABLE_TBB "Enable Intel TBB parallelism" ${FEM_NUMERIC_ENABLE_PARALLEL})
+    option(FEM_NUMERIC_ENABLE_MPI "Enable MPI parallelism" OFF)
+    option(FEM_NUMERIC_ENABLE_HYBRID "Enable hybrid parallel combinations" ${FEM_NUMERIC_ENABLE_PARALLEL})
+    #option(FEM_NUMERIC_FETCH_MISSING "Auto-fetch missing parallel libraries" ON)
+else()
+    # Inherit from parent project
+    option(FEM_NUMERIC_ENABLE_PARALLEL "Enable parallelism in numeric lib"
+            ${ENABLE_PARALLEL})
+    option(FEM_NUMERIC_ENABLE_OPENMP "Enable OpenMP in numeric lib"
+            ${ENABLE_OPENMP})
+    option(FEM_NUMERIC_ENABLE_TBB "Enable TBB in numeric lib"
+            ${TBB_FETCH})
+    option(FEM_NUMERIC_ENABLE_MPI "Enable MPI in numeric lib"
+            ${ENABLE_MPI})
+    option(FEM_NUMERIC_ENABLE_HYBRID "Enable hybrid parallel in numeric lib"
+            ${ENABLE_HYBRID_PARALLEL})
+    #option(FEM_NUMERIC_FETCH_MISSING "Auto-fetch missing libs"
+    #        ${FETCH_MISSING})
 endif()
-include(cmake/FetchTBB.cmake)
+
+# Additional parallel options
+option(FEM_NUMERIC_TBB_MALLOC "Use TBB scalable allocator" OFF)
+option(FEM_NUMERIC_MPI_OPTIONAL "Make MPI optional at runtime" ON)
+option(FEM_NUMERIC_BUNDLED_MPI "Build our own MPI if needed" OFF)
+set(FEM_NUMERIC_TBB_VERSION "2021.12.0" CACHE STRING "TBB version to fetch if needed")
+set(FEM_NUMERIC_MPI_VENDOR "auto" CACHE STRING "MPI vendor (auto|openmpi|mpich)")
 
 # ============================================================================
 # C++ Standard and Compiler Settings
@@ -139,14 +178,15 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     endif()
 endif()
 
-# OpenMP support
-if(FEM_NUMERIC_ENABLE_OPENMP)
-    find_package(OpenMP)
-    if(OpenMP_CXX_FOUND)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-        add_compile_definitions(FEM_NUMERIC_USE_OPENMP)
-    endif()
-endif()
+# ============================================================================
+# Configure Parallel Support
+# ============================================================================
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# Include the master parallel configuration
+# This will handle OpenMP, TBB, and MPI configuration
+include(cmake/ConfigureParallel_Numeric.cmake)
 
 # ============================================================================
 # Automatically Find All Headers
@@ -178,6 +218,7 @@ if(FEM_NUMERIC_HEADER_ONLY)
 
     target_include_directories(fem_numeric INTERFACE
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
             $<INSTALL_INTERFACE:include>
     )
 
@@ -205,6 +246,7 @@ else()
     # Set include directories for the interface library
     target_include_directories(fem_numeric INTERFACE
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
             $<INSTALL_INTERFACE:include>
     )
 
@@ -218,6 +260,19 @@ else()
 
         # For now, keeping as interface since we're header-only
         message(STATUS "Currently maintaining header-only configuration")
+
+        # Organize sources by parallelism (for future use)
+        set(FEM_NUMERIC_SERIAL_SOURCES "")
+        set(FEM_NUMERIC_PARALLEL_SOURCES "")
+
+        foreach(SOURCE ${FEM_NUMERIC_SOURCES})
+            if(SOURCE MATCHES ".*parallel.*" OR SOURCE MATCHES ".*openmp.*" OR
+                    SOURCE MATCHES ".*tbb.*" OR SOURCE MATCHES ".*mpi.*")
+                list(APPEND FEM_NUMERIC_PARALLEL_SOURCES ${SOURCE})
+            else()
+                list(APPEND FEM_NUMERIC_SERIAL_SOURCES ${SOURCE})
+            endif()
+        endforeach()
     endif()
 endif()
 
@@ -225,20 +280,37 @@ endif()
 target_compile_definitions(fem_numeric INTERFACE
         $<$<CONFIG:Debug>:FEM_DEBUG>
         $<$<BOOL:${FEM_NUMERIC_ENABLE_SIMD}>:FEM_NUMERIC_SIMD_ENABLED>
+        $<$<BOOL:${FEM_NUMERIC_PARALLEL_AVAILABLE}>:FEM_NUMERIC_PARALLEL>
 )
+
+# ============================================================================
+# Link Parallel Support
+# ============================================================================
+
+if(FEM_NUMERIC_PARALLEL_AVAILABLE)
+    # Link parallel support to main library
+    target_link_libraries(fem_numeric INTERFACE fem::numeric::parallel)
+
+    # Install parallel configuration header
+    install(FILES
+            ${CMAKE_CURRENT_BINARY_DIR}/include/fem_numeric_parallel_config.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/fem_numeric_tbb_config.h
+            ${CMAKE_CURRENT_BINARY_DIR}/include/fem_numeric_mpi_wrapper.h
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fem_numeric
+            OPTIONAL  # Some headers might not exist depending on configuration
+    )
+endif()
 
 # ============================================================================
 # Dependencies (if any)
 # ============================================================================
 
-# Find dependencies if needed
+# Example: Find external dependencies if needed
 # find_package(Eigen3 3.4 QUIET)
 # if(Eigen3_FOUND)
-#     target_link_libraries(fem_numeric PUBLIC Eigen3::Eigen)
-#     target_compile_definitions(fem_numeric PUBLIC FEM_HAS_EIGEN)
+#     target_link_libraries(fem_numeric INTERFACE Eigen3::Eigen)
+#     target_compile_definitions(fem_numeric INTERFACE FEM_HAS_EIGEN)
 # endif()
-
-target_link_libraries(fem_numeric INTERFACE TBB::tbb)
 
 # ============================================================================
 # Testing
@@ -248,24 +320,103 @@ if(FEM_NUMERIC_BUILD_TESTS)
     enable_testing()
     include(CTest)
 
-    # Add tests subdirectory
-    add_subdirectory(tests)
+    # Set test configuration for subdirectory
+    set(FEM_NUMERIC_TEST_PARALLEL ${FEM_NUMERIC_PARALLEL_AVAILABLE})
+
+    # Add tests subdirectory if it exists
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+        add_subdirectory(tests)
+    endif()
+
+    # Add parallel-specific tests if available
+    if(FEM_NUMERIC_PARALLEL_AVAILABLE)
+        # Create parallel configuration test
+        set(_test_source "${CMAKE_CURRENT_BINARY_DIR}/test_parallel_config.cpp")
+        file(WRITE ${_test_source} "
+#include <fem_numeric_parallel_config.h>
+#include <iostream>
+
+int main() {
+    using namespace fem::numeric::parallel;
+    std::cout << \"Parallel configuration test:\" << std::endl;
+    std::cout << \"  OpenMP: \" << openmp_available() << std::endl;
+    std::cout << \"  TBB: \" << tbb_available() << std::endl;
+    std::cout << \"  MPI: \" << mpi_available() << std::endl;
+
+    if (any_available()) {
+        std::cout << \"Parallel support: ENABLED\" << std::endl;
+        return 0;
+    } else {
+        std::cout << \"Parallel support: DISABLED\" << std::endl;
+        return 1;
+    }
+}
+")
+
+        add_executable(fem_numeric_test_parallel ${_test_source})
+        target_link_libraries(fem_numeric_test_parallel PRIVATE fem::numeric)
+
+        # Add basic parallel test
+        add_test(NAME FEMNumeric_ParallelConfig COMMAND fem_numeric_test_parallel)
+
+        # OpenMP test
+        if(FEM_NUMERIC_OPENMP_AVAILABLE)
+            add_test(NAME FEMNumeric_OpenMPTest
+                    COMMAND fem_numeric_test_parallel
+                    CONFIGURATIONS Release RelWithDebInfo)
+            set_tests_properties(FEMNumeric_OpenMPTest PROPERTIES
+                    ENVIRONMENT "OMP_NUM_THREADS=4")
+        endif()
+
+        # TBB test
+        if(FEM_NUMERIC_TBB_AVAILABLE)
+            add_test(NAME FEMNumeric_TBBTest
+                    COMMAND fem_numeric_test_parallel
+                    CONFIGURATIONS Release RelWithDebInfo)
+        endif()
+
+        # MPI test
+        if(FEM_NUMERIC_MPI_AVAILABLE)
+            find_program(MPIEXEC_EXECUTABLE NAMES mpiexec mpirun)
+            if(MPIEXEC_EXECUTABLE)
+                add_test(NAME FEMNumeric_MPITest
+                        COMMAND ${MPIEXEC_EXECUTABLE} -np 2
+                        $<TARGET_FILE:fem_numeric_test_parallel>
+                        CONFIGURATIONS Release RelWithDebInfo)
+            endif()
+        endif()
+    endif()
 endif()
 
 # ============================================================================
 # Benchmarks
 # ============================================================================
 
-if(FEM_NUMERIC_BUILD_BENCHMARKS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)
-    add_subdirectory(benchmarks)
+if(FEM_NUMERIC_BUILD_BENCHMARKS)
+    # Pass parallel configuration to benchmarks
+    set(BENCHMARK_ENABLE_PARALLEL ${FEM_NUMERIC_PARALLEL_AVAILABLE})
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks)
+        add_subdirectory(benchmarks)
+    endif()
 endif()
 
 # ============================================================================
 # Examples
 # ============================================================================
 
-if(FEM_NUMERIC_BUILD_EXAMPLES AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/examples)
-    add_subdirectory(examples)
+if(FEM_NUMERIC_BUILD_EXAMPLES)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+        add_subdirectory(examples)
+    else()
+        # Create examples directory and add example
+        file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+
+        # Copy example file if parallel is available
+        if(FEM_NUMERIC_PARALLEL_AVAILABLE)
+            # The example would be created from the artifact we made earlier
+            message(STATUS "Examples directory created. Add numeric_parallel_example.cpp to it.")
+        endif()
+    endif()
 endif()
 
 # ============================================================================
@@ -308,14 +459,45 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FEMNumericConfig.cmake.in)
             INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FEMNumeric
     )
 else()
-    # Create a basic config file if template doesn't exist
+    # Create an enhanced config file with parallel support info
     file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/FEMNumericConfig.cmake
             "# FEM Numeric Library Configuration
 include(\"\${CMAKE_CURRENT_LIST_DIR}/FEMNumericTargets.cmake\")
+
 set(FEMNumeric_FOUND TRUE)
 set(FEMNumeric_VERSION ${PROJECT_VERSION})
-"
-    )
+
+# Parallel support information
+set(FEMNumeric_PARALLEL_AVAILABLE ${FEM_NUMERIC_PARALLEL_AVAILABLE})
+set(FEMNumeric_PARALLEL_COMPONENTS \"${FEM_NUMERIC_PARALLEL_COMPONENTS}\")
+set(FEMNumeric_HAS_OPENMP ${FEM_NUMERIC_OPENMP_AVAILABLE})
+set(FEMNumeric_HAS_TBB ${FEM_NUMERIC_TBB_AVAILABLE})
+set(FEMNumeric_HAS_MPI ${FEM_NUMERIC_MPI_AVAILABLE})
+
+# Provide parallel targets if available
+if(FEMNumeric_PARALLEL_AVAILABLE)
+    if(NOT TARGET fem::numeric::parallel)
+        add_library(fem::numeric::parallel INTERFACE IMPORTED)
+        # Link to individual components if they exist
+        if(FEMNumeric_HAS_OPENMP AND TARGET fem::numeric::openmp)
+            target_link_libraries(fem::numeric::parallel INTERFACE fem::numeric::openmp)
+        endif()
+        if(FEMNumeric_HAS_TBB AND TARGET fem::numeric::tbb)
+            target_link_libraries(fem::numeric::parallel INTERFACE fem::numeric::tbb)
+        endif()
+        if(FEMNumeric_HAS_MPI AND TARGET fem::numeric::mpi)
+            target_link_libraries(fem::numeric::parallel INTERFACE fem::numeric::mpi)
+        endif()
+    endif()
+endif()
+
+# Macros for client projects
+macro(fem_numeric_configure_parallel)
+    if(FEMNumeric_PARALLEL_AVAILABLE)
+        target_link_libraries(\${ARGV0} PRIVATE fem::numeric::parallel)
+    endif()
+endmacro()
+")
 endif()
 
 # Create version file
@@ -346,7 +528,24 @@ if(UNIX AND NOT APPLE)
                 DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
         )
     else()
-        message(STATUS "pkg-config template not found - skipping pkg-config generation")
+        # Create a basic pkg-config file
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/fem_numeric.pc
+                "prefix=${CMAKE_INSTALL_PREFIX}
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}
+includedir=\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}
+
+Name: FEM Numeric
+Description: FEM Numeric Library with Parallel Support
+Version: ${PROJECT_VERSION}
+Cflags: -I\${includedir}
+Libs: -L\${libdir}
+")
+
+        install(FILES
+                ${CMAKE_CURRENT_BINARY_DIR}/fem_numeric.pc
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        )
     endif()
 endif()
 
@@ -357,9 +556,18 @@ endif()
 # Export targets for parent project if this is a subproject
 if(NOT FEM_NUMERIC_STANDALONE)
     # Make our targets available to parent
-    set(FEM_NUMERIC_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include PARENT_SCOPE)
+    set(FEM_NUMERIC_INCLUDE_DIRS
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_BINARY_DIR}/include
+            PARENT_SCOPE)
     set(FEM_NUMERIC_LIBRARIES fem::numeric PARENT_SCOPE)
     set(FEM_NUMERIC_FOUND TRUE PARENT_SCOPE)
+
+    # Export parallel configuration to parent
+    set(FEM_NUMERIC_HAS_PARALLEL ${FEM_NUMERIC_PARALLEL_AVAILABLE} PARENT_SCOPE)
+    set(FEM_NUMERIC_HAS_OPENMP ${FEM_NUMERIC_OPENMP_AVAILABLE} PARENT_SCOPE)
+    set(FEM_NUMERIC_HAS_TBB ${FEM_NUMERIC_TBB_AVAILABLE} PARENT_SCOPE)
+    set(FEM_NUMERIC_HAS_MPI ${FEM_NUMERIC_MPI_AVAILABLE} PARENT_SCOPE)
 endif()
 
 # ============================================================================
@@ -368,27 +576,60 @@ endif()
 
 if(FEM_NUMERIC_STANDALONE OR VERBOSE)
     message(STATUS "")
-    message(STATUS "FEM Numeric Library Configuration:")
+    message(STATUS "===================================================")
+    message(STATUS "FEM Numeric Library Configuration Summary")
+    message(STATUS "===================================================")
+    message(STATUS "General:")
     message(STATUS "  Version:          ${PROJECT_VERSION}")
     message(STATUS "  Build Type:       ${CMAKE_BUILD_TYPE}")
     message(STATUS "  Standalone:       ${FEM_NUMERIC_STANDALONE}")
-    message(STATUS "  Library Type:     ${LIBRARY_TYPE}")
+    if(NOT FEM_NUMERIC_HEADER_ONLY)
+        message(STATUS "  Library Type:     ${LIBRARY_TYPE}")
+    else()
+        message(STATUS "  Library Type:     HEADER-ONLY")
+    endif()
     message(STATUS "")
-    message(STATUS "  Compiler:")
-    message(STATUS "    ID:             ${CMAKE_CXX_COMPILER_ID}")
-    message(STATUS "    Version:        ${CMAKE_CXX_COMPILER_VERSION}")
-    message(STATUS "    Standard:       C++${CMAKE_CXX_STANDARD}")
+    message(STATUS "Compiler:")
+    message(STATUS "  ID:               ${CMAKE_CXX_COMPILER_ID}")
+    message(STATUS "  Version:          ${CMAKE_CXX_COMPILER_VERSION}")
+    message(STATUS "  Standard:         C++${CMAKE_CXX_STANDARD}")
+    message(STATUS "  Flags:            ${CMAKE_CXX_FLAGS}")
     message(STATUS "")
-    message(STATUS "  Options:")
-    message(STATUS "    Tests:          ${FEM_NUMERIC_BUILD_TESTS}")
-    message(STATUS "    Benchmarks:     ${FEM_NUMERIC_BUILD_BENCHMARKS}")
-    message(STATUS "    Examples:       ${FEM_NUMERIC_BUILD_EXAMPLES}")
-    message(STATUS "    Coverage:       ${FEM_NUMERIC_ENABLE_COVERAGE}")
-    message(STATUS "    Sanitizers:     ${FEM_NUMERIC_USE_SANITIZERS}")
-    message(STATUS "    SIMD:           ${FEM_NUMERIC_ENABLE_SIMD}")
-    message(STATUS "    OpenMP:         ${FEM_NUMERIC_ENABLE_OPENMP}")
-    message(STATUS "    Header-only:    ${FEM_NUMERIC_HEADER_ONLY}")
+    message(STATUS "Build Options:")
+    message(STATUS "  Tests:            ${FEM_NUMERIC_BUILD_TESTS}")
+    message(STATUS "  Benchmarks:       ${FEM_NUMERIC_BUILD_BENCHMARKS}")
+    message(STATUS "  Examples:         ${FEM_NUMERIC_BUILD_EXAMPLES}")
+    message(STATUS "  Coverage:         ${FEM_NUMERIC_ENABLE_COVERAGE}")
+    message(STATUS "  Sanitizers:       ${FEM_NUMERIC_USE_SANITIZERS}")
+    message(STATUS "  SIMD:             ${FEM_NUMERIC_ENABLE_SIMD}")
+    message(STATUS "  Header-only:      ${FEM_NUMERIC_HEADER_ONLY}")
     message(STATUS "")
-    message(STATUS "  Install Prefix:   ${CMAKE_INSTALL_PREFIX}")
+    message(STATUS "Parallelism:")
+    message(STATUS "  Enabled:          ${FEM_NUMERIC_PARALLEL_AVAILABLE}")
+    if(FEM_NUMERIC_PARALLEL_AVAILABLE)
+        message(STATUS "  Components:       ${FEM_NUMERIC_PARALLEL_COMPONENTS}")
+        message(STATUS "  Details:")
+        message(STATUS "    OpenMP:         ${FEM_NUMERIC_OPENMP_AVAILABLE}")
+        message(STATUS "    TBB:            ${FEM_NUMERIC_TBB_AVAILABLE}")
+        if(FEM_NUMERIC_TBB_AVAILABLE)
+            message(STATUS "      Version:      ${FEM_NUMERIC_TBB_VERSION}")
+            message(STATUS "      Malloc:       ${FEM_NUMERIC_TBB_MALLOC}")
+        endif()
+        message(STATUS "    MPI:            ${FEM_NUMERIC_MPI_AVAILABLE}")
+        if(FEM_NUMERIC_MPI_AVAILABLE)
+            message(STATUS "      Optional:     ${FEM_NUMERIC_MPI_OPTIONAL}")
+            message(STATUS "      Vendor:       ${FEM_NUMERIC_MPI_VENDOR}")
+        endif()
+        if(FEM_NUMERIC_ENABLE_HYBRID AND _hybrid_modes)
+            message(STATUS "  Hybrid Modes:     ${_hybrid_modes}")
+        endif()
+    endif()
+    message(STATUS "")
+    message(STATUS "Installation:")
+    message(STATUS "  Prefix:           ${CMAKE_INSTALL_PREFIX}")
+    message(STATUS "  Bindir:           ${CMAKE_INSTALL_BINDIR}")
+    message(STATUS "  Libdir:           ${CMAKE_INSTALL_LIBDIR}")
+    message(STATUS "  Includedir:       ${CMAKE_INSTALL_INCLUDEDIR}")
+    message(STATUS "===================================================")
     message(STATUS "")
 endif()
