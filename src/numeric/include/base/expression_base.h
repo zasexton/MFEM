@@ -322,8 +322,10 @@ namespace fem::numeric {
     template<typename LHS, typename RHS, typename Op>
     class BinaryExpression : public ExpressionBase<BinaryExpression<LHS, RHS, Op>> {
     public:
-        using lhs_type = LHS;
-        using rhs_type = RHS;
+        using lhs_type  = LHS;
+        using rhs_type  = RHS;
+        using left_type  = LHS;
+        using right_type = RHS;
         using operation_type = Op;
 
         template<typename LHSArg, typename RHSArg>
@@ -398,6 +400,9 @@ namespace fem::numeric {
         size_t complexity() const noexcept {
             return lhs_.complexity() + rhs_.complexity() + shape_.size();
         }
+
+        const LHS& left()  const noexcept { return lhs_; }
+        const RHS& right() const noexcept { return rhs_; }
 
     private:
         LHS lhs_;
