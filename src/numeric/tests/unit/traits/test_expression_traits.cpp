@@ -313,10 +313,11 @@ TEST(ExpressionTraitsTest, ShouldMaterialize) {
     using Deep1 = BinaryExpression<ops::plus<double>, TestBinary, TestBinary>;
     using Deep2 = BinaryExpression<ops::plus<double>, Deep1, Deep1>;
     using Deep3 = BinaryExpression<ops::plus<double>, Deep2, Deep2>;
+    using Deep4 = BinaryExpression<ops::plus<double>, Deep3, Deep3>;
 
-    // Deep3 should have depth > 5 and should be materialized
-    EXPECT_GT(nt::expression_depth_v<Deep3>, 5);
-    EXPECT_TRUE(nt::should_materialize_v<Deep3>);
+    // Deep4 should have depth > 5 and should be materialized
+    EXPECT_GT(nt::expression_depth_v<Deep4>, 5);
+    EXPECT_TRUE(nt::should_materialize_v<Deep4>);
 }
 
 // TEST: Optimization hints

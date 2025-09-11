@@ -282,7 +282,8 @@ namespace fem::numeric::traits {
         // Optimization hints
         static constexpr bool can_vectorize = is_vectorizable_v<Expr>;
         static constexpr bool should_parallelize = operation_count > 1000;  // Heuristic
-        static constexpr bool should_materialize = depth > 5;  // Deep expressions might benefit from materialization
+        static constexpr bool should_materialize =
+                depth > 5 || operation_count > 10 || has_broadcasts;
 
         // Evaluation strategy recommendation
         static constexpr EvaluationStrategy recommended_strategy = [] {
@@ -437,7 +438,6 @@ namespace fem::numeric::traits {
         static constexpr bool value =
                 expression_depth_v<Expr> > 5 ||           // Deep expression trees
                 operation_count_v<Expr> > 10 ||           // Many operations
-                terminal_count_v<Expr> > 4 ||             // Many data sources
                 has_broadcast_v<Expr>;                    // Broadcasting complexity
     };
 
