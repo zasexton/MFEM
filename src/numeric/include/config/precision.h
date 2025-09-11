@@ -16,6 +16,7 @@
 
 #include "compiler.h"
 #include "platform.h"
+#include "config.h"
 
 FEM_NUMERIC_BEGIN_NAMESPACE
 
