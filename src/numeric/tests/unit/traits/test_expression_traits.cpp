@@ -49,7 +49,8 @@ private:
 using TestContainer = MockContainer<double>;
 using TestTerminal = TerminalExpression<TestContainer>;
 using TestScalar = ScalarExpression<double>;
-using TestUnary = UnaryExpression<ops::negate<double>, TestTerminal>;
+using TestUnary = UnaryExpression<TestTerminal, ops::negate<double>>;
+// BinaryExpression now takes template parameters as <Op, Left, Right>
 using TestBinary = BinaryExpression<ops::plus<double>, TestTerminal, TestTerminal>;
 using ComplexBinary = BinaryExpression<ops::multiplies<double>, TestUnary, TestBinary>;
 
@@ -100,8 +101,8 @@ TEST(ExpressionTraitsTest, IsBinaryExpression) {
 // TEST: Unary expression detection
 TEST(ExpressionTraitsTest, IsUnaryExpression) {
     EXPECT_TRUE(nt::is_unary_expression_v<TestUnary>);
-    EXPECT_TRUE((nt::is_unary_expression_v<UnaryExpression<ops::abs_op<double>, TestTerminal>>));
-    EXPECT_TRUE((nt::is_unary_expression_v<UnaryExpression<ops::sin_op<>, TestScalar>>));
+    EXPECT_TRUE((nt::is_unary_expression_v<UnaryExpression<TestTerminal, ops::abs_op<double>>>));
+    EXPECT_TRUE((nt::is_unary_expression_v<UnaryExpression<TestScalar, ops::sin_op<>>>));
 
     EXPECT_FALSE(nt::is_unary_expression_v<TestTerminal>);
     EXPECT_FALSE(nt::is_unary_expression_v<TestBinary>);
@@ -367,7 +368,7 @@ TEST(ExpressionTraitsTest, ComplexExpressionTrees) {
     using Term4 = TerminalExpression<MockContainer<double>>;
 
     using Add = BinaryExpression<ops::plus<double>, Term1, Term2>;
-    using Sin = UnaryExpression<ops::sin_op<>, Term3>;
+    using Sin = UnaryExpression<Term3, ops::sin_op<>>;
     using Mul = BinaryExpression<ops::multiplies<double>, Add, Sin>;
     using Final = BinaryExpression<ops::plus<double>, Mul, Term4>;
 
@@ -412,9 +413,9 @@ TEST(ExpressionTraitsTest, EdgeCases) {
 
     // Self-referential types (if they existed) would need special handling
     // This is just to ensure the traits handle basic recursion correctly
-    using Nested1 = UnaryExpression<ops::negate<double>, TestTerminal>;
-    using Nested2 = UnaryExpression<ops::negate<double>, Nested1>;
-    using Nested3 = UnaryExpression<ops::negate<double>, Nested2>;
+    using Nested1 = UnaryExpression<TestTerminal, ops::negate<double>>;
+    using Nested2 = UnaryExpression<Nested1, ops::negate<double>>;
+    using Nested3 = UnaryExpression<Nested2, ops::negate<double>>;
 
     EXPECT_EQ(nt::expression_depth_v<Nested3>, 4);  // 3 unary + 1 terminal
     EXPECT_EQ(nt::operation_count_v<Nested3>, 3);   // 3 negations
