@@ -19,6 +19,7 @@ Compile-time type introspection and trait system enabling template metaprogrammi
 
 ### Container & Storage
 - **container_traits.hpp**: Container properties (dense/sparse, layout, dimensions)
+- **container_utils.h**: Evaluation strategy and container selection helpers
 - **storage_traits.hpp**: Memory characteristics (alignment, contiguous, growth)
 - **iterator_traits.hpp**: Iterator patterns (strided, checked, parallel-safe)
 
