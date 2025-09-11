@@ -162,22 +162,24 @@ FetchContent_MakeAvailable(fmtlib)
 # -----------------------------------------------------------------------------
 #  Sub-directories (layer order bottom → top)
 # -----------------------------------------------------------------------------
-#add_subdirectory(src/numeric)
-#add_subdirectory(src/continuum)
-#add_subdirectory(src/core)
-#add_subdirectory(src/algebra)
-#add_subdirectory(src/physics)
+# Core library (foundational infrastructure)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    add_subdirectory(src/core)
+endif()
 
-# Only add 'parallel' when user wants it
-#if (ENABLE_MPI)
-#    add_subdirectory(src/parallel)
-#else()
-#    message(STATUS "MPI disabled via ENABLE_MPI=OFF")
-#endif()
+# Core tests (if testing is enabled and tests exist)
+if(BUILD_UNIT_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/core/tests)
+    # Tests are added by core's CMakeLists.txt
+endif()
 
-#if (BUILD_EXAMPLES)
-#    add_subdirectory(src/examples)
-#endif()
+# Core benchmarks (if performance testing is enabled and benchmarks exist)
+if(BUILD_PERFORMANCE_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/core/benchmarks)
+    # Benchmarks are added by core's CMakeLists.txt
+endif()
+
+# -----------------------------------------------------------------------------
+# Python Support (Bindings n such)
+# -----------------------------------------------------------------------------
 
 if (BUILD_PYTHON)
     add_subdirectory(src/drivers/python)  # pybind11 glue
