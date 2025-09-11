@@ -105,57 +105,90 @@ Custom allocators for specialized needs:
 ## Usage Examples
 
 ### Basic Container Creation
-```cppusing namespace fem::numeric;// Create a shape
-Shape shape({3, 4, 5});  // 3x4x5 tensor// Dynamic storage
+```cpp
+using namespace fem::numeric;
+
+// Create a shape
+Shape shape({3, 4, 5});  // 3x4x5 tensor
+
+// Dynamic storage
 DynamicStorage<double> storage(shape.size());
-ContainerBase<MyContainer, double> container(shape);// Fill with value
-container.fill(3.14);// Check for numerical issues
+ContainerBase<MyContainer, double> container(shape);
+
+// Fill with value
+container.fill(3.14);
+
+// Check for numerical issues
 if (container.has_nan()) {
-throw ComputationError("NaN detected");
+    throw ComputationError("NaN detected");
 }
 ```
+
 ### Advanced Slicing
 ```cpp
 // NumPy-style slicing
 MultiIndex idx = "2:5, ::2, :"_idx;  // [2:5, ::2, :]
-auto view = container[idx];// Using slice objects
+auto view = container[idx];
+
+// Using slice objects
 Slice s(2, 10, 2);  // start=2, stop=10, step=2
 auto indices = s.indices(container.size());
 ```
+
 ### Expression Templates
 ```cpp
 // Lazy evaluation - no temporaries created
-auto expr = (a + b) * c - d / 2.0;// Force evaluation
-auto result = expr.eval<DynamicStorage, double>();// Parallel evaluation for large arrays
+auto expr = (a + b) * c - d / 2.0;
+
+// Force evaluation
+auto result = expr.eval<DynamicStorage, double>();
+
+// Parallel evaluation for large arrays
 if (expr.is_parallelizable() && expr.size() > 1000) {
-expr.parallel_eval_to(result);
+    expr.parallel_eval_to(result);
 }
 ```
+
 ### Broadcasting
 ```cpp
 Shape a_shape({3, 1, 5});
-Shape b_shape({1, 4, 5});// Check compatibility
+Shape b_shape({1, 4, 5});
+
+// Check compatibility
 if (BroadcastHelper::are_broadcastable(a_shape, b_shape)) {
-Shape result_shape = BroadcastHelper::broadcast_shape(a_shape, b_shape);
-// result_shape = (3, 4, 5)
-}// Broadcast iteration without copying
+    Shape result_shape = BroadcastHelper::broadcast_shape(a_shape, b_shape);
+    // result_shape = (3, 4, 5)
+}
+
+// Broadcast iteration without copying
 auto [begin, end] = BroadcastHelper::make_broadcast_range(
-data.data(), data.shape(), broadcast_shape);
+    data.data(), data.shape(), broadcast_shape);
 ```
+
 ### Automatic Differentiation
 ```cpp
-using Dual = DualBase<double, 3>;  // 3 derivative directions// Create independent variables
+using Dual = DualBase<double, 3>;  // 3 derivative directions
+
+// Create independent variables
 Dual x = make_independent(2.0, 0);  // df/dx
-Dual y = make_independent(3.0, 1);  // df/dy// Compute function and derivatives
-Dual f = sin(x) * exp(y) + pow(x, 2);double value = f.value();           // f(2, 3)
-double dfdx = f.derivative(0);      // ∂f/∂x
-double dfdy = f.derivative(1);      // ∂f/∂y
+Dual y = make_independent(3.0, 1);  // df/dy
+
+// Compute function and derivatives
+Dual f   = sin(x) * exp(y) + pow(x, 2);
+double value = f.value();           // f(2, 3)
+double dfdx  = f.derivative(0);     // ∂f/∂x
+double dfdy  = f.derivative(1);     // ∂f/∂y
 ```
+
 ### Custom Storage
 ```cpp
 // Stack allocation for small arrays
-StaticStorage<float, 100> small_storage(50);// Aligned storage for SIMD
-AlignedStorage<double, 32> simd_storage(1024);// Pool allocator for many small allocations
+StaticStorage<float, 100> small_storage(50);
+
+// Aligned storage for SIMD
+AlignedStorage<double, 32> simd_storage(1024);
+
+// Pool allocator for many small allocations
 PoolAllocator<int> pool(256);
 ```
 ## Design Principles
@@ -187,8 +220,10 @@ PoolAllocator<int> pool(256);
 
 ## Dependencies
 
-### Internal Dependenciesnumeric_base.h (foundation)
-```
+### Internal Dependencies
+
+```cpp
+numeric_base.h (foundation)
 ├── traits_base.h (uses concepts from numeric_base)
 ├── storage_base.h (uses traits and numeric_base)
 ├── iterator_base.h (uses numeric_base)
@@ -201,6 +236,7 @@ PoolAllocator<int> pool(256);
 ├── expression_base.h (uses container, ops, broadcast)
 └── dual_base.h, dual_math.h, dual_comparison.h (uses numeric_base)
 ```
+ 
 ### External Dependencies
 - C++20 or later
 - Standard library (memory, vector, array, span, concepts)
@@ -239,6 +275,7 @@ NumericError (base)
 ├── ComputationError (numerical failures)
 └── ConvergenceError (iterative methods)
 ```
+
 ### Debug vs Release
 - Debug mode: Full bounds checking and assertions
 - Release mode: Minimal overhead, optional IEEE checking
@@ -260,3 +297,4 @@ NumericError (base)
 - Distributed memory parallelism
 - Complex number specializations
 - Extended precision types
+
