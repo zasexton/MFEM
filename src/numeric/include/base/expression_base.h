@@ -327,6 +327,8 @@ namespace fem::numeric {
         using left_type  = LHS;
         using right_type = RHS;
         using operation_type = Op;
+        using value_type = std::common_type_t<typename LHS::value_type,
+                                              typename RHS::value_type>;
 
         template<typename LHSArg, typename RHSArg>
         BinaryExpression(LHSArg&& lhs, RHSArg&& rhs, Op op = Op{})
@@ -524,6 +526,7 @@ namespace fem::numeric {
     public:
         using expression_type = Expr;
         using operation_type = Op;
+        using value_type = typename Expr::value_type;
 
         template<typename ExprArg>
         UnaryExpression(ExprArg&& expr, Op op = Op{})
