@@ -12,6 +12,7 @@
 
 #include "type_traits.h"
 #include "numeric_traits.h"
+#include "operation_traits.h"
 
 namespace fem::numeric::traits {
 
@@ -325,17 +326,14 @@ namespace fem::numeric::traits {
      */
     template<typename Expr>
     struct has_commutative_operations {
-        static constexpr bool value = false;
-    };
-
-    template<typename LHS, typename RHS>
-    struct has_commutative_operations<BinaryExpression<ops::plus<>, LHS, RHS>> {
-        static constexpr bool value = true;
-    };
-
-    template<typename LHS, typename RHS>
-    struct has_commutative_operations<BinaryExpression<ops::multiplies<>, LHS, RHS>> {
-        static constexpr bool value = true;
+        static constexpr bool value = [] {
+            if constexpr (is_binary_expression_v<Expr>) {
+                using Op = expression_operation_t<Expr>;
+                return algebraic_properties<Op>::value.commutative;
+            } else {
+                return false;
+            }
+        }();
     };
 
     template<typename Expr>
