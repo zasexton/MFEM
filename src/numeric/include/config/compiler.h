@@ -9,6 +9,14 @@
 #ifndef FEM_NUMERIC_COMPILER_H
 #define FEM_NUMERIC_COMPILER_H
 
+// Compiler-specific warning macro
+#if defined(_MSC_VER)
+#define FEM_NUMERIC_WARNING(msg) __pragma(message("warning: " msg))
+#else
+#define FEM_NUMERIC_DO_PRAGMA(x) _Pragma(#x)
+#define FEM_NUMERIC_WARNING(msg) FEM_NUMERIC_DO_PRAGMA(message("warning: " msg))
+#endif
+
 // Detect C++ standard version
 #ifdef _MSVC_LANG
 #define FEM_NUMERIC_CPP_VERSION (_MSVC_LANG / 100)
@@ -46,7 +54,7 @@
 #define FEM_NUMERIC_COMPILER_VERSION _MSC_VER
 #define FEM_NUMERIC_COMPILER_NAME "MSVC"
 #else
-#warning "Unknown compiler - some optimizations may be disabled"
+FEM_NUMERIC_WARNING("Unknown compiler - some optimizations may be disabled")
 #define FEM_NUMERIC_COMPILER_UNKNOWN
 #define FEM_NUMERIC_COMPILER_NAME "Unknown"
 #endif
