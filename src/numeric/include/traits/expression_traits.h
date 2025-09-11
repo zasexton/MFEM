@@ -287,16 +287,14 @@ namespace fem::numeric::traits {
         // Evaluation strategy recommendation
         static constexpr EvaluationStrategy recommended_strategy = [] {
             if constexpr (!is_expression) {
-            return EvaluationStrategy::Immediate;
-        } else if constexpr (can_vectorize) {
-            return EvaluationStrategy::Vectorized;
-        } else if constexpr (should_parallelize) {
-            return EvaluationStrategy::Parallel;
-        } else if constexpr (depth <= 3) {
-            return EvaluationStrategy::Lazy;
-        } else {
-            return EvaluationStrategy::Chunked;
-        }
+                return EvaluationStrategy::Immediate;
+            } else if constexpr (should_parallelize) {
+                return EvaluationStrategy::Parallel;
+            } else if constexpr (depth > 5) {
+                return EvaluationStrategy::Chunked;
+            } else {
+                return EvaluationStrategy::Lazy;
+            }
         }();
     };
 
