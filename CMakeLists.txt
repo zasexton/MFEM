@@ -28,6 +28,7 @@ option (TBB_FETCH               "Automatically download oneTBB if missing" ON)
 # We target C++23; most compilers provide 99 % of the features already.
 
 include(CheckCXXCompilerFlag)
+include(CheckCXXSourceCompiles)
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
         set(CMAKE_CXX_STANDARD 20)
@@ -52,6 +53,17 @@ else()
 endif()
 set (CMAKE_CXX_STANDARD_REQUIRED YES)
 set (CMAKE_CXX_EXTENSIONS NO)
+
+# -----------------------------------------------------------------------------
+#  Detect availability of lock-free std::atomic<double>
+# -----------------------------------------------------------------------------
+check_cxx_source_compiles("\n#include <atomic>\nint main() {\n    static_assert(std::atomic<double>::is_always_lock_free);\n    std::atomic<double> v{0.0};\n    (void)v;\n    return 0;\n}\n" FEM_HAVE_ATOMIC_DOUBLE)
+
+if (FEM_HAVE_ATOMIC_DOUBLE)
+    add_compile_definitions(FEM_NUMERIC_ENABLE_ATOMIC_ASSEMBLY=1)
+else()
+    add_compile_definitions(FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING)
+endif()
 
 # -----------------------------------------------------------------------------
 #  Global warning flags (compiler-specific)
