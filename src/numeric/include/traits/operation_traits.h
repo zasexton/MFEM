@@ -15,6 +15,7 @@
 
 #include "type_traits.h"
 #include "numeric_traits.h"
+#include "SFINAE.h"
 
 namespace fem::numeric::traits {
 
@@ -217,10 +218,10 @@ namespace fem::numeric::traits {
     struct operation_category {
         static constexpr OperationCategory value = [] {
             // Check arithmetic operations
-            if constexpr (std::is_same_v<Op, ops::plus<>> ||
-                          std::is_same_v<Op, ops::minus<>> ||
-                          std::is_same_v<Op, ops::multiplies<>> ||
-                          std::is_same_v<Op, ops::divides<>> ||
+            if constexpr (is_specialization_v<Op, ops::plus> ||
+                          is_specialization_v<Op, ops::minus> ||
+                          is_specialization_v<Op, ops::multiplies> ||
+                          is_specialization_v<Op, ops::divides> ||
                           std::is_same_v<Op, ops::modulus<>> ||
                           std::is_same_v<Op, ops::negate<>>) {
                 return OperationCategory::Arithmetic;
@@ -269,21 +270,21 @@ namespace fem::numeric::traits {
             AlgebraicProperties props;
 
             // Addition
-            if constexpr (std::is_same_v<Op, ops::plus<>>) {
+            if constexpr (is_specialization_v<Op, ops::plus>) {
                 props.commutative = true;
                 props.associative = true;
                 props.has_identity = true;  // identity = 0
                 props.has_inverse = true;   // inverse = negation
             }
             // Subtraction
-            else if constexpr (std::is_same_v<Op, ops::minus<>>) {
+            else if constexpr (is_specialization_v<Op, ops::minus>) {
                 props.commutative = false;  // a - b ≠ b - a
                 props.associative = false;  // (a - b) - c ≠ a - (b - c)
                 props.has_identity = true;  // identity = 0 (for right identity: a - 0 = a)
                 props.has_inverse = false;  // no general inverse
             }
             // Multiplication
-            else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
+            else if constexpr (is_specialization_v<Op, ops::multiplies>) {
                 props.commutative = true;
                 props.associative = true;
                 props.distributive = true;  // over addition
@@ -291,7 +292,7 @@ namespace fem::numeric::traits {
                 props.has_inverse = true;   // inverse = reciprocal (except 0)
             }
             // Division
-            else if constexpr (std::is_same_v<Op, ops::divides<>>) {
+            else if constexpr (is_specialization_v<Op, ops::divides>) {
                 props.commutative = false;  // a / b ≠ b / a
                 props.associative = false;  // (a / b) / c ≠ a / (b / c)
                 props.has_identity = true;  // identity = 1 (for right identity: a / 1 = a)
@@ -452,9 +453,9 @@ namespace fem::numeric::traits {
                 return false;
             } else if constexpr (std::is_integral_v<T>) {
                 // Integer overflow is undefined behavior
-                return std::is_same_v<Op, ops::plus<>> ||
-                       std::is_same_v<Op, ops::minus<>> ||
-                       std::is_same_v<Op, ops::multiplies<>> ||
+                return is_specialization_v<Op, ops::plus> ||
+                       is_specialization_v<Op, ops::minus> ||
+                       is_specialization_v<Op, ops::multiplies> ||
                        std::is_same_v<Op, ops::negate<>>;
             }
             return false;
@@ -481,7 +482,7 @@ namespace fem::numeric::traits {
             }
 
             // Operations that can produce NaN
-            return std::is_same_v<Op, ops::divides<>> ||    // 0/0, inf/inf
+            return is_specialization_v<Op, ops::divides> ||    // 0/0, inf/inf
                    std::is_same_v<Op, ops::sqrt_op<>> ||     // sqrt(negative)
                    std::is_same_v<Op, ops::log_op<>> ||      // log(negative)
                    std::is_same_v<Op, ops::asin_op<>> ||     // asin(|x| > 1)
@@ -507,14 +508,14 @@ namespace fem::numeric::traits {
 
         static constexpr Level value = [] {
             // Arithmetic operations
-            if constexpr (std::is_same_v<Op, ops::plus<>> ||
-                         std::is_same_v<Op, ops::minus<>>) {
+            if constexpr (is_specialization_v<Op, ops::plus> ||
+                         is_specialization_v<Op, ops::minus>) {
                 return Trivial;
             }
-            else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
+            else if constexpr (is_specialization_v<Op, ops::multiplies>) {
                 return Simple;
             }
-            else if constexpr (std::is_same_v<Op, ops::divides<>>) {
+            else if constexpr (is_specialization_v<Op, ops::divides>) {
                 return Moderate;
             }
             // Transcendental operations
@@ -590,13 +591,13 @@ namespace fem::numeric::traits {
 
         // Identity and inverse elements (if applicable)
         static constexpr T identity() {
-            if constexpr (std::is_same_v<Op, ops::plus<>>) {
+            if constexpr (is_specialization_v<Op, ops::plus>) {
                 return T{0};
-            } else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::multiplies>) {
                 return T{1};
-            } else if constexpr (std::is_same_v<Op, ops::divides<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::divides>) {
                 return T{1};  // Right identity: a / 1 = a
-            } else if constexpr (std::is_same_v<Op, ops::minus<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::minus>) {
                 return T{0};  // Right identity: a - 0 = a
             } else if constexpr (std::is_same_v<Op, std::bit_and<>>) {
                 return ~T{0};  // All bits set
@@ -665,12 +666,12 @@ namespace fem::numeric::traits {
     struct error_propagation {
         // Condition number estimation for the operation
         static constexpr double condition_number() {
-            if constexpr (std::is_same_v<Op, ops::plus<>> ||
-                         std::is_same_v<Op, ops::minus<>>) {
+            if constexpr (is_specialization_v<Op, ops::plus> ||
+                         is_specialization_v<Op, ops::minus>) {
                 return 1.0;  // Well-conditioned
-            } else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::multiplies>) {
                 return 1.0;  // Well-conditioned for moderate values
-            } else if constexpr (std::is_same_v<Op, ops::divides<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::divides>) {
                 return 2.0;  // Can amplify errors
             } else if constexpr (std::is_same_v<Op, ops::exp_op<>>) {
                 return 10.0; // Exponential error growth
@@ -837,7 +838,7 @@ namespace fem::numeric::traits {
     struct special_value_handling {
         // Needs special handling for zero
         static constexpr bool handle_zero =
-                std::is_same_v<Op, ops::divides<>> ||
+                is_specialization_v<Op, ops::divides> ||
                 std::is_same_v<Op, ops::modulus<>> ||
                 std::is_same_v<Op, ops::log_op<>>;
 
@@ -907,12 +908,12 @@ namespace fem::numeric::traits {
     struct accuracy_requirements {
         // ULP (Units in Last Place) error tolerance
         static constexpr int max_ulp_error = [] {
-            if constexpr (std::is_same_v<Op, ops::plus<>> ||
-                          std::is_same_v<Op, ops::minus<>>) {
+            if constexpr (is_specialization_v<Op, ops::plus> ||
+                          is_specialization_v<Op, ops::minus>) {
                 return 1;  // Exact for IEEE
-            } else if constexpr (std::is_same_v<Op, ops::multiplies<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::multiplies>) {
                 return 1;  // Exact for IEEE
-            } else if constexpr (std::is_same_v<Op, ops::divides<>>) {
+            } else if constexpr (is_specialization_v<Op, ops::divides>) {
                 return 1;  // Correctly rounded
             } else if constexpr (std::is_same_v<Op, ops::sqrt_op<>>) {
                 return 1;  // Correctly rounded
