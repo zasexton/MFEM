@@ -78,6 +78,19 @@ namespace test_types {
 using namespace fem::numeric::traits;
 using namespace test_types;
 
+template<typename T>
+constexpr bool is_complete_container =
+    has_value_type_v<T> &&
+    has_size_v<T> &&
+    has_data_v<T> &&
+    has_begin_v<T> &&
+    has_end_v<T>;
+
+template<typename T>
+using has_double_value_type = std::enable_if_t<
+    has_value_type_v<T> && std::is_same_v<typename T::value_type, double>
+>;
+
 // ============================================================================
 // Basic SFINAE utilities tests
 // ============================================================================
@@ -400,25 +413,12 @@ TEST(SFINAETest, ValidateContainer) {
 
 TEST(SFINAETest, ComplexDetectionScenarios) {
     // Combine multiple detections
-    template<typename T>
-    constexpr bool is_complete_container =
-        has_value_type_v<T> &&
-        has_size_v<T> &&
-        has_data_v<T> &&
-        has_begin_v<T> &&
-        has_end_v<T>;
-
     static_assert(is_complete_container<MockContainer<int>>);
     static_assert(is_complete_container<std::vector<int>>);
     static_assert(!is_complete_container<IncompleteContainer<int>>);
     static_assert(!is_complete_container<EmptyClass>);
 
     // Detect specific member type values
-    template<typename T>
-    using has_double_value_type = std::enable_if_t<
-        has_value_type_v<T> && std::is_same_v<typename T::value_type, double>
-    >;
-
     static_assert(is_detected_v<has_double_value_type, MockContainer<double>>);
     static_assert(!is_detected_v<has_double_value_type, MockContainer<int>>);
     static_assert(!is_detected_v<has_double_value_type, EmptyClass>);
