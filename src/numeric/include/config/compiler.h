@@ -9,12 +9,16 @@
 #ifndef FEM_NUMERIC_COMPILER_H
 #define FEM_NUMERIC_COMPILER_H
 
-// Compiler-specific warning macro
+// Compiler-specific warning macro (may be predefined in config.h)
+#ifndef FEM_NUMERIC_WARNING
 #if defined(_MSC_VER)
-#define FEM_NUMERIC_WARNING(msg) __pragma(message("warning: " msg))
-#else
+#define FEM_NUMERIC_WARNING(msg) __pragma(message(msg))
+#elif defined(__clang__) || defined(__GNUC__)
 #define FEM_NUMERIC_DO_PRAGMA(x) _Pragma(#x)
-#define FEM_NUMERIC_WARNING(msg) FEM_NUMERIC_DO_PRAGMA(message("warning: " msg))
+#define FEM_NUMERIC_WARNING(msg) FEM_NUMERIC_DO_PRAGMA(message(msg))
+#else
+#define FEM_NUMERIC_WARNING(msg)
+#endif
 #endif
 
 // Detect C++ standard version
