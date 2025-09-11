@@ -470,15 +470,17 @@ namespace fem::numeric::traits {
         static constexpr Order value = [] {
             if constexpr (is_binary_expression_v<Expr>) {
                 // Simple heuristic: evaluate side with fewer operations first
-                constexpr auto left_ops = operation_count<typename Expr::left_type>::value;
-                constexpr auto right_ops = operation_count<typename Expr::right_type>::value;
+                constexpr auto left_ops =
+                        operation_count_v<std::decay_t<typename Expr::left_type>>;
+                constexpr auto right_ops =
+                        operation_count_v<std::decay_t<typename Expr::right_type>>;
 
                 if (left_ops < right_ops) {
                     return LeftToRight;
                 } else if (right_ops < left_ops) {
                     return RightToLeft;
                 } else {
-                    return Optimal;
+                    return LeftToRight;
                 }
             }
             return LeftToRight;
