@@ -6,7 +6,6 @@
 #include "../base/dual_base.h"
 #include "../base/traits_base.h"
 #include "type_traits.h"
-#include "numeric_traits.h"
 
 namespace fem::numeric::traits {
 
