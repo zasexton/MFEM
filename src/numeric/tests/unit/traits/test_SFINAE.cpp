@@ -78,6 +78,7 @@ namespace test_types {
 using namespace fem::numeric::traits;
 using namespace test_types;
 
+
 template<typename T>
 constexpr bool is_complete_container =
     has_value_type_v<T> &&
@@ -90,6 +91,31 @@ template<typename T>
 using has_double_value_type = std::enable_if_t<
     has_value_type_v<T> && std::is_same_v<typename T::value_type, double>
 >;
+
+namespace {
+
+    struct AddOp {
+        template<typename T, typename U>
+        auto operator()(T&& t, U&& u) -> decltype(t + u) { return t + u; }
+    };
+
+    struct DivOp {
+        template<typename T, typename U>
+        auto operator()(T&& t, U&& u) -> decltype(t / u) { return t / u; }
+    };
+
+    struct NegOp {
+        template<typename T>
+        auto operator()(T&& t) -> decltype(-t) { return -t; }
+    };
+
+    struct DerefOp {
+        template<typename T>
+        auto operator()(T&& t) -> decltype(*t) { return *t; }
+    };
+
+} // namespace
+
 
 // ============================================================================
 // Basic SFINAE utilities tests
@@ -221,16 +247,6 @@ TEST(SFINAETest, HasStorageType) {
 // ============================================================================
 
 TEST(SFINAETest, BinaryOperations) {
-    struct AddOp {
-        template<typename T, typename U>
-        auto operator()(T&& t, U&& u) -> decltype(t + u) { return t + u; }
-    };
-
-    struct DivOp {
-        template<typename T, typename U>
-        auto operator()(T&& t, U&& u) -> decltype(t / u) { return t / u; }
-    };
-
     // Arithmetic types
     static_assert(has_binary_op_v<int, int, AddOp>);
     static_assert(has_binary_op_v<double, float, AddOp>);
@@ -245,16 +261,6 @@ TEST(SFINAETest, BinaryOperations) {
 }
 
 TEST(SFINAETest, UnaryOperations) {
-    struct NegOp {
-        template<typename T>
-        auto operator()(T&& t) -> decltype(-t) { return -t; }
-    };
-
-    struct DerefOp {
-        template<typename T>
-        auto operator()(T&& t) -> decltype(*t) { return *t; }
-    };
-
     // Arithmetic negation
     static_assert(has_unary_op_v<int, NegOp>);
     static_assert(has_unary_op_v<double, NegOp>);
