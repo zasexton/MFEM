@@ -23,7 +23,7 @@
 
 // Namespace configuration
 #ifndef FEM_NUMERIC_NAMESPACE
-  #define FEM_NUMERIC_NAMESPACE numeric
+  #define FEM_NUMERIC_NAMESPACE fem::numeric
 #endif
 
 // Begin namespace macro
