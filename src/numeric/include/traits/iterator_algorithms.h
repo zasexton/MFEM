@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstring>
 
-#include "../traits/iterator_traits.h"
+#include "iterator_traits.h"
 
 namespace fem::numeric::traits {
 
