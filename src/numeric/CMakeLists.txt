@@ -77,6 +77,7 @@ endif()
 option(FEM_NUMERIC_TBB_MALLOC "Use TBB scalable allocator" OFF)
 option(FEM_NUMERIC_MPI_OPTIONAL "Make MPI optional at runtime" ON)
 option(FEM_NUMERIC_BUNDLED_MPI "Build our own MPI if needed" OFF)
+option(FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING "Suppress note about parallel assembly without atomics" OFF)
 set(FEM_NUMERIC_TBB_VERSION "2021.12.0" CACHE STRING "TBB version to fetch if needed")
 set(FEM_NUMERIC_MPI_VENDOR "auto" CACHE STRING "MPI vendor (auto|openmpi|mpich)")
 
@@ -281,6 +282,7 @@ target_compile_definitions(fem_numeric INTERFACE
         $<$<CONFIG:Debug>:FEM_DEBUG>
         $<$<BOOL:${FEM_NUMERIC_ENABLE_SIMD}>:FEM_NUMERIC_SIMD_ENABLED>
         $<$<BOOL:${FEM_NUMERIC_PARALLEL_AVAILABLE}>:FEM_NUMERIC_PARALLEL>
+        $<$<BOOL:${FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING}>:FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING>
 )
 
 # ============================================================================
@@ -603,6 +605,7 @@ if(FEM_NUMERIC_STANDALONE OR VERBOSE)
     message(STATUS "  Sanitizers:       ${FEM_NUMERIC_USE_SANITIZERS}")
     message(STATUS "  SIMD:             ${FEM_NUMERIC_ENABLE_SIMD}")
     message(STATUS "  Header-only:      ${FEM_NUMERIC_HEADER_ONLY}")
+    message(STATUS "  Suppress atomic warning: ${FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING}")
     message(STATUS "")
     message(STATUS "Parallelism:")
     message(STATUS "  Enabled:          ${FEM_NUMERIC_PARALLEL_AVAILABLE}")

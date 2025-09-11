@@ -39,6 +39,7 @@ option(FEM_NUMERIC_ENABLE_TBB "Enable Intel TBB task parallelism" ${FEM_NUMERIC_
 option(FEM_NUMERIC_ENABLE_MPI "Enable MPI distributed parallelism" OFF)  # Off by default as it's heavyweight
 option(FEM_NUMERIC_ENABLE_HYBRID "Enable hybrid parallel combinations" ${FEM_NUMERIC_ENABLE_PARALLEL})
 option(FEM_NUMERIC_FETCH_MISSING "Automatically fetch missing parallel libraries" ON)
+option(FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING "Suppress note about parallel assembly without atomics" OFF)
 
 # Propagate fetch option to individual modules
 if(FEM_NUMERIC_FETCH_MISSING)
@@ -99,6 +100,9 @@ endif()
 if(_parallel_available)
     target_compile_definitions(fem::numeric::parallel INTERFACE FEM_NUMERIC_PARALLEL_ENABLED)
 endif()
+
+target_compile_definitions(fem::numeric::parallel INTERFACE
+    $<$<BOOL:${FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING}>:FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING>)
 
 # ============================================================================
 # Configure Hybrid Parallelism
@@ -265,6 +269,7 @@ if(FEM_NUMERIC_STANDALONE OR FEM_NUMERIC_VERBOSE)
     message(STATUS "")
     message(STATUS "===== FEM Numeric Parallel Configuration =====")
     message(STATUS "  Parallel Enabled:    ${_parallel_available}")
+    message(STATUS "  Suppress atomic warning: ${FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING}")
 
     if(_parallel_available)
         message(STATUS "  Components:          ${_parallel_components}")
