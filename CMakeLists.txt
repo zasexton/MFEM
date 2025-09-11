@@ -62,7 +62,8 @@ check_cxx_source_compiles("\n#include <atomic>\nint main() {\n    static_assert(
 if (FEM_HAVE_ATOMIC_DOUBLE)
     add_compile_definitions(FEM_NUMERIC_ENABLE_ATOMIC_ASSEMBLY=1)
 else()
-    add_compile_definitions(FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING)
+    # Suppress the parallel atomic warning explicitly when atomics aren't available
+    add_compile_definitions(FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING=1)
 endif()
 
 # -----------------------------------------------------------------------------
