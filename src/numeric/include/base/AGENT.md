@@ -4,6 +4,23 @@
 
 This document provides architectural context and implementation guidance for AI systems working with the FEM Numeric Base Library. The library implements a sophisticated numerical computing framework with strict IEEE 754 compliance, designed for finite element methods but applicable to general scientific computing.
 
+## Files Overview
+
+- `numeric_base.h` - Fundamental numeric concepts and shape utilities.
+- `traits_base.h` - Compile-time traits for numeric, complex, and dual types.
+- `storage_base.h` - Abstract interface for memory storage strategies.
+- `container_base.h` - CRTP base for owned containers providing core operations.
+- `view_base.h` - Non-owning view interfaces including strided access.
+- `iterator_base.h` - Random-access iterators for contiguous and strided traversal.
+- `slice_base.h` - NumPy-style slicing and multi-index helpers.
+- `ops_base.h` - Functors for arithmetic and reduction operations with IEEE checks.
+- `broadcast_base.h` - Helpers implementing NumPy-style broadcasting rules.
+- `expression_base.h` - Expression template framework for lazy evaluation.
+- `allocator_base.h` - Allocator interfaces for aligned and pooled memory.
+- `dual_base.h` - Forward-mode dual number implementation tracking derivatives.
+- `dual_math.h` - Mathematical functions specialized for dual numbers.
+- `dual_comparison.h` - Comparison operators and utilities for dual numbers.
+
 ## Architectural Philosophy
 
 ### Core Design Principles
