@@ -168,13 +168,10 @@ namespace fem::core::base {
  * @brief Check if a type is derived from NonCopyable
  */
     template<typename T>
-    struct is_non_copyable : std::false_type {};
-
-    template<typename T>
-    struct is_non_copyable<T> : std::bool_constant<
+    struct is_non_copyable : std::bool_constant<
             std::is_base_of_v<NonCopyable<T>, T> ||
-    std::is_base_of_v<NonCopyableNonMovable<T>, T> ||
-    !std::is_copy_constructible_v<T>
+            std::is_base_of_v<NonCopyableNonMovable<T>, T> ||
+            !std::is_copy_constructible_v<T>
     > {};
 
 template<typename T>
@@ -184,13 +181,10 @@ inline constexpr bool is_non_copyable_v = is_non_copyable<T>::value;
  * @brief Check if a type is derived from NonMovable
  */
 template<typename T>
-struct is_non_movable : std::false_type {};
-
-template<typename T>
-struct is_non_movable<T> : std::bool_constant<
+struct is_non_movable : std::bool_constant<
         std::is_base_of_v<NonMovable<T>, T> ||
-std::is_base_of_v<NonCopyableNonMovable<T>, T> ||
-!std::is_move_constructible_v<T>
+        std::is_base_of_v<NonCopyableNonMovable<T>, T> ||
+        !std::is_move_constructible_v<T>
 > {};
 
 template<typename T>
