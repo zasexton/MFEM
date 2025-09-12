@@ -238,6 +238,15 @@ namespace fem::numeric {
         std::unique_ptr<StorageBase<T>> clone() const override {
             return std::make_unique<DynamicStorage>(*this);
         }
+        
+        // === Iterator Support ===
+        using iterator = typename std::vector<T, Allocator>::iterator;
+        using const_iterator = typename std::vector<T, Allocator>::const_iterator;
+        
+        iterator begin() noexcept { return data_.begin(); }
+        const_iterator begin() const noexcept { return data_.begin(); }
+        iterator end() noexcept { return data_.end(); }
+        const_iterator end() const noexcept { return data_.end(); }
 
     protected:
 

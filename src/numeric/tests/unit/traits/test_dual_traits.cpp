@@ -158,8 +158,6 @@ TEST_F(DualTraitsTest, DualIntegrationTest) {
 
 TEST_F(DualTraitsTest, DualTypeCompatibility) {
     // Test that dual numbers work with container traits
-    using traits = storage_optimization_traits<Dual2>;
-    
     // Should be compatible with containers
     EXPECT_TRUE(StorableType<Dual2>);
     

@@ -99,6 +99,7 @@ namespace fem::numeric {
     struct numeric_traits {
         using value_type = T;
         using real_type = T;
+        using scalar_type = T;  // For real types, scalar is the type itself
         using complex_type = std::complex<T>;
 
         static constexpr bool is_number_like = NumberLike<T>;
@@ -154,6 +155,7 @@ namespace fem::numeric {
     struct numeric_traits<std::complex<T>> {
         using value_type = std::complex<T>;
         using real_type = T;
+        using scalar_type = T;  // Underlying scalar type
         using complex_type = std::complex<T>;
 
         static constexpr bool is_number_like = NumberLike<T>;
@@ -192,6 +194,8 @@ namespace fem::numeric {
         }
     };
 
+    // (DualBase traits specialization moved to end of file, alongside other dual helpers)
+
     /**
      * @brief Type promotion rules (similar to NumPy)
      */
@@ -200,32 +204,54 @@ namespace fem::numeric {
         using type = decltype(std::declval<T1>() + std::declval<T2>());
     };
 
-    // Specializations for common promotions
+    // Specializations for same-type promotions to preserve type
     template<> struct promote_traits<int8_t, int8_t> { using type = int8_t; };
-    template<> struct promote_traits<int8_t, int16_t> { using type = int16_t; };
-    template<> struct promote_traits<int8_t, int32_t> { using type = int32_t; };
-    template<> struct promote_traits<int8_t, int64_t> { using type = int64_t; };
-    template<> struct promote_traits<int8_t, float> { using type = float; };
-    template<> struct promote_traits<int8_t, double> { using type = double; };
-
     template<> struct promote_traits<int16_t, int16_t> { using type = int16_t; };
-    template<> struct promote_traits<int16_t, int32_t> { using type = int32_t; };
-    template<> struct promote_traits<int16_t, int64_t> { using type = int64_t; };
-    template<> struct promote_traits<int16_t, float> { using type = float; };
-    template<> struct promote_traits<int16_t, double> { using type = double; };
-
     template<> struct promote_traits<int32_t, int32_t> { using type = int32_t; };
-    template<> struct promote_traits<int32_t, int64_t> { using type = int64_t; };
-    template<> struct promote_traits<int32_t, float> { using type = float; };
-    template<> struct promote_traits<int32_t, double> { using type = double; };
-
     template<> struct promote_traits<int64_t, int64_t> { using type = int64_t; };
-    template<> struct promote_traits<int64_t, float> { using type = float; };
-    template<> struct promote_traits<int64_t, double> { using type = double; };
-
+    template<> struct promote_traits<uint8_t, uint8_t> { using type = uint8_t; };
+    template<> struct promote_traits<uint16_t, uint16_t> { using type = uint16_t; };
+    template<> struct promote_traits<uint32_t, uint32_t> { using type = uint32_t; };
+    template<> struct promote_traits<uint64_t, uint64_t> { using type = uint64_t; };
     template<> struct promote_traits<float, float> { using type = float; };
-    template<> struct promote_traits<float, double> { using type = double; };
     template<> struct promote_traits<double, double> { using type = double; };
+
+    // Unsigned widening promotions to the wider unsigned type (common cases)
+    template<> struct promote_traits<uint8_t, uint16_t> { using type = uint16_t; };
+    template<> struct promote_traits<uint16_t, uint8_t> { using type = uint16_t; };
+    template<> struct promote_traits<uint8_t, uint32_t> { using type = uint32_t; };
+    template<> struct promote_traits<uint32_t, uint8_t> { using type = uint32_t; };
+    template<> struct promote_traits<uint8_t, uint64_t> { using type = uint64_t; };
+    template<> struct promote_traits<uint64_t, uint8_t> { using type = uint64_t; };
+    template<> struct promote_traits<uint16_t, uint32_t> { using type = uint32_t; };
+    template<> struct promote_traits<uint32_t, uint16_t> { using type = uint32_t; };
+    template<> struct promote_traits<uint16_t, uint64_t> { using type = uint64_t; };
+    template<> struct promote_traits<uint64_t, uint16_t> { using type = uint64_t; };
+    template<> struct promote_traits<uint32_t, uint64_t> { using type = uint64_t; };
+    template<> struct promote_traits<uint64_t, uint32_t> { using type = uint64_t; };
+
+    // Signed integer widening promotions
+    template<> struct promote_traits<int8_t, int16_t> { using type = int16_t; };
+    template<> struct promote_traits<int16_t, int8_t> { using type = int16_t; };
+    template<> struct promote_traits<int8_t, int32_t> { using type = int32_t; };
+    template<> struct promote_traits<int32_t, int8_t> { using type = int32_t; };
+    template<> struct promote_traits<int8_t, int64_t> { using type = int64_t; };
+    template<> struct promote_traits<int64_t, int8_t> { using type = int64_t; };
+    template<> struct promote_traits<int16_t, int32_t> { using type = int32_t; };
+    template<> struct promote_traits<int32_t, int16_t> { using type = int32_t; };
+    template<> struct promote_traits<int16_t, int64_t> { using type = int64_t; };
+    template<> struct promote_traits<int64_t, int16_t> { using type = int64_t; };
+    template<> struct promote_traits<int32_t, int64_t> { using type = int64_t; };
+    template<> struct promote_traits<int64_t, int32_t> { using type = int64_t; };
+
+    // Mixed sign common promotions where signed is wider
+    template<> struct promote_traits<int16_t, uint8_t> { using type = int16_t; };
+    template<> struct promote_traits<uint8_t, int16_t> { using type = int16_t; };
+    template<> struct promote_traits<int32_t, uint16_t> { using type = int32_t; };
+    template<> struct promote_traits<uint16_t, int32_t> { using type = int32_t; };
+
+    // Integer to floating promotions (defer to decltype for mixed; explicit same-type handled above)
+    template<> struct promote_traits<float, double> { using type = double; };
 
     // Complex promotions
     template<typename T1, typename T2>
@@ -406,6 +432,14 @@ namespace fem::numeric {
     template<typename T, std::size_t N>
     struct is_dual_number<DualBase<T, N>> : std::true_type {};
 
+    // Preserve cv-qualifiers in detection
+    template<typename T>
+    struct is_dual_number<const T> : is_dual_number<T> {};
+    template<typename T>
+    struct is_dual_number<volatile T> : is_dual_number<T> {};
+    template<typename T>
+    struct is_dual_number<const volatile T> : is_dual_number<T> {};
+
     // Specialization for scalar_type extraction
     template<typename T, std::size_t N>
     struct scalar_type<DualBase<T, N>> {
@@ -417,6 +451,7 @@ namespace fem::numeric {
     struct numeric_traits<DualBase<T, N>> {
         using value_type = DualBase<T, N>;
         using real_type = T;
+        using scalar_type = T;  // Underlying scalar type
         using complex_type = std::complex<T>;
 
         static constexpr bool is_number_like = NumberLike<T>;
@@ -428,6 +463,7 @@ namespace fem::numeric {
         static constexpr bool is_dual = true;  // Mark as dual
         static constexpr bool has_infinity = std::numeric_limits<T>::has_infinity;
         static constexpr bool has_quiet_nan = std::numeric_limits<T>::has_quiet_NaN;
+        static constexpr bool has_signaling_nan = false; // signaling NaN not modeled for Dual
 
         static constexpr size_t size = sizeof(value_type);
         static constexpr size_t alignment = alignof(value_type);
@@ -440,6 +476,30 @@ namespace fem::numeric {
 
         static value_type one() noexcept {
             return value_type(T{1});
+        }
+
+        static value_type quiet_nan() noexcept {
+            if constexpr (has_quiet_nan) {
+                return value_type(std::numeric_limits<T>::quiet_NaN());
+            } else {
+                return zero();
+            }
+        }
+
+        static value_type infinity() noexcept {
+            if constexpr (std::numeric_limits<T>::has_infinity) {
+                return value_type(std::numeric_limits<T>::infinity());
+            } else {
+                return value_type(std::numeric_limits<T>::max());
+            }
+        }
+
+        static value_type neg_infinity() noexcept {
+            if constexpr (std::numeric_limits<T>::has_infinity) {
+                return value_type(-std::numeric_limits<T>::infinity());
+            } else {
+                return value_type(std::numeric_limits<T>::lowest());
+            }
         }
 
         static value_type make_independent(const T& val, std::size_t index) {
