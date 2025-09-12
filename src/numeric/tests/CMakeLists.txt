@@ -4,7 +4,7 @@
 
 # Testing framework selection
 set(FEM_NUMERIC_TEST_FRAMEWORK "GoogleTest" CACHE STRING "Testing framework to use")
-set_property(CACHE FEM_NUMERIC_TEST_FRAMEWORK PROPERTY STRINGS "GoogleTest" "Catch2" "DocTest")
+set_property(CACHE FEM_NUMERIC_TEST_FRAMEWORK PROPERTY STRINGS "GoogleTest" "DocTest")
 
 # ============================================================================
 # Fetch Testing Framework
@@ -29,21 +29,6 @@ if(FEM_NUMERIC_TEST_FRAMEWORK STREQUAL "GoogleTest")
 
     # Set test framework libraries
     set(TEST_FRAMEWORK_LIBS GTest::gtest GTest::gtest_main)
-    set(TEST_FILE_PATTERN "*test*.cpp")
-
-elseif(FEM_NUMERIC_TEST_FRAMEWORK STREQUAL "Catch2")
-    # Fetch Catch2
-    FetchContent_Declare(
-            Catch2
-            GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-            GIT_TAG v3.4.0
-            GIT_SHALLOW TRUE
-    )
-
-    FetchContent_MakeAvailable(Catch2)
-    list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
-
-    set(TEST_FRAMEWORK_LIBS Catch2::Catch2WithMain)
     set(TEST_FILE_PATTERN "*test*.cpp")
 
 elseif(FEM_NUMERIC_TEST_FRAMEWORK STREQUAL "DocTest")
