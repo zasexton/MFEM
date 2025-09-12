@@ -300,13 +300,13 @@ namespace fem::core::base {
             };
 
             auto& handler_list = typed_handlers_[type_id];
-            auto handler_id = next_handler_id_++;
-            handler_list[handler_id] = wrapper;
+            auto id = next_handler_id_++;
+            handler_list[id] = wrapper;
 
-            auto unsubscriber = [this, type_id, handler_id]() {
-                std::lock_guard lock(handlers_mutex_);
+            auto unsubscriber = [this, type_id, id]() {
+                std::lock_guard inner_lock(handlers_mutex_);
                 if (auto it = typed_handlers_.find(type_id); it != typed_handlers_.end()) {
-                    it->second.erase(handler_id);
+                    it->second.erase(id);
                     if (it->second.empty()) {
                         typed_handlers_.erase(it);
                     }
@@ -322,12 +322,12 @@ namespace fem::core::base {
         [[nodiscard]] std::unique_ptr<EventSubscription> subscribe_all(UniversalEventHandler handler) {
             std::lock_guard lock(handlers_mutex_);
 
-            auto handler_id = next_handler_id_++;
-            universal_handlers_[handler_id] = handler;
+            auto id = next_handler_id_++;
+            universal_handlers_[id] = handler;
 
-            auto unsubscriber = [this, handler_id]() {
-                std::lock_guard lock(handlers_mutex_);
-                universal_handlers_.erase(handler_id);
+            auto unsubscriber = [this, id]() {
+                std::lock_guard inner_lock(handlers_mutex_);
+                universal_handlers_.erase(id);
             };
 
             return std::make_unique<EventSubscription>(unsubscriber);
