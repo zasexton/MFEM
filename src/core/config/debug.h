@@ -9,6 +9,7 @@
 #include <sstream>
 #include <source_location>
 #include <string_view>
+#include <fstream>
 
 // ==============================================================================
 // Debug and Assertion Utilities
@@ -306,7 +307,7 @@ struct type_name {
 };
 
 #define REGISTER_TYPE_NAME(type) \
-    template<> struct fem::core::debug::type_name<type> { \
+    template<> struct type_name<type> { \
         static constexpr const char* value = #type; \
     }
 
