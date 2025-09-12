@@ -290,7 +290,7 @@ namespace fem::core::base {
          */
         template<typename EventType>
         [[nodiscard]] std::unique_ptr<EventSubscription> subscribe(EventHandler<EventType> handler) {
-            std::lock_guard lock(handlers_mutex_);
+            std::lock_guard outer_lock(handlers_mutex_);
 
             std::type_index type_id(typeid(EventType));
             auto wrapper = [handler](const Event& event) {
@@ -300,13 +300,13 @@ namespace fem::core::base {
             };
 
             auto& handler_list = typed_handlers_[type_id];
-            auto handler_id = next_handler_id_++;
-            handler_list[handler_id] = wrapper;
+            auto id = next_handler_id_++;
+            handler_list[id] = wrapper;
 
-            auto unsubscriber = [this, type_id, handler_id]() {
-                std::lock_guard lock(handlers_mutex_);
+            auto unsubscriber = [this, type_id, id]() {
+                std::lock_guard guard(handlers_mutex_);
                 if (auto it = typed_handlers_.find(type_id); it != typed_handlers_.end()) {
-                    it->second.erase(handler_id);
+                    it->second.erase(id);
                     if (it->second.empty()) {
                         typed_handlers_.erase(it);
                     }
@@ -320,14 +320,14 @@ namespace fem::core::base {
          * @brief Subscribe to all events (useful for logging, debugging)
          */
         [[nodiscard]] std::unique_ptr<EventSubscription> subscribe_all(UniversalEventHandler handler) {
-            std::lock_guard lock(handlers_mutex_);
+            std::lock_guard outer_lock(handlers_mutex_);
 
-            auto handler_id = next_handler_id_++;
-            universal_handlers_[handler_id] = handler;
+            auto id = next_handler_id_++;
+            universal_handlers_[id] = handler;
 
-            auto unsubscriber = [this, handler_id]() {
-                std::lock_guard lock(handlers_mutex_);
-                universal_handlers_.erase(handler_id);
+            auto unsubscriber = [this, id]() {
+                std::lock_guard guard(handlers_mutex_);
+                universal_handlers_.erase(id);
             };
 
             return std::make_unique<EventSubscription>(unsubscriber);
@@ -501,7 +501,6 @@ namespace fem::core::base {
             emit_event<StartEvent>(std::forward<StartArgs>(start_args)...);
         }
 
-        template<typename... EndArgs>
         ~ScopedEventEmitter() {
             auto duration = std::chrono::steady_clock::now() - start_time_;
             auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
