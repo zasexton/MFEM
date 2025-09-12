@@ -223,6 +223,14 @@ namespace fem::core::base {
 
     protected:
         /**
+         * @brief Initialize the object after construction.
+         *
+         * Derived classes must call this at the end of their constructors
+         * to trigger lifecycle callbacks.
+         */
+        void initialize();
+
+        /**
          * @brief Called when object is first created (override for initialization)
          */
         virtual void on_create() {}
@@ -255,9 +263,7 @@ namespace fem::core::base {
         constexpr object_ptr() noexcept = default;
         constexpr object_ptr(std::nullptr_t) noexcept : ptr_(nullptr) {}
 
-        explicit object_ptr(T* ptr) noexcept : ptr_(ptr) {
-            if (ptr_) ptr_->add_ref();
-        }
+        explicit object_ptr(T* ptr) noexcept : ptr_(ptr) {}
 
         object_ptr(const object_ptr& other) noexcept : ptr_(other.ptr_) {
             if (ptr_) ptr_->add_ref();
@@ -305,7 +311,6 @@ namespace fem::core::base {
         void reset(T* ptr = nullptr) noexcept {
             if (ptr_) ptr_->release();
             ptr_ = ptr;
-            if (ptr_) ptr_->add_ref();
         }
 
         [[nodiscard]] T* release() noexcept {
@@ -344,7 +349,8 @@ namespace fem::core::base {
      */
     template<ObjectDerived T, typename... Args>
     [[nodiscard]] object_ptr<T> make_object(Args&&... args) {
-        return object_ptr<T>(new T(std::forward<Args>(args)...));
+        // object_ptr adopts ownership without increasing the reference count
+        return object_ptr<T>{new T(std::forward<Args>(args)...)};
     }
 
 } // namespace fem::core::base

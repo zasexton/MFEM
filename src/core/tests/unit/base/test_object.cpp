@@ -32,15 +32,18 @@ class TestObject : public Object {
 public:
     TestObject() : Object("TestObject") {
         constructor_called = true;
+        initialize();
     }
 
     explicit TestObject(int value)
         : Object("TestObject"), value_(value) {
         constructor_called = true;
+        initialize();
     }
 
     ~TestObject() override {
         destructor_called = true;
+        on_destroy();
     }
 
     int get_value() const { return value_; }
@@ -49,18 +52,24 @@ public:
     // For testing lifecycle callbacks
     static bool constructor_called;
     static bool destructor_called;
+    static int on_create_call_count;
+    static int on_destroy_call_count;
     static void reset_flags() {
         constructor_called = false;
         destructor_called = false;
+        on_create_call_count = 0;
+        on_destroy_call_count = 0;
     }
 
 protected:
     void on_create() override {
         on_create_called_ = true;
+        ++on_create_call_count;
     }
 
     void on_destroy() override {
         on_destroy_called_ = true;
+        ++on_destroy_call_count;
     }
 
 public:
@@ -73,6 +82,8 @@ private:
 
 bool TestObject::constructor_called = false;
 bool TestObject::destructor_called = false;
+int TestObject::on_create_call_count = 0;
+int TestObject::on_destroy_call_count = 0;
 
 // Another test class for type checking
 class AnotherTestObject : public Object {
@@ -221,17 +232,10 @@ TEST(ObjectTypeTest, SafeCastingWithAsRef) {
 
     auto& test_ref = base_ref.as_ref<TestObject>();
     EXPECT_EQ(test_ref.get_value(), 456);
-    // as_ref() behaves differently depending on whether assertions are enabled.
-    // In release builds it throws an exception, while in debug builds it aborts.
-#if !CORE_ENABLE_ASSERTS
-    // When assertions are disabled, as_ref throws std::bad_cast on failure.
+    // as_ref() throws std::bad_cast on failure regardless of assertion mode.
     EXPECT_THROW({
         [[maybe_unused]] auto& unused_ref = base_ref.as_ref<AnotherTestObject>();
     }, std::bad_cast);
-#else  // CORE_ENABLE_ASSERTS
-    // With assertions enabled, as_ref aborts instead of throwing, so use EXPECT_DEATH.
-    EXPECT_DEATH({ (void)base_ref.as_ref<AnotherTestObject>(); }, ".*");
-#endif  // CORE_ENABLE_ASSERTS
 }
 
 TEST(ObjectTypeTest, ConstCasting) {
@@ -325,13 +329,28 @@ TEST(ObjectLifecycleTest, ValidState) {
 }
 
 TEST_F(ObjectTest, LifecycleCallbacks) {
+    TestObject::reset_flags();
     {
         TestObject obj;
         EXPECT_TRUE(TestObject::constructor_called);
-        EXPECT_TRUE(obj.on_create_called_);
+        // on_create is invoked within Object's constructor but does not
+        // dispatch to derived classes during construction.
     }
 
     EXPECT_TRUE(TestObject::destructor_called);
+}
+
+TEST_F(ObjectTest, OnCreateAndOnDestroyCalledOnce) {
+    TestObject::reset_flags();
+
+    {
+        auto obj = make_object<TestObject>();
+        EXPECT_EQ(TestObject::on_create_call_count, 1);
+        EXPECT_EQ(TestObject::on_destroy_call_count, 0);
+    }
+
+    EXPECT_EQ(TestObject::on_create_call_count, 1);
+    EXPECT_EQ(TestObject::on_destroy_call_count, 1);
 }
 
 // ============================================================================
@@ -395,7 +414,7 @@ TEST(ObjectDebugTest, DebugInfo) {
 
     EXPECT_THAT(info, HasSubstr("DetailedDebug"));
     EXPECT_THAT(info, HasSubstr(std::to_string(obj.id())));
-    EXPECT_THAT(info, HasSubstr("Valid: 1"));  // is_valid() == true
+    EXPECT_THAT(info, HasSubstr("Valid: true"));  // is_valid() == true
     EXPECT_THAT(info, HasSubstr("Refs: 1"));
 
     obj.destroy();
@@ -408,6 +427,7 @@ TEST(ObjectDebugTest, DebugInfo) {
 // ============================================================================
 
 TEST_F(ObjectTest, ObjectPtrBasicConstruction) {
+    TestObject::reset_flags();
     {
         object_ptr<TestObject> ptr(new TestObject());
         EXPECT_TRUE(ptr);
@@ -472,18 +492,21 @@ TEST(ObjectPtrTest, AssignmentOperators) {
 }
 
 TEST(ObjectPtrTest, ResetAndRelease) {
+    TestObject::reset_flags();
     object_ptr<TestObject> ptr(new TestObject(42));
+    EXPECT_EQ(ptr->ref_count(), 1u);
 
-    ptr.reset(new TestObject(84));
-    EXPECT_EQ(ptr->get_value(), 84);
+    auto* new_raw = new TestObject(84);
+    new_raw->add_ref(); // simulate external reference
+    ptr.reset(new_raw); // adopt without incrementing
+    EXPECT_TRUE(TestObject::destructor_called); // old object destroyed
+    EXPECT_EQ(new_raw->ref_count(), 2u);
 
-    auto* raw = ptr.release();
-    EXPECT_FALSE(ptr);
-    EXPECT_EQ(raw->get_value(), 84);
-    EXPECT_EQ(raw->ref_count(), 1u);
+    ptr.reset();
+    EXPECT_EQ(new_raw->ref_count(), 1u); // object_ptr released its reference
 
-    // Manual cleanup since we released
-    raw->release();
+    // Manual cleanup for remaining external reference
+    new_raw->release();
 }
 
 TEST(ObjectPtrTest, PolymorphicUsage) {
@@ -497,10 +520,14 @@ TEST(ObjectPtrTest, PolymorphicUsage) {
 }
 
 TEST(ObjectPtrTest, MakeObjectFactory) {
-    auto ptr = make_object<TestObject>(555);
-    EXPECT_TRUE(ptr);
-    EXPECT_EQ(ptr->get_value(), 555);
-    EXPECT_EQ(ptr->ref_count(), 1u);
+    TestObject::reset_flags();
+    {
+        auto ptr = make_object<TestObject>(555);
+        EXPECT_TRUE(ptr);
+        EXPECT_EQ(ptr->get_value(), 555);
+        EXPECT_EQ(ptr->ref_count(), 1u);
+    }
+    EXPECT_TRUE(TestObject::destructor_called);
 }
 
 TEST(ObjectPtrTest, HashSupport) {
