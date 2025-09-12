@@ -500,7 +500,9 @@ namespace fem::core::base {
         static void apply_visitor_parallel(Visitor<T>& visitor, Container& objects) {
             // Note: This is a simplified parallel implementation
             // In a real implementation, you'd use std::execution or threading library
+#ifdef _OPENMP
 #pragma omp parallel for
+#endif
             for (size_t i = 0; i < objects.size(); ++i) {
                 if constexpr (std::is_pointer_v<typename Container::value_type>) {
                     if (objects[i]) visitor.visit(*objects[i]);

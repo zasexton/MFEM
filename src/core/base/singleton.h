@@ -84,7 +84,7 @@ namespace fem::core::base {
          * @brief Create the singleton instance
          */
         static void create_instance() {
-            instance_ = std::make_unique<T>();
+            instance_ = std::unique_ptr<T>(new T());
         }
 
         static std::unique_ptr<T> instance_;

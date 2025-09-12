@@ -18,6 +18,7 @@
 #include <ranges>
 
 #include "object.h"
+#include "singleton.h"
 
 namespace fem::core::base {
 
@@ -42,7 +43,7 @@ namespace fem::core::base {
         using object_type = T;
         using key_type = KeyType;
         using id_type = Object::id_type;
-        using object_ptr = object_ptr<T>;
+        using object_ptr = fem::core::base::object_ptr<T>;
         using weak_ptr = std::weak_ptr<T>;
 
         // Event callback types
@@ -457,7 +458,7 @@ namespace fem::core::base {
 
             // Remove entries where the object has been destroyed
             for (auto it = objects_by_id_.begin(); it != objects_by_id_.end();) {
-                if (!it->second || it->second.use_count() == 1) { // Only we hold reference
+                if (!it->second || it->second->ref_count() == 1) { // Only we hold reference
                     auto id = it->first;
 
                     // Remove from key mappings
@@ -526,7 +527,7 @@ namespace fem::core::base {
 /**
  * @brief Registry specialized for Object base class
  */
-    using ObjectRegistry = Registry<Object>;
+    using ObjectRegistry = Registry<Object, std::string>;
 
 /**
  * @brief Global object registry singleton
@@ -538,8 +539,8 @@ namespace fem::core::base {
         GlobalObjectRegistry() : registry_("GlobalObjects") {}
 
     public:
-        ObjectRegistry& get_registry() { return registry_; }
-        const ObjectRegistry& get_registry() const { return registry_; }
+        Registry<Object, std::string>& get_registry() { return registry_; }
+        const Registry<Object, std::string>& get_registry() const { return registry_; }
 
         // Convenience forwarding methods
         bool register_object(object_ptr<Object> obj) {
@@ -559,7 +560,7 @@ namespace fem::core::base {
         }
 
     private:
-        ObjectRegistry registry_;
+        Registry<Object, std::string> registry_;
     };
 
 // === Convenience Functions ===
