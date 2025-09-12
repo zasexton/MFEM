@@ -22,7 +22,11 @@ namespace fem::numeric {
 
 // Forward declarations  
 template <typename T, typename Storage> class Vector;
-template <typename T> class Matrix;
+
+// Matrix forward declaration - full specialization happens in matrix.h
+enum class StorageOrder;
+template <typename T, typename Storage, StorageOrder Order> class Matrix;
+
 template <typename T, size_t Rank> class Tensor;
 
 namespace autodiff {

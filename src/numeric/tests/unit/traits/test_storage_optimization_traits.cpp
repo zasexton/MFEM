@@ -159,9 +159,6 @@ TEST_F(StorageOptimizationTraitsTest, SIMDVectorSizeCalculation) {
     // Test SIMD vector size calculations for different types
     using float_simd = simd_traits<float>;
     using double_simd = simd_traits<double>;
-    using int32_simd = simd_traits<int32_t>;
-    using int16_simd = simd_traits<int16_t>;
-    using int8_simd = simd_traits<int8_t>;
     
     // Vectorizable types should have reasonable vector sizes
     if constexpr (float_simd::is_vectorizable) {
@@ -217,47 +214,39 @@ TEST_F(StorageOptimizationTraitsTest, SIMDAlignmentRequirements) {
 
 TEST_F(StorageOptimizationTraitsTest, ContainerOptimizationDecisions) {
     // Simulate container optimization decisions based on traits
-    
-    template<typename T>
-    constexpr bool should_use_memcpy() {
+    auto should_use_memcpy = []<typename T>() constexpr {
         return storage_optimization_traits<T>::is_trivially_relocatable;
-    }
-    
-    template<typename T> 
-    constexpr bool should_use_simd() {
+    };
+    auto should_use_simd = []<typename T>() constexpr {
         return storage_optimization_traits<T>::supports_simd;
-    }
-    
-    template<typename T>
-    constexpr bool should_align_allocation() {
+    };
+    auto should_align_allocation = []<typename T>() constexpr {
         return storage_optimization_traits<T>::prefers_alignment;
-    }
-    
-    template<typename T>
-    constexpr bool should_use_fast_fill() {
+    };
+    auto should_use_fast_fill = []<typename T>() constexpr {
         return storage_optimization_traits<T>::supports_fast_fill;
-    }
-    
+    };
+
     // Test optimization decisions for different types
     
     // float: should use all optimizations except alignment
-    EXPECT_TRUE(should_use_memcpy<float>());
-    EXPECT_TRUE(should_use_simd<float>());
-    EXPECT_FALSE(should_align_allocation<float>());
-    EXPECT_TRUE(should_use_fast_fill<float>());
+    EXPECT_TRUE((should_use_memcpy.template operator()<float>()));
+    EXPECT_TRUE((should_use_simd.template operator()<float>()));
+    EXPECT_FALSE((should_align_allocation.template operator()<float>()));
+    EXPECT_TRUE((should_use_fast_fill.template operator()<float>()));
     
     // std::complex<double>: alignment needed due to size
-    EXPECT_TRUE(should_use_memcpy<std::complex<double>>());
-    EXPECT_TRUE(should_use_simd<std::complex<double>>());
-    EXPECT_TRUE(should_align_allocation<std::complex<double>>());
-    EXPECT_TRUE(should_use_fast_fill<std::complex<double>>());
+    EXPECT_TRUE((should_use_memcpy.template operator()<std::complex<double>>()));
+    EXPECT_TRUE((should_use_simd.template operator()<std::complex<double>>()));
+    EXPECT_TRUE((should_align_allocation.template operator()<std::complex<double>>()));
+    EXPECT_TRUE((should_use_fast_fill.template operator()<std::complex<double>>()));
     
     // DualBase: should avoid most optimizations
     using Dual = DualBase<double, 2>;
-    EXPECT_FALSE(should_use_memcpy<Dual>());
-    EXPECT_FALSE(should_use_simd<Dual>());
-    EXPECT_TRUE(should_align_allocation<Dual>());
-    EXPECT_FALSE(should_use_fast_fill<Dual>());
+    EXPECT_FALSE((should_use_memcpy.template operator()<Dual>()));
+    EXPECT_FALSE((should_use_simd.template operator()<Dual>()));
+    EXPECT_TRUE((should_align_allocation.template operator()<Dual>()));
+    EXPECT_FALSE((should_use_fast_fill.template operator()<Dual>()));
 }
 
 TEST_F(StorageOptimizationTraitsTest, MemoryLayoutConsistency) {
