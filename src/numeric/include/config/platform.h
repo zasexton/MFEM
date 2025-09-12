@@ -193,15 +193,18 @@
   #define FEM_NUMERIC_HAS_ATOMIC_REF 0
 #endif
 
-// Check for atomic double support
-#if defined(__GCC_ATOMIC_DOUBLE_LOCK_FREE) && \
-    (__GCC_ATOMIC_DOUBLE_LOCK_FREE == 2)
-#  define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+// Check for lock-free atomic double support
+#if defined(__GCC_ATOMIC_LLONG_LOCK_FREE) && \
+    (__GCC_ATOMIC_LLONG_LOCK_FREE == 2)
+  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
 #elif defined(__CLANG_ATOMIC_DOUBLE_LOCK_FREE) && \
       (__CLANG_ATOMIC_DOUBLE_LOCK_FREE == 2)
-#  define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+#elif defined(_MSC_VER)
+  /* MSVC guarantees lock-free 64-bit atomics on supported targets */
+  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
 #else
-#  define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
+  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
 #endif
 
 // Memory model
@@ -280,7 +283,7 @@
 
 // NUMA support detection
 #if defined(FEM_NUMERIC_OS_LINUX)
-  #if FEM_NUMERIC_HAS_INCLUDE(<numa.h>)
+  #if defined(__has_include) && __has_include(<numa.h>)
     #define FEM_NUMERIC_HAS_NUMA 1
   #else
     #define FEM_NUMERIC_HAS_NUMA 0
