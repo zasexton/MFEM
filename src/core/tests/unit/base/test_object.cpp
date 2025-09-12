@@ -397,6 +397,10 @@ TEST(ObjectDebugTest, DebugInfo) {
     EXPECT_THAT(info, HasSubstr(std::to_string(obj.id())));
     EXPECT_THAT(info, HasSubstr("Valid: 1"));  // is_valid() == true
     EXPECT_THAT(info, HasSubstr("Refs: 1"));
+
+    obj.destroy();
+    auto invalid_info = obj.debug_info();
+    EXPECT_THAT(invalid_info, HasSubstr("Valid: 0"));  // is_valid() == false
 }
 
 // ============================================================================
