@@ -246,6 +246,18 @@ TEST(ObjectTypeTest, ConstCasting) {
     EXPECT_EQ(test_ref.get_value(), 789);
 }
 
+TEST(ObjectTypeTest, ConstAsRefFailure) {
+    const TestObject test_obj(101);
+    const Object& base_ref = test_obj;
+#if !CORE_ENABLE_ASSERTS
+    EXPECT_THROW({
+        [[maybe_unused]] const auto& unused_ref = base_ref.as_ref<AnotherTestObject>();
+    }, std::bad_cast);
+#else  // CORE_ENABLE_ASSERTS
+    EXPECT_DEATH({ (void)base_ref.as_ref<AnotherTestObject>(); }, "Invalid object cast");
+#endif  // CORE_ENABLE_ASSERTS
+}
+
 // ============================================================================
 // Reference Counting Tests
 // ============================================================================
@@ -582,6 +594,6 @@ TEST(ObjectDeathTest, DereferenceNullObjectPtr) {
 TEST(ObjectDeathTest, InvalidCastAsRef) {
     TestObject test_obj;
     Object& base_ref = test_obj;
-    EXPECT_DEATH(base_ref.as_ref<AnotherTestObject>(), "Invalid object cast");
+    EXPECT_DEATH({ (void)base_ref.as_ref<AnotherTestObject>(); }, "Invalid object cast");
 }
 #endif
