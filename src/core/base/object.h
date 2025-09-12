@@ -112,20 +112,24 @@ namespace fem::core::base {
         }
 
         /**
-         * @brief Safe cast with exception on failure
+         * @brief Safe cast that throws on failure.
+         *
+         * Performs a `dynamic_cast` and throws `std::bad_cast` if the cast
+         * fails, providing exception-based error handling.
          */
         template<ObjectDerived T>
         [[nodiscard]] T& as_ref() {
             auto* ptr = dynamic_cast<T*>(this);
-            FEM_NUMERIC_ASSERT_MSG(ptr != nullptr, "Invalid object cast");
             if (!ptr) { throw std::bad_cast{}; }
             return *ptr;
         }
 
+        /**
+         * @brief Const-safe cast that throws on failure.
+         */
         template<ObjectDerived T>
         [[nodiscard]] const T& as_ref() const {
             auto* ptr = dynamic_cast<const T*>(this);
-            FEM_NUMERIC_ASSERT_MSG(ptr != nullptr, "Invalid object cast");
             if (!ptr) { throw std::bad_cast{}; }
             return *ptr;
         }
