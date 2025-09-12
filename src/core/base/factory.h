@@ -11,6 +11,11 @@
 #include <type_traits>
 #include <concepts>
 #include <source_location>
+#include <shared_mutex>
+#include <typeindex>
+#include <vector>
+#include <format>
+#include <stdexcept>
 
 #include "object.h"
 
