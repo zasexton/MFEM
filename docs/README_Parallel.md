@@ -80,6 +80,10 @@ cmake .. \
 ```
 
 #### Suppressing Atomic Assembly Warning
+During configuration the build checks if lock-free `std::atomic<double>` operations
+are available. If they are, atomic assembly is enabled automatically. Otherwise,
+parallel assembly is disabled by defining `FEM_NUMERIC_ENABLE_PARALLEL=0`.
+
 When parallel assembly runs without atomic updates the library emits a compile-time
 note to remind you that external synchronization is required. If you deliberately
 handle synchronization yourself, this note can be silenced:
