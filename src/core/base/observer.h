@@ -304,7 +304,9 @@ namespace fem::core::base {
             handler_list[id] = wrapper;
 
             auto unsubscriber = [this, type_id, id]() {
+
                 std::lock_guard guard(handlers_mutex_);
+
                 if (auto it = typed_handlers_.find(type_id); it != typed_handlers_.end()) {
                     it->second.erase(id);
                     if (it->second.empty()) {
@@ -326,7 +328,9 @@ namespace fem::core::base {
             universal_handlers_[id] = handler;
 
             auto unsubscriber = [this, id]() {
+
                 std::lock_guard guard(handlers_mutex_);
+
                 universal_handlers_.erase(id);
             };
 

@@ -19,7 +19,7 @@ This library contains the core architectural patterns that all other FEM librari
 
 ### Core Object Infrastructure
 
-#### `Object.hpp/.cpp`
+#### `object.h/.cpp`
 **Root base class for all objects in the FEM solver**
 - Unique object identification with atomic ID generation
 - Intrusive reference counting for automatic memory management
@@ -36,7 +36,7 @@ auto element = fem::core::make_object<MyElement>();
 auto id = element->id();  // Unique identifier
 ```
 
-#### `CopyMovePolicy.hpp/.cpp`
+#### `policy.h/.cpp`
 **CRTP classes for controlling copy and move semantics**
 - `NonCopyable<T>`: Prevents copying, allows moving
 - `NonMovable<T>`: Prevents moving, allows copying
@@ -51,7 +51,7 @@ class ResourceHandle : public fem::core::NonCopyable<ResourceHandle> {
 
 ### Design Pattern Implementations
 
-#### `Factory.hpp/.cpp`
+#### `factory.h/.cpp`
 **Generic factory pattern for object creation**
 - Type-safe object creation by name or type
 - Registration of creator functions
@@ -63,7 +63,7 @@ ElementFactory::instance().register_type<TriangleElement>("triangle");
 auto element = ElementFactory::instance().create("triangle");
 ```
 
-#### `Singleton.hpp/.cpp`
+#### `singleton.h/.cpp`
 **Thread-safe singleton template using CRTP**
 - Lazy initialization with `std::call_once`
 - Exception-safe construction
@@ -80,7 +80,7 @@ private:
 auto& config = ConfigManager::instance();
 ```
 
-#### `Registry.hpp/.cpp`
+#### `registry.h/.cpp`
 **Object collection management with fast lookup**
 - Fast O(1) lookup by ID or name
 - Automatic cleanup of destroyed objects
@@ -93,7 +93,7 @@ elements.register_object("main_beam", beam_element);
 auto found = elements.find_by_key("main_beam");
 ```
 
-#### `Visitor.hpp/.cpp`
+#### `visitor.h/.cpp`
 **Visitor pattern for operations on object hierarchies**
 - Type-safe visitor dispatch
 - Hierarchical traversal support
@@ -115,7 +115,7 @@ for (auto& elem : elements) {
 
 ### Communication and Events
 
-#### `Observer.hpp/.cpp`
+#### `observer.h/.cpp`
 **Observer/Event pattern for loose coupling**
 - Type-safe event handling
 - Global event bus for application-wide communication
@@ -133,7 +133,7 @@ auto subscription = fem::core::subscribe_to_events<MeshEvent>(
 fem::core::emit_event<MeshEvent>(MeshEvent::Type::ELEMENT_ADDED, "mesh_1");
 ```
 
-#### `Interface.hpp/.cpp`
+#### `interface.h/.cpp`
 **Pure virtual interfaces and contracts**
 - Lightweight interface base classes
 - Type-safe interface checking
@@ -149,7 +149,7 @@ public:
 
 ### Advanced Architecture
 
-#### `Component.hpp/.cpp`
+#### `component.h/.cpp`
 **Entity-Component-System architecture**
 - Composition over inheritance
 - Runtime behavior modification
