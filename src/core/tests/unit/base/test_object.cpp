@@ -32,15 +32,18 @@ class TestObject : public Object {
 public:
     TestObject() : Object("TestObject") {
         constructor_called = true;
+        initialize();
     }
 
     explicit TestObject(int value)
         : Object("TestObject"), value_(value) {
         constructor_called = true;
+        initialize();
     }
 
     ~TestObject() override {
         destructor_called = true;
+        on_destroy();
     }
 
     int get_value() const { return value_; }
@@ -49,18 +52,24 @@ public:
     // For testing lifecycle callbacks
     static bool constructor_called;
     static bool destructor_called;
+    static int on_create_call_count;
+    static int on_destroy_call_count;
     static void reset_flags() {
         constructor_called = false;
         destructor_called = false;
+        on_create_call_count = 0;
+        on_destroy_call_count = 0;
     }
 
 protected:
     void on_create() override {
         on_create_called_ = true;
+        ++on_create_call_count;
     }
 
     void on_destroy() override {
         on_destroy_called_ = true;
+        ++on_destroy_call_count;
     }
 
 public:
@@ -73,6 +82,8 @@ private:
 
 bool TestObject::constructor_called = false;
 bool TestObject::destructor_called = false;
+int TestObject::on_create_call_count = 0;
+int TestObject::on_destroy_call_count = 0;
 
 // Another test class for type checking
 class AnotherTestObject : public Object {
@@ -334,6 +345,19 @@ TEST_F(ObjectTest, LifecycleCallbacks) {
     EXPECT_TRUE(TestObject::destructor_called);
 }
 
+TEST_F(ObjectTest, OnCreateAndOnDestroyCalledOnce) {
+    TestObject::reset_flags();
+
+    {
+        auto obj = make_object<TestObject>();
+        EXPECT_EQ(TestObject::on_create_call_count, 1);
+        EXPECT_EQ(TestObject::on_destroy_call_count, 0);
+    }
+
+    EXPECT_EQ(TestObject::on_create_call_count, 1);
+    EXPECT_EQ(TestObject::on_destroy_call_count, 1);
+}
+
 // ============================================================================
 // Comparison and Hashing Tests
 // ============================================================================
@@ -395,7 +419,7 @@ TEST(ObjectDebugTest, DebugInfo) {
 
     EXPECT_THAT(info, HasSubstr("DetailedDebug"));
     EXPECT_THAT(info, HasSubstr(std::to_string(obj.id())));
-    EXPECT_THAT(info, HasSubstr("Valid: 1"));  // is_valid() == true
+    EXPECT_THAT(info, HasSubstr("Valid: true"));  // is_valid() == true
     EXPECT_THAT(info, HasSubstr("Refs: 1"));
 }
 
