@@ -57,13 +57,17 @@ set (CMAKE_CXX_EXTENSIONS NO)
 # -----------------------------------------------------------------------------
 #  Detect availability of lock-free std::atomic<double>
 # -----------------------------------------------------------------------------
-check_cxx_source_compiles("\n#include <atomic>\nint main() {\n    static_assert(std::atomic<double>::is_always_lock_free);\n    std::atomic<double> v{0.0};\n    (void)v;\n    return 0;\n}\n" FEM_HAVE_ATOMIC_DOUBLE)
+set(_PLATFORM_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/src/numeric/include/config/platform.h")
+check_cxx_source_compiles("\n#include <atomic>\n#include \"${_PLATFORM_HEADER}\"\n#if !FEM_NUMERIC_HAS_ATOMIC_DOUBLE\n#error \"Atomic double not supported\"\n#endif\nint main() {\n    static_assert(std::atomic<double>::is_always_lock_free);\n    std::atomic<double> v{0.0};\n    (void)v;\n    return 0;\n}\n" FEM_HAVE_ATOMIC_DOUBLE)
 
 if (FEM_HAVE_ATOMIC_DOUBLE)
     add_compile_definitions(FEM_NUMERIC_ENABLE_ATOMIC_ASSEMBLY=1)
 else()
-    # Suppress the parallel atomic warning explicitly when atomics aren't available
-    add_compile_definitions(FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING=1)
+    # Atomics unavailable: disable parallel assembly and suppress related note
+    add_compile_definitions(
+        FEM_NUMERIC_SUPPRESS_PARALLEL_ATOMIC_WARNING=1
+        FEM_NUMERIC_ENABLE_PARALLEL=0
+    )
 endif()
 
 # -----------------------------------------------------------------------------
