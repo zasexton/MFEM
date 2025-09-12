@@ -11,7 +11,7 @@ option (BUILD_PYTHON            "Expose pybind11 bindings"                 OFF)
 option (ENABLE_SANITIZERS       "Add address/undefined sanitizers (Debug)" ON)
 option (WARNINGS_AS_ERRORS      "Treat warnings as errors"                 ON)
 option (BUILD_UNIT_TESTS        "Build unit tests"                         ON)
-option (BUILD_PERFORMANCE_TESTS "Build Catch2 micro-benchmarks"            ON)
+option (BUILD_PERFORMANCE_TESTS "Build micro-benchmarks"                    ON)
 
 # -----------------------------------------------------------------------------
 # ------------------------ Parallelism Options --------------------------------
@@ -158,13 +158,15 @@ target_link_libraries(femsolver_options INTERFACE femsolver_parallel)
 # -----------------------------------------------------------------------------
 include(FetchContent)
 
-# Catch2 (tests)
+# GoogleTest (tests)
 if (BUILD_UNIT_TESTS OR BUILD_PERFORMANCE_TESTS OR
     BUILD_INTEGRATION_TESTS OR BUILD_REGRESSION_TESTS)
-    FetchContent_Declare(Catch2
-            GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-            GIT_TAG        v3.6.0)
-    FetchContent_MakeAvailable(Catch2)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+    FetchContent_MakeAvailable(googletest)
     enable_testing()
     add_subdirectory(tests)
 endif()
