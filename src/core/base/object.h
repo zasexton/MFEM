@@ -120,13 +120,13 @@ namespace fem::core::base {
         template<ObjectDerived T>
         [[nodiscard]] T& as_ref() {
             auto* ptr = dynamic_cast<T*>(this);
+            if (!ptr) {
 #if CORE_ENABLE_ASSERTS
-            FEM_NUMERIC_ASSERT_MSG(ptr != nullptr, "Invalid object cast");
-            return *ptr;
-#else
-            if (!ptr) { throw std::bad_cast{}; }
-            return *ptr;
+                FEM_LOG_ERROR("Invalid object cast");
 #endif
+                throw std::bad_cast{};
+            }
+            return *ptr;
         }
 
         /**
@@ -135,13 +135,13 @@ namespace fem::core::base {
         template<ObjectDerived T>
         [[nodiscard]] const T& as_ref() const {
             auto* ptr = dynamic_cast<const T*>(this);
+            if (!ptr) {
 #if CORE_ENABLE_ASSERTS
-            FEM_NUMERIC_ASSERT_MSG(ptr != nullptr, "Invalid object cast");
-            return *ptr;
-#else
-            if (!ptr) { throw std::bad_cast{}; }
-            return *ptr;
+                FEM_LOG_ERROR("Invalid object cast");
 #endif
+                throw std::bad_cast{};
+            }
+            return *ptr;
         }
 
         // === Reference Counting ===
