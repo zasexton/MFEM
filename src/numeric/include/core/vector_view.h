@@ -105,19 +105,19 @@ public:
     
     // Constructor from vector and slice
     template<typename VectorType>
-    VectorSlice(VectorType& vec, const Slice& slice) {
-        auto normalized = slice.normalize(vec.size());
-        size_type start = static_cast<size_type>(normalized.start());
-        size_type stop = static_cast<size_type>(normalized.stop());
-        size_type step = static_cast<size_type>(std::abs(normalized.step()));
-        
-        if (normalized.step() < 0) {
-            // Reverse iteration
-            std::swap(start, stop);
+    VectorSlice(VectorType& vec, const Slice& slice)
+        : base_type(nullptr, 0, 1) {
+        const auto n = vec.size();
+        const auto norm = slice.normalize(n);
+        const auto count = slice.count(n);
+        if (count == 0) {
+            // leave as empty view
+            return;
         }
-        
-        size_type count = (stop - start + step - 1) / step;
-        this->reset(vec.data() + start, count, normalized.step());
+        const std::ptrdiff_t step = norm.step();
+        const std::ptrdiff_t start = static_cast<std::ptrdiff_t>(norm.start());
+        // Construct base with computed pointer, count, and stride
+        *static_cast<base_type*>(this) = base_type(vec.data() + start, count, step);
     }
     
     // Mathematical operations (inherit from base or implement as needed)

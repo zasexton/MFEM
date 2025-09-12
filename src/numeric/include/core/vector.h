@@ -73,7 +73,8 @@ public:
     // Expression and view types (simplified for now)
     using view_type = ViewBase<T>;
     using const_view_type = ViewBase<const T>;
-    using slice_type = ViewBase<T>;  // Simplified slice type
+    using strided_view_type = StridedView<T>;
+    using const_strided_view_type = StridedView<const T>;
 
     // Scalar type for operations
     using scalar_type = typename numeric_traits<T>::scalar_type;
@@ -293,12 +294,59 @@ public:
         return const_view_type(data() + start, end - start);
     }
 
-    slice_type slice(const Slice& s) {
-        return slice_type(*this, s);
+    // Create a strided view from a Slice (NumPy-like)
+    strided_view_type slice(const Slice& s) {
+        const auto n = size();
+        const auto norm = s.normalize(n);
+        const auto count = s.count(n);
+
+        if (count == 0) {
+            return strided_view_type(data(), 0, 1);
+        }
+
+        const std::ptrdiff_t step = norm.step();
+        const std::ptrdiff_t start = static_cast<std::ptrdiff_t>(norm.start());
+        return strided_view_type(data() + start, count, step);
     }
 
-    slice_type operator()(const Slice& s) {
-        return slice(s);
+    const_strided_view_type slice(const Slice& s) const {
+        const auto n = size();
+        const auto norm = s.normalize(n);
+        const auto count = s.count(n);
+
+        if (count == 0) {
+            return const_strided_view_type(data(), 0, 1);
+        }
+
+        const std::ptrdiff_t step = norm.step();
+        const std::ptrdiff_t start = static_cast<std::ptrdiff_t>(norm.start());
+        return const_strided_view_type(data() + start, count, step);
+    }
+
+    // Shorthand call operator for slicing
+    const_strided_view_type operator()(const Slice& s) const { return slice(s); }
+    strided_view_type operator()(const Slice& s) { return slice(s); }
+
+    // as_strided: expose a 1D strided view with the given logical shape/stride
+    // Only 1D shape is supported for Vector; throws otherwise.
+    strided_view_type as_strided(const Shape& shape, const Shape& strides) {
+        if (shape.ndim() != 1 || strides.ndim() != 1) {
+            throw std::invalid_argument("Vector::as_strided expects 1D shape and strides");
+        }
+        const auto len = shape[0];
+        const auto stride = static_cast<std::ptrdiff_t>(strides[0]);
+        if (len == 0) { return strided_view_type(data(), 0, 1); }
+        return strided_view_type(data(), len, stride);
+    }
+
+    const_strided_view_type as_strided(const Shape& shape, const Shape& strides) const {
+        if (shape.ndim() != 1 || strides.ndim() != 1) {
+            throw std::invalid_argument("Vector::as_strided expects 1D shape and strides");
+        }
+        const auto len = shape[0];
+        const auto stride = static_cast<std::ptrdiff_t>(strides[0]);
+        if (len == 0) { return const_strided_view_type(data(), 0, 1); }
+        return const_strided_view_type(data(), len, stride);
     }
 
     // === Mathematical Operations ===
