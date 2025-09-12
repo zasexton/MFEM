@@ -84,7 +84,7 @@ public:
             , level_(LogLevelConfig::DEFAULT_LEVEL)
             , enabled_(true) {
 
-        on_create();
+        initialize();
     }
 
     ~Logger() override {
