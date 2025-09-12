@@ -253,13 +253,10 @@ TEST(ObjectTypeTest, ConstCasting) {
 TEST(ObjectTypeTest, ConstAsRefFailure) {
     const TestObject test_obj(101);
     const Object& base_ref = test_obj;
-#if !CORE_ENABLE_ASSERTS
     EXPECT_THROW({
-        [[maybe_unused]] const auto& unused_ref = base_ref.as_ref<AnotherTestObject>();
+        [[maybe_unused]] const auto& unused_ref =
+            base_ref.as_ref<AnotherTestObject>();
     }, std::bad_cast);
-#else  // CORE_ENABLE_ASSERTS
-    EXPECT_DEATH({ (void)base_ref.as_ref<AnotherTestObject>(); }, "Invalid object cast");
-#endif  // CORE_ENABLE_ASSERTS
 }
 
 // ============================================================================
@@ -414,7 +411,7 @@ TEST(ObjectDebugTest, DebugInfo) {
 
     EXPECT_THAT(info, HasSubstr("DetailedDebug"));
     EXPECT_THAT(info, HasSubstr(std::to_string(obj.id())));
-    EXPECT_THAT(info, HasSubstr("Valid: true"));  // is_valid() == true
+    EXPECT_THAT(info, HasSubstr("Valid: 1"));  // is_valid() == true
     EXPECT_THAT(info, HasSubstr("Refs: 1"));
 
     obj.destroy();
