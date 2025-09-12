@@ -6,6 +6,7 @@
 #include "object.h"
 #include <typeindex>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <vector>
 #include <string>
@@ -85,7 +86,7 @@ namespace fem::core::base {
         /**
          * @brief Called when component needs to update
          */
-        virtual void update(double dt) {}
+        virtual void update(double /*dt*/) {}
 
         /**
          * @brief Called when component should reset to initial state
@@ -110,7 +111,7 @@ namespace fem::core::base {
         /**
          * @brief Deserialize component data
          */
-        virtual bool deserialize(const std::string& data) { return true; }
+        virtual bool deserialize(const std::string& /*data*/) { return true; }
 
         /**
          * @brief Get component dependencies (other component types this depends on)
@@ -120,7 +121,7 @@ namespace fem::core::base {
         /**
          * @brief Check if component is compatible with another component type
          */
-        virtual bool is_compatible_with(std::type_index other_type) const { return true; }
+        virtual bool is_compatible_with(std::type_index /*other_type*/) const { return true; }
 
     protected:
         std::string name_;
