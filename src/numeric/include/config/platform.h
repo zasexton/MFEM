@@ -197,6 +197,9 @@
 #if defined(__GCC_ATOMIC_LLONG_LOCK_FREE) && \
     (__GCC_ATOMIC_LLONG_LOCK_FREE == 2)
   #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+#elif defined(__CLANG_ATOMIC_DOUBLE_LOCK_FREE) && \
+      (__CLANG_ATOMIC_DOUBLE_LOCK_FREE == 2)
+  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
 #elif defined(_MSC_VER)
   /* MSVC guarantees lock-free 64-bit atomics on supported targets */
   #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
