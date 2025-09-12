@@ -7,6 +7,10 @@
 #include <concepts>
 #include <string>
 #include <memory>
+#include <vector>
+#include <unordered_map>
+#include <functional>
+#include <optional>
 
 namespace fem::core::base {
 
