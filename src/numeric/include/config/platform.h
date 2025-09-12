@@ -194,11 +194,17 @@
 #endif
 
 // Check for atomic double support
-#include <atomic>
-#if std::atomic<double>::is_always_lock_free
-  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+#if defined(__GNUC__) || defined(__clang__)
+#  if __atomic_always_lock_free(sizeof(double), 0)
+#    define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
+#  else
+#    define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
+#  endif
+#elif defined(__GCC_ATOMIC_DOUBLE_LOCK_FREE) \
+      && __GCC_ATOMIC_DOUBLE_LOCK_FREE == 2
+#  define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 1
 #else
-  #define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
+#  define FEM_NUMERIC_HAS_ATOMIC_DOUBLE 0
 #endif
 
 // Memory model
