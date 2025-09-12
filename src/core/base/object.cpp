@@ -12,18 +12,14 @@ Object::Object(std::string_view class_name, const std::source_location& loc)
     , class_name_(class_name)
     , creation_location_(loc)
     , ref_count_(1)
-    , destroyed_(false) {
-    on_create();
-}
+    , destroyed_(false) {}
 
 Object::Object(const Object& other)
     : id_(next_id_.fetch_add(1, std::memory_order_relaxed))  // New ID for copy
     , class_name_(other.class_name_)
     , creation_location_(std::source_location::current())  // New location
     , ref_count_(1)  // New object starts with ref count 1
-    , destroyed_(false) {
-    on_create();
-}
+    , destroyed_(false) {}
 
 Object::Object(Object&& other) noexcept
     : id_(other.id_)
@@ -69,6 +65,10 @@ Object& Object::operator=(Object&& other) noexcept {
 Object::~Object() {
     on_destroy();
     destroyed_ = true;
+}
+
+void Object::initialize() {
+    on_create();
 }
 
 } // namespace fem::core::base
