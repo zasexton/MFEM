@@ -20,8 +20,8 @@ MFEM_REQUIRE_CXX20;
 
 namespace fem::numeric {
 
-// Forward declarations
-template <typename T> class Vector;
+// Forward declarations  
+template <typename T, typename Storage> class Vector;
 template <typename T> class Matrix;
 template <typename T, size_t Rank> class Tensor;
 
