@@ -57,18 +57,19 @@ namespace fem::core::base {
             std::lock_guard lock(mutex_);
 
             auto creator = []() -> object_ptr<BaseType> {
-                return object_ptr<BaseType>(new ConcreteType());
+                return make_object<ConcreteType>();
             };
 
             auto param_creator = [](
                     const std::unordered_map<std::string, std::string> &params) -> object_ptr<BaseType> {
-                if constexpr(
-                            std::is_constructible_v<ConcreteType, const std::unordered_map<std::string, std::string> &>)
+                if constexpr (
+                        std::is_constructible_v<ConcreteType,
+                                                const std::unordered_map<std::string, std::string> &>)
                 {
-                    return object_ptr<BaseType>(new ConcreteType(params));
+                    return make_object<ConcreteType>(params);
                 } else {
-                return object_ptr<BaseType>(new ConcreteType());
-            }
+                    return make_object<ConcreteType>();
+                }
             };
 
             creators_[std::string(name)] = creator;
@@ -137,7 +138,7 @@ namespace fem::core::base {
             }
 
             // Direct creation if not registered
-            return object_ptr<BaseType>(new ConcreteType());
+            return make_object<ConcreteType>();
         }
 
         /**
