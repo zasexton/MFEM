@@ -349,7 +349,8 @@ namespace fem::core::base {
      */
     template<ObjectDerived T, typename... Args>
     [[nodiscard]] object_ptr<T> make_object(Args&&... args) {
-        return object_ptr<T>(new T(std::forward<Args>(args)...));
+        // object_ptr adopts ownership without increasing the reference count
+        return object_ptr<T>{new T(std::forward<Args>(args)...)};
     }
 
 } // namespace fem::core::base
