@@ -11,6 +11,8 @@
 #include <concepts>
 #include <format>
 #include <source_location>
+#include <utility>
+#include <functional>
 
 #include <config/config.h>
 #include <config/debug.h>
@@ -35,7 +37,7 @@ namespace fem::core::base {
      */
     class Object {
     public:
-        using id_type = mfem::config::index_t;
+        using id_type = fem::config::id_type;
         using ref_count_type = std::atomic<std::size_t>;
 
         /**
@@ -310,21 +312,22 @@ namespace fem::core::base {
         return object_ptr<T>(new T(std::forward<Args>(args)...));
     }
 
-} // namespace fem::core
+} // namespace fem::core::base
 
 // === Hash Support ===
+namespace std {
 template<>
-struct std::hash<fem::core::Object> {
-    std::size_t operator()(const fem::core::Object& obj) const noexcept {
-        return std::hash<fem::core::Object::id_type>{}(obj.id());
+struct hash<fem::core::base::Object> {
+    std::size_t operator()(const fem::core::base::Object& obj) const noexcept {
+        return hash<fem::core::base::Object::id_type>{}(obj.id());
     }
 };
-
-template<fem::core::ObjectDerived T>
-struct std::hash<fem::core::object_ptr<T>> {
-    std::size_t operator()(const fem::core::object_ptr<T>& ptr) const noexcept {
-        return ptr ? std::hash<fem::core::Object>{}(*ptr) : 0;
+template<fem::core::base::ObjectDerived T>
+struct hash<fem::core::base::object_ptr<T>> {
+    std::size_t operator()(const fem::core::base::object_ptr<T>& ptr) const noexcept {
+        return ptr ? hash<fem::core::base::Object>{}(*ptr) : 0;
     }
 };
+} // namespace std
 
 #endif //BASE_OBJECT_H
