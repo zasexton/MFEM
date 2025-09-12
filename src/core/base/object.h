@@ -205,7 +205,7 @@ namespace fem::core::base {
                                type_info().name(),
                                id_,
                                ref_count(),
-                               is_valid() ? 1 : 0,
+                               is_valid(),
                                creation_location_.file_name(),
                                creation_location_.line());
         }
