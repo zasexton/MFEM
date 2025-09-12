@@ -194,6 +194,7 @@ namespace fem::core::base {
          * @brief Get debug information
          */
         [[nodiscard]] virtual std::string debug_info() const {
+            const int valid_numeric = is_valid() ? 1 : 0;
             return std::format("Object Debug Info:\n"
                                "  Class: {}\n"
                                "  Type: {}\n"
@@ -205,7 +206,7 @@ namespace fem::core::base {
                                type_info().name(),
                                id_,
                                ref_count(),
-                               is_valid(),
+                               valid_numeric,
                                creation_location_.file_name(),
                                creation_location_.line());
         }
