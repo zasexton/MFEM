@@ -221,10 +221,17 @@ TEST(ObjectTypeTest, SafeCastingWithAsRef) {
 
     auto& test_ref = base_ref.as_ref<TestObject>();
     EXPECT_EQ(test_ref.get_value(), 456);
-
+    // as_ref() behaves differently depending on whether assertions are enabled.
+    // In release builds it throws an exception, while in debug builds it aborts.
+#if !CORE_ENABLE_ASSERTS
+    // When assertions are disabled, as_ref throws std::bad_cast on failure.
     EXPECT_THROW({
         [[maybe_unused]] auto& unused_ref = base_ref.as_ref<AnotherTestObject>();
     }, std::bad_cast);
+#else  // CORE_ENABLE_ASSERTS
+    // With assertions enabled, as_ref aborts instead of throwing, so use EXPECT_DEATH.
+    EXPECT_DEATH({ (void)base_ref.as_ref<AnotherTestObject>(); }, ".*");
+#endif  // CORE_ENABLE_ASSERTS
 }
 
 TEST(ObjectTypeTest, ConstCasting) {
