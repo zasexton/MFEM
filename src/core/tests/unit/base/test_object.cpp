@@ -11,12 +11,15 @@
 using namespace fem::core::base;
 using namespace testing;
 
+// Forward declaration for test fixture
+class TestObject;
+
 // Test fixture for Object tests
 class ObjectTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset any static state if needed
-        TestObject::reset_flags();
+        // TestObject::reset_flags(); // This will be called where needed
     }
 
     void TearDown() override {
@@ -159,6 +162,7 @@ TEST(ObjectAssignmentTest, MoveAssignment) {
     Object obj2("Second");
 
     auto obj1_id = obj1.id();
+    (void)obj1_id; // Suppress unused variable warning
 
     obj2 = std::move(obj1);
 
@@ -171,10 +175,9 @@ TEST(ObjectAssignmentTest, SelfAssignment) {
     Object obj("Self");
     auto original_id = obj.id();
 
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wself-assign-overloaded"
+    // Self copy-assignment test
+    // Note: GCC doesn't warn about self-assignment for this case
     obj = obj;  // Self copy-assignment
-    #pragma GCC diagnostic pop
 
     EXPECT_EQ(obj.id(), original_id);
     EXPECT_TRUE(obj.is_valid());
@@ -219,7 +222,9 @@ TEST(ObjectTypeTest, SafeCastingWithAsRef) {
     auto& test_ref = base_ref.as_ref<TestObject>();
     EXPECT_EQ(test_ref.get_value(), 456);
 
-    EXPECT_THROW(base_ref.as_ref<AnotherTestObject>(), std::bad_cast);
+    EXPECT_THROW({
+        [[maybe_unused]] auto& unused_ref = base_ref.as_ref<AnotherTestObject>();
+    }, std::bad_cast);
 }
 
 TEST(ObjectTypeTest, ConstCasting) {

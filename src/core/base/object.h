@@ -23,7 +23,6 @@ namespace fem::core::base {
     concept ObjectDerived = std::is_base_of_v<class Object, T>;
 
     // Forward declarations
-    class ObjectRegistry;
 
     /**
      * @brief Root base class for all objects in the FEM solver
@@ -93,7 +92,10 @@ namespace fem::core::base {
          */
         template<ObjectDerived T>
         [[nodiscard]] bool is_type() const noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull-compare"
             return dynamic_cast<const T*>(this) != nullptr;
+#pragma GCC diagnostic pop
         }
 
         /**
@@ -225,7 +227,7 @@ namespace fem::core::base {
         mutable ref_count_type ref_count_{1}; // Start with 1 reference
         bool destroyed_{false};
 
-        friend class ObjectRegistry;
+        template<ObjectDerived T, typename KeyType> friend class Registry;
     };
 
     // === Smart Pointer Support ===
@@ -294,6 +296,25 @@ namespace fem::core::base {
 
         [[nodiscard]] T* release() noexcept {
             return std::exchange(ptr_, nullptr);
+        }
+
+        // Equality operators for containers
+        [[nodiscard]] bool operator==(const object_ptr& other) const noexcept {
+            return ptr_ == other.ptr_;
+        }
+
+        [[nodiscard]] bool operator!=(const object_ptr& other) const noexcept {
+            return ptr_ != other.ptr_;
+        }
+
+        template<ObjectDerived U>
+        [[nodiscard]] bool operator==(const object_ptr<U>& other) const noexcept {
+            return ptr_ == other.ptr_;
+        }
+
+        template<ObjectDerived U>
+        [[nodiscard]] bool operator!=(const object_ptr<U>& other) const noexcept {
+            return ptr_ != other.ptr_;
         }
 
     private:

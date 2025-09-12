@@ -82,6 +82,7 @@ foreach(module ${TEST_MODULES})
                 ${MODULE_TEST_DIR}/*_tests.cpp
                 ${MODULE_TEST_DIR}/*Test.cpp
                 ${MODULE_TEST_DIR}/*Tests.cpp
+                ${MODULE_TEST_DIR}/test_*.cpp
         )
 
         if(MODULE_TEST_SOURCES)
