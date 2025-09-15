@@ -82,3 +82,6 @@ doxygen/
 /NUMERIC_LIBRARY_TEST_IMPROVEMENTS_SUMMARY.md
 /src/numeric/tests/CRITICAL_TESTS_INTEGRATION.md
 /src/core/base/REGISTRY_REVIEW.md
+
+# Third-party stubs (removed)
+third_party/gtest_stub/
