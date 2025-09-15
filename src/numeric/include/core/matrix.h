@@ -16,6 +16,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <iomanip>
+#include <type_traits>
 
 #include "../base/numeric_base.h"
 #include "../base/container_base.h"
@@ -188,6 +189,15 @@ public:
      * @brief Move constructor
      */
     Matrix(Matrix&& other) noexcept = default;
+
+    /**
+     * @brief Construct from an expression (lazy evaluation)
+     */
+    template<typename Expr>
+    Matrix(const ExpressionBase<Expr>& expr)
+        : rows_(0), cols_(0), storage_() {
+        assign_expression(expr.derived());
+    }
     
     /**
      * @brief Copy assignment
@@ -626,6 +636,103 @@ public:
         this->shape_ = Shape{rows_, cols_};
     }
     
+    // === Expression Template Interface ===
+    
+    // Required by ExpressionBase CRTP
+    Shape shape() const noexcept {
+        return Shape{rows_, cols_};
+    }
+    
+    template<typename U>
+    auto eval(size_type i) const -> const T& {
+        // Convert linear index to 2D index
+        if constexpr (is_row_major) {
+            size_type row = i / cols_;
+            size_type col = i % cols_;
+            return (*this)(row, col);
+        } else {
+            size_type col = i / rows_;
+            size_type row = i % rows_;
+            return (*this)(row, col);
+        }
+    }
+    
+    template<typename U, typename... Indices>
+    auto eval_at(Indices... indices) const -> const T& {
+        static_assert(sizeof...(indices) == 2, "Matrix eval_at expects two indices");
+        auto idx_array = std::array<size_type, 2>{static_cast<size_type>(indices)...};
+        return (*this)(idx_array[0], idx_array[1]);
+    }
+    
+    template<typename Container>
+    void eval_to(Container& result) const {
+        using result_type = typename Container::value_type;
+        if (result.size() != size()) {
+            result.resize(shape());
+        }
+        for (size_type i = 0; i < size(); ++i) {
+            result.data()[i] = static_cast<result_type>(eval<T>(i));
+        }
+    }
+    
+    bool is_parallelizable() const noexcept { return true; }
+    bool is_vectorizable() const noexcept { return true; }
+    size_t complexity() const noexcept { return size(); }
+    
+    // Expression assignment
+    template<typename Expr>
+    Matrix& operator=(const ExpressionBase<Expr>& expr) {
+        assign_expression(expr.derived());
+        return *this;
+    }
+
+private:
+    // SFINAE helpers for expression template integration (reuse detection from vector.h)
+    template<typename T_>
+    using has_shape_method_t = decltype(std::declval<T_>().shape());
+    template<typename T_>
+    static constexpr bool has_shape_method_v = detail::is_detected_v<has_shape_method_t, T_>;
+
+    template<typename T_>
+    using has_eval_method_t = decltype(std::declval<T_>().template eval<T>(std::declval<size_type>()));
+    template<typename T_>
+    static constexpr bool has_eval_method_v = detail::is_detected_v<has_eval_method_t, T_>;
+
+    template<typename T_>
+    using has_eval_to_method_t = decltype(std::declval<T_>().eval_to(std::declval<Matrix&>()));
+    template<typename T_>
+    static constexpr bool has_eval_to_method_v = detail::is_detected_v<has_eval_to_method_t, T_>;
+
+    template<typename Expr>
+    void assign_expression(const Expr& expr) {
+        if constexpr (has_shape_method_v<Expr>) {
+            auto expr_shape = expr.shape();
+            if (expr_shape.rank() != 2) {
+                throw std::invalid_argument("Cannot assign non-2D expression to Matrix");
+            }
+            if (rows_ != expr_shape[0] || cols_ != expr_shape[1]) {
+                rows_ = expr_shape[0];
+                cols_ = expr_shape[1];
+                storage_.resize(rows_ * cols_);
+                this->shape_ = Shape{rows_, cols_};
+            }
+        }
+        
+        // Use expression template evaluation
+        if constexpr (has_eval_to_method_v<Expr>) {
+            expr.eval_to(*this);
+        } else {
+            for (size_type i = 0; i < size(); ++i) {
+                if constexpr (has_eval_method_v<Expr>) {
+                    storage_[i] = expr.template eval<T>(i);
+                } else {
+                    storage_[i] = expr.evaluate(i);
+                }
+            }
+        }
+    }
+
+public:    
     // === Output ===
     
     /**
@@ -659,58 +766,94 @@ public:
 
 // === Non-member Operations ===
 
-/**
- * @brief Matrix addition
- */
+// Matrix addition
 template<typename T1, typename S1, StorageOrder O1,
          typename T2, typename S2, StorageOrder O2>
 auto operator+(const Matrix<T1, S1, O1>& A, const Matrix<T2, S2, O2>& B) {
     using result_type = decltype(T1{} + T2{});
-    Matrix<result_type> result(A);
-    result += B;
-    return result;
+    if (A.rows() != B.rows() || A.cols() != B.cols()) {
+        throw std::invalid_argument("Matrix dimensions must match for addition");
+    }
+    Matrix<result_type> R(A.rows(), A.cols());
+    for (size_t i = 0; i < A.rows(); ++i) {
+        for (size_t j = 0; j < A.cols(); ++j) {
+            R(i, j) = static_cast<result_type>(A(i, j)) + static_cast<result_type>(B(i, j));
+        }
+    }
+    return R;
 }
 
-/**
- * @brief Matrix subtraction
- */
+// Matrix subtraction
 template<typename T1, typename S1, StorageOrder O1,
          typename T2, typename S2, StorageOrder O2>
 auto operator-(const Matrix<T1, S1, O1>& A, const Matrix<T2, S2, O2>& B) {
     using result_type = decltype(T1{} - T2{});
-    Matrix<result_type> result(A);
-    result -= B;
-    return result;
-}
-
-/**
- * @brief Scalar multiplication (scalar * matrix)
- */
-template<typename T, typename S, StorageOrder O, typename Scalar>
-    requires ((std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) &&
-              (!std::is_same_v<std::remove_cv_t<std::remove_reference_t<Scalar>>, Matrix<T, S, O>>) &&
-              requires (T a, Scalar s) { a * s; s * a; })
-auto operator*(const Scalar& s, const Matrix<T, S, O>& M) {
-    using result_type = decltype(s * T{});
-    Matrix<result_type> result(M.rows(), M.cols());
-    const result_type rs = static_cast<result_type>(s);
-    for (typename Matrix<T,S,O>::size_type i = 0; i < M.rows(); ++i) {
-        for (typename Matrix<T,S,O>::size_type j = 0; j < M.cols(); ++j) {
-            result(i, j) = rs * static_cast<result_type>(M(i, j));
+    if (A.rows() != B.rows() || A.cols() != B.cols()) {
+        throw std::invalid_argument("Matrix dimensions must match for subtraction");
+    }
+    Matrix<result_type> R(A.rows(), A.cols());
+    for (size_t i = 0; i < A.rows(); ++i) {
+        for (size_t j = 0; j < A.cols(); ++j) {
+            R(i, j) = static_cast<result_type>(A(i, j)) - static_cast<result_type>(B(i, j));
         }
     }
-    return result;
+    return R;
 }
 
-/**
- * @brief Scalar multiplication (matrix * scalar)
- */
+// Helper to detect Matrix types and exclude them from scalar overloads
+template<typename T>
+struct is_matrix : std::false_type {};
+template<typename T, typename S, StorageOrder O>
+struct is_matrix<Matrix<T, S, O>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_matrix_v = is_matrix<std::remove_cv_t<std::remove_reference_t<T>>>::value;
+
+// Scalar * Matrix
 template<typename T, typename S, StorageOrder O, typename Scalar>
-    requires ((std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) &&
-              (!std::is_same_v<std::remove_cv_t<std::remove_reference_t<Scalar>>, Matrix<T, S, O>>) &&
-              requires (T a, Scalar s) { a * s; s * a; })
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) && requires (T a, Scalar s) { a * s; s * a; })
+auto operator*(const Scalar& s, const Matrix<T, S, O>& M) {
+    using result_type = decltype(s * T{});
+    Matrix<result_type> R(M.rows(), M.cols());
+    for (size_t i = 0; i < M.rows(); ++i) {
+        for (size_t j = 0; j < M.cols(); ++j) {
+            R(i, j) = static_cast<result_type>(s) * static_cast<result_type>(M(i, j));
+        }
+    }
+    return R;
+}
+
+// Matrix * Scalar
+template<typename T, typename S, StorageOrder O, typename Scalar>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) && requires (T a, Scalar s) { a * s; s * a; })
 auto operator*(const Matrix<T, S, O>& M, const Scalar& s) {
     return s * M;
+}
+
+// Matrix + Scalar
+template<typename T, typename S, StorageOrder O, typename Scalar>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>))
+auto operator+(const Matrix<T, S, O>& M, const Scalar& s) {
+    using result_type = decltype(T{} + Scalar{});
+    Matrix<result_type> R(M.rows(), M.cols());
+    for (size_t i=0;i<M.rows();++i) for (size_t j=0;j<M.cols();++j)
+        R(i,j) = static_cast<result_type>(M(i,j)) + static_cast<result_type>(s);
+    return R;
+}
+
+// Scalar + Matrix
+template<typename T, typename S, StorageOrder O, typename Scalar>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>))
+auto operator+(const Scalar& s, const Matrix<T, S, O>& M) { return M + s; }
+
+// Matrix / Scalar
+template<typename T, typename S, StorageOrder O, typename Scalar>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar>))
+auto operator/(const Matrix<T, S, O>& M, const Scalar& s) {
+    using result_type = decltype(T{} / Scalar{});
+    Matrix<result_type> R(M.rows(), M.cols());
+    for (size_t i=0;i<M.rows();++i) for (size_t j=0;j<M.cols();++j)
+        R(i,j) = static_cast<result_type>(M(i,j)) / static_cast<result_type>(s);
+    return R;
 }
 
 // === Matrix View Classes (Placeholder) ===
