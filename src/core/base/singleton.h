@@ -7,6 +7,7 @@
 #include <memory>
 #include <atomic>
 #include <type_traits>
+#include <exception>
 
 namespace fem::core::base {
 
@@ -40,7 +41,15 @@ namespace fem::core::base {
          * @return Reference to the singleton instance
          */
         static T& instance() {
-            std::call_once(init_flag_, &Singleton::create_instance);
+            // Double-checked locking with exception safety
+            if (!instance_) {
+                std::lock_guard<std::mutex> lock(creation_mutex_);
+                if (!instance_) {
+                    // Use a temporary to ensure exception safety
+                    auto temp = std::unique_ptr<T>(new T());
+                    instance_ = std::move(temp);
+                }
+            }
             return *instance_;
         }
 
@@ -57,11 +66,8 @@ namespace fem::core::base {
          * Warning: This should only be used in unit tests or special circumstances
          */
         static void destroy() {
-            std::lock_guard<std::mutex> lock(destruction_mutex_);
+            std::lock_guard<std::mutex> lock(creation_mutex_);
             instance_.reset();
-            // Reset the once_flag for potential recreation using placement new
-            init_flag_.~once_flag();
-            new (&init_flag_) std::once_flag();
         }
 
     protected:
@@ -82,16 +88,8 @@ namespace fem::core::base {
         Singleton& operator=(Singleton&&) = delete;
 
     private:
-        /**
-         * @brief Create the singleton instance
-         */
-        static void create_instance() {
-            instance_ = std::unique_ptr<T>(new T());
-        }
-
         static std::unique_ptr<T> instance_;
-        static std::once_flag init_flag_;
-        static std::mutex destruction_mutex_;  // For safe destruction in tests
+        static std::mutex creation_mutex_;  // For thread-safe creation and destruction
     };
 
 // Static member definitions
@@ -99,10 +97,7 @@ namespace fem::core::base {
     std::unique_ptr<T> Singleton<T>::instance_ = nullptr;
 
     template<typename T>
-    std::once_flag Singleton<T>::init_flag_;
-
-    template<typename T>
-    std::mutex Singleton<T>::destruction_mutex_;
+    std::mutex Singleton<T>::creation_mutex_;
 
 /**
  * @brief Eager singleton - creates instance immediately (not lazy)
@@ -147,7 +142,15 @@ namespace fem::core::base {
     class CustomSingleton {
     public:
         static T& instance() {
-            std::call_once(init_flag_, &CustomSingleton::create_instance);
+            // Double-checked locking with exception safety
+            if (!instance_) {
+                std::lock_guard<std::mutex> lock(creation_mutex_);
+                if (!instance_) {
+                    // Use a temporary to ensure exception safety
+                    auto temp = std::unique_ptr<T, Deleter>(new T(), Deleter{});
+                    instance_ = std::move(temp);
+                }
+            }
             return *instance_;
         }
 
@@ -156,11 +159,8 @@ namespace fem::core::base {
         }
 
         static void destroy() {
-            std::lock_guard<std::mutex> lock(destruction_mutex_);
+            std::lock_guard<std::mutex> lock(creation_mutex_);
             instance_.reset();
-            // Reset the once_flag for potential recreation using placement new
-            init_flag_.~once_flag();
-            new (&init_flag_) std::once_flag();
         }
 
     protected:
@@ -173,23 +173,15 @@ namespace fem::core::base {
         CustomSingleton& operator=(CustomSingleton&&) = delete;
 
     private:
-        static void create_instance() {
-            instance_ = std::unique_ptr<T, Deleter>(new T(), Deleter{});
-        }
-
         static std::unique_ptr<T, Deleter> instance_;
-        static std::once_flag init_flag_;
-        static std::mutex destruction_mutex_;
+        static std::mutex creation_mutex_;
     };
 
     template<typename T, typename Deleter>
     std::unique_ptr<T, Deleter> CustomSingleton<T, Deleter>::instance_ = nullptr;
 
     template<typename T, typename Deleter>
-    std::once_flag CustomSingleton<T, Deleter>::init_flag_;
-
-    template<typename T, typename Deleter>
-    std::mutex CustomSingleton<T, Deleter>::destruction_mutex_;
+    std::mutex CustomSingleton<T, Deleter>::creation_mutex_;
 
 // === Convenience Macros ===
 
