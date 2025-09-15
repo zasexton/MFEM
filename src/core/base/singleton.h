@@ -59,7 +59,9 @@ namespace fem::core::base {
         static void destroy() {
             std::lock_guard<std::mutex> lock(destruction_mutex_);
             instance_.reset();
-            init_flag_ = {};  // Reset the once_flag for potential recreation
+            // Reset the once_flag for potential recreation using placement new
+            init_flag_.~once_flag();
+            new (&init_flag_) std::once_flag();
         }
 
     protected:
@@ -156,7 +158,9 @@ namespace fem::core::base {
         static void destroy() {
             std::lock_guard<std::mutex> lock(destruction_mutex_);
             instance_.reset();
-            init_flag_ = {};
+            // Reset the once_flag for potential recreation using placement new
+            init_flag_.~once_flag();
+            new (&init_flag_) std::once_flag();
         }
 
     protected:
