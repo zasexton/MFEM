@@ -99,8 +99,12 @@ private:
     std::unordered_map<index_type, T> hash_entries_;  // For HashMap format
     bool sorted_;             // True if entries_ is sorted by index
     
-    // Tolerance for considering elements as zero
-    static constexpr scalar_type zero_tolerance_ = 1e-14;
+    // Tolerance for considering elements as zero. For floating-point types,
+    // use a tolerance based on machine epsilon; for integral types, use 0.
+    static constexpr scalar_type zero_tolerance_ =
+        std::is_floating_point_v<scalar_type>
+            ? static_cast<scalar_type>(std::numeric_limits<scalar_type>::epsilon() * 100)
+            : static_cast<scalar_type>(0);
     
     // Helper to check if value is effectively zero
     bool is_zero(const T& value) const noexcept {
@@ -287,7 +291,9 @@ public:
      * @brief Get sparsity ratio (fraction of non-zeros)
      */
     double sparsity() const noexcept {
-        return size_ > 0 ? static_cast<double>(nnz()) / size_ : 0.0;
+        return size_ > 0
+            ? static_cast<double>(nnz()) / static_cast<double>(size_)
+            : 0.0;
     }
     
     /**

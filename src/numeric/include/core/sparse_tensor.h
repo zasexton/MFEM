@@ -186,7 +186,11 @@ public:
 
     // Norms: Frobenius, L1 (sum abs), Linf (max abs)
     auto frobenius_norm() const {
-        long double sum = 0; for (const auto& e : entries_) { auto a = (long double)std::abs(e.value); sum += a*a; }
+        long double sum = 0;
+        for (const auto& e : entries_) {
+            auto a = static_cast<long double>(std::abs(e.value));
+            sum += a * a;
+        }
         return static_cast<decltype(std::abs(T{}))>(std::sqrt(sum));
     }
     auto one_norm() const {

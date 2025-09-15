@@ -8,10 +8,9 @@
 
 using namespace fem::numeric;
 
-// Inform the compiler that the floating-point environment (rounding mode)
-// is observed by this translation unit. This helps prevent optimizations
-// that would otherwise ignore dynamic rounding mode changes.
-#pragma STDC FENV_ACCESS ON
+// Note: Some compilers ignore STDC FENV_ACCESS and warn; we rely on
+// volatile temporaries and precise FP flags set in CMake to respect
+// rounding-mode changes from std::fesetround.
 
 // ============================================================================
 // IEEE 754 Compliance Critical Tests
