@@ -75,7 +75,7 @@ namespace fem::core::base {
         /**
          * @brief Mark event as handled (stops further propagation)
          */
-        void set_handled(bool handled = true) { handled_ = handled; }
+        void set_handled(bool handled = true) const { handled_ = handled; }
 
         /**
          * @brief Get string representation of event
@@ -133,7 +133,7 @@ namespace fem::core::base {
         /**
          * @brief Optional: Handle any event (for logging, debugging)
          */
-        virtual void on_any_event(const Event& event) {}
+        virtual void on_any_event(const Event& /*event*/) {}
 
     protected:
         Observer() = default;
@@ -508,6 +508,7 @@ namespace fem::core::base {
         ~ScopedEventEmitter() {
             auto duration = std::chrono::steady_clock::now() - start_time_;
             auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+            (void)duration_ms; // Suppress unused variable warning
             // Could add duration to end event if needed
             emit_event<EndEvent>();
         }
