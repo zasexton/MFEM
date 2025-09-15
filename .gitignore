@@ -85,3 +85,4 @@ doxygen/
 
 # Third-party stubs (removed)
 third_party/gtest_stub/
+/.claude/settings.local.json
