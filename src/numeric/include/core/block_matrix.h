@@ -420,13 +420,18 @@ public:
     }
     
     const_block_reference block(const std::string& row_name, const std::string& col_name) const {
-        size_type i = find_row_block_index(row_name);
-        size_type j = find_col_block_index(col_name);
-        
+        size_type i, j;
+        try {
+            i = find_row_block_index(row_name);
+            j = find_col_block_index(col_name);
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("Block (" + row_name + ", " + col_name + ") does not exist");
+        }
+
         if (!blocks_[i][j]) {
             throw std::runtime_error("Block (" + row_name + ", " + col_name + ") does not exist");
         }
-        
+
         return *blocks_[i][j];
     }
     
@@ -510,8 +515,14 @@ public:
      * @brief Set to identity matrix (must be square)
      */
     void set_identity() {
-        if (!is_square()) {
-            throw std::logic_error("Identity matrix must be square");
+        // Require a square block grid and matching diagonal block sizes
+        if (num_block_rows_ != num_block_cols_) {
+            throw std::logic_error("Identity matrix must have square block grid");
+        }
+        for (size_type i = 0; i < num_block_rows_; ++i) {
+            if (row_structure_[i].second != col_structure_[i].second) {
+                throw std::logic_error("Identity requires matching diagonal block sizes");
+            }
         }
         
         // Zero all blocks
@@ -519,11 +530,9 @@ public:
         
         // Set diagonal blocks to identity
         for (size_type i = 0; i < num_block_rows_; ++i) {
-            if (i < num_block_cols_) {
-                size_type block_size = std::min(row_structure_[i].second, col_structure_[i].second);
-                for (size_type k = 0; k < block_size; ++k) {
-                    block(i, i)(k, k) = T{1};
-                }
+            size_type block_size = row_structure_[i].second; // equal to col_structure_[i].second
+            for (size_type k = 0; k < block_size; ++k) {
+                block(i, i)(k, k) = T{1};
             }
         }
     }
@@ -619,6 +628,14 @@ public:
     auto operator*(const BlockMatrix<U>& B) const {
         if (num_block_cols_ != B.num_block_rows()) {
             throw std::invalid_argument("Incompatible block dimensions for multiplication");
+        }
+        // Verify inner block sizes are compatible for all k
+        for (size_type k = 0; k < num_block_cols_; ++k) {
+            size_type a_col_block_size = col_structure_[k].second;
+            size_type b_row_block_size = B.row_structure_[k].second;
+            if (a_col_block_size != b_row_block_size) {
+                throw std::invalid_argument("Incompatible inner block sizes for multiplication");
+            }
         }
         
         using result_type = decltype(T{} * U{});
