@@ -275,7 +275,7 @@ namespace fem::numeric {
         static constexpr size_type max_size() noexcept { return N; }
 
         // === Constructors ===
-        StaticStorage() : data_{}, size_(0) {}
+        constexpr StaticStorage() noexcept : data_{}, size_(0) {}
 
         explicit StaticStorage(size_type n) : data_{}, size_(n) {
             if (n > N) {
