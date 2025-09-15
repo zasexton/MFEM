@@ -27,7 +27,7 @@ template <typename T, typename Storage> class Vector;
 enum class StorageOrder;
 template <typename T, typename Storage, StorageOrder Order> class Matrix;
 
-template <typename T, size_t Rank> class Tensor;
+template <typename T, size_t Rank, typename Storage> class Tensor;
 
 namespace autodiff {
 template <typename T, size_t N> class DualBase;
@@ -305,6 +305,31 @@ protected:
 private:
   std::vector<size_t> dims_;
 };
+
+// Convenience comparisons between Shape and std::array for tests/interop
+template <size_t N>
+inline bool operator==(const Shape &s, const std::array<size_t, N> &a) {
+  if (s.rank() != N) return false;
+  for (size_t i = 0; i < N; ++i) {
+    if (s[i] != a[i]) return false;
+  }
+  return true;
+}
+
+template <size_t N>
+inline bool operator==(const std::array<size_t, N> &a, const Shape &s) {
+  return s == a;
+}
+
+template <size_t N>
+inline bool operator!=(const Shape &s, const std::array<size_t, N> &a) {
+  return !(s == a);
+}
+
+template <size_t N>
+inline bool operator!=(const std::array<size_t, N> &a, const Shape &s) {
+  return !(s == a);
+}
 
 class StridedShape : public Shape {
   std::vector<size_t> strides_;
