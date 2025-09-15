@@ -332,9 +332,11 @@ if(FEM_NUMERIC_BUILD_TESTS)
 
     # Add parallel-specific tests if available
     if(FEM_NUMERIC_PARALLEL_AVAILABLE)
-        # Create parallel configuration test
-        set(_test_source "${CMAKE_CURRENT_BINARY_DIR}/test_parallel_config.cpp")
-        file(WRITE ${_test_source} "
+        # Avoid duplicate definition if ConfigureParallel_Numeric also created it
+        if(NOT TARGET fem_numeric_test_parallel)
+            # Create parallel configuration test
+            set(_test_source "${CMAKE_CURRENT_BINARY_DIR}/test_parallel_config.cpp")
+            file(WRITE ${_test_source} "
 #include <fem_numeric_parallel_config.h>
 #include <iostream>
 
@@ -355,11 +357,12 @@ int main() {
 }
 ")
 
-        add_executable(fem_numeric_test_parallel ${_test_source})
-        target_link_libraries(fem_numeric_test_parallel PRIVATE fem::numeric)
+            add_executable(fem_numeric_test_parallel ${_test_source})
+            target_link_libraries(fem_numeric_test_parallel PRIVATE fem::numeric)
 
-        # Add basic parallel test
-        add_test(NAME FEMNumeric_ParallelConfig COMMAND fem_numeric_test_parallel)
+            # Add basic parallel test
+            add_test(NAME FEMNumeric_ParallelConfig COMMAND fem_numeric_test_parallel)
+        endif()
 
         # OpenMP test
         if(FEM_NUMERIC_OPENMP_AVAILABLE)
