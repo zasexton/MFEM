@@ -49,17 +49,10 @@ namespace fem::numeric {
         }
 
         /**
-         * @brief Get the shape of the expression result
-         */
-        Shape shape() const {
-            return derived().shape();
-        }
-
-        /**
          * @brief Get total number of elements
          */
         size_t size() const {
-            return shape().size();
+            return derived().shape().size();
         }
 
         /**
@@ -83,7 +76,7 @@ namespace fem::numeric {
          */
         template<template<typename> class Container, typename T>
         Container<T> eval() const {
-            Container<T> result(shape());
+            Container<T> result(derived().shape());
             derived().template eval_to(result);
             return result;
         }
@@ -387,7 +380,7 @@ namespace fem::numeric {
             #pragma omp parallel for if(use_parallel)
             #endif
             for (size_t i = 0; i < shape_.size(); ++i) {
-                result[i] = eval<T>(i);
+                result.data()[i] = eval<T>(i);
             }
         }
 
@@ -500,17 +493,18 @@ namespace fem::numeric {
             return result;
         }
 
-        template<typename T>
-        void check_operation_validity(T left_val, T right_val) const {
-            if (IEEEComplianceChecker::is_nan(left_val) || IEEEComplianceChecker::is_nan(right_val)) {
+        template<typename L, typename R>
+        void check_operation_validity(L left_val, R right_val) const {
+            using CT = std::common_type_t<L,R>;
+            if (IEEEComplianceChecker::is_nan(static_cast<CT>(left_val)) || IEEEComplianceChecker::is_nan(static_cast<CT>(right_val))) {
                 // NaN propagation is allowed by IEEE 754
                 return;
             }
 
             // Check for operations that might produce invalid results
             if constexpr (std::is_same_v<Op, ops::divides<>> ||
-                         std::is_same_v<Op, ops::divides<T>>) {
-                if (right_val == T{0}) {
+                          std::is_same_v<Op, ops::divides<CT>>) {
+                if (static_cast<CT>(right_val) == CT{0}) {
                     // Division by zero - IEEE 754 defines this behavior
                     // Result will be ±inf or NaN depending on numerator
                 }
@@ -566,7 +560,7 @@ namespace fem::numeric {
             #pragma omp parallel for if(use_parallel)
             #endif
             for (size_t i = 0; i < shape().size(); ++i) {
-                result[i] = eval<T>(i);
+                result.data()[i] = eval<T>(i);
             }
         }
 
@@ -769,7 +763,22 @@ namespace fem::numeric {
      * @brief Expression traits for type deduction
      */
     template<typename T>
-    struct is_expression : std::false_type {};
+    struct is_expression : std::bool_constant<
+        std::is_base_of_v<ExpressionBase<std::decay_t<T>>, std::decay_t<T>>
+    > {};
+
+    // Forward declarations to selectively disable expression participation
+    template<typename T> class BlockMatrix;
+    template<typename T> class BlockVector;
+    template<typename T, size_t Rows, size_t Cols> class SmallMatrix;
+
+    // Block containers are not treated as expression operands in generic ops
+    template<typename T>
+    struct is_expression<BlockMatrix<T>> : std::false_type {};
+    template<typename T>
+    struct is_expression<BlockVector<T>> : std::false_type {};
+    template<typename T, size_t Rows, size_t Cols>
+    struct is_expression<SmallMatrix<T, Rows, Cols>> : std::false_type {};
 
     // Specialize for all expression types
     template<typename Derived>
@@ -850,11 +859,12 @@ namespace fem::numeric {
 
     template<template<typename> class OpTemplate>
     struct TypedOpWrapper {
-        template<typename T>
-        T operator()(const T& lhs, const T& rhs) const {
+        template<typename L, typename R>
+        auto operator()(const L& lhs, const R& rhs) const {
+            using T = std::common_type_t<L, R>;
             using Op = OpTemplate<T>;
             Op op{};
-            return op(lhs, rhs);
+            return op(static_cast<T>(lhs), static_cast<T>(rhs));
         }
     };
 
@@ -923,34 +933,115 @@ namespace fem::numeric {
     }
 
     // ============================================================
+    // Container detection helpers for operator SFINAE
+    // ============================================================
+
+    enum class StorageOrder : int;
+    template<typename T, typename Storage, StorageOrder O> class Matrix;
+    template<typename T, typename Storage> class Vector;
+
+    template<typename T>
+    struct is_matrix_type : std::false_type {};
+    template<typename T, typename S, StorageOrder O>
+    struct is_matrix_type<Matrix<T, S, O>> : std::true_type {};
+
+    template<typename T>
+    struct is_vector_type : std::false_type {};
+    template<typename T, typename S>
+    struct is_vector_type<Vector<T, S>> : std::true_type {};
+
+    template<typename T>
+    struct is_block_matrix_type : std::false_type {};
+    template<typename T>
+    struct is_block_matrix_type<BlockMatrix<T>> : std::true_type {};
+
+    template<typename T>
+    struct is_block_vector_type : std::false_type {};
+    template<typename T>
+    struct is_block_vector_type<BlockVector<T>> : std::true_type {};
+
+    // Detect SparseVector to avoid conflicting with its eager operators
+    template<typename T>
+    class SparseVector; // forward decl
+    template<typename T>
+    struct is_sparse_vector_type : std::false_type {};
+    template<typename T>
+    struct is_sparse_vector_type<SparseVector<T>> : std::true_type {};
+
+    // Detect Tensor to avoid conflicting with its eager operators
+    template<typename T, size_t Rank, typename Storage> class Tensor; // forward decl
+    template<typename T>
+    struct is_tensor_type : std::false_type {};
+    template<typename T, size_t Rank, typename S>
+    struct is_tensor_type<Tensor<T, Rank, S>> : std::true_type {};
+
+    // ============================================================
     // Binary arithmetic operators with perfect forwarding
     // ============================================================
 
     template<typename LHS, typename RHS>
     auto operator+(LHS&& lhs, RHS&& rhs) ->
-        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
-                         BinaryExpression<TypedOpWrapper<ops::plus>, std::decay_t<LHS>, std::decay_t<RHS>>> {
+        std::enable_if_t<
+            (is_expression_v<LHS> || is_expression_v<RHS>) &&
+            // Defer to specialized overloads for SparseVector and Tensor (tensor-tensor only)
+            !(is_sparse_vector_type<std::decay_t<LHS>>::value && is_sparse_vector_type<std::decay_t<RHS>>::value) &&
+            !(is_tensor_type<std::decay_t<LHS>>::value && is_tensor_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && is_matrix_type<std::decay_t<RHS>>::value) &&
+            !(is_vector_type<std::decay_t<LHS>>::value && is_vector_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && !is_expression_v<RHS>) &&
+            !(is_matrix_type<std::decay_t<RHS>>::value && !is_expression_v<LHS>),
+            BinaryExpression<TypedOpWrapper<ops::plus>, std::decay_t<LHS>, std::decay_t<RHS>>
+        > {
         return make_binary_expression<TypedOpWrapper<ops::plus>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     template<typename LHS, typename RHS>
     auto operator-(LHS&& lhs, RHS&& rhs) ->
-        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
-                         BinaryExpression<TypedOpWrapper<ops::minus>, std::decay_t<LHS>, std::decay_t<RHS>>> {
+        std::enable_if_t<
+            (is_expression_v<LHS> || is_expression_v<RHS>) &&
+            // Defer to specialized overloads for SparseVector and Tensor (tensor-tensor only)
+            !(is_sparse_vector_type<std::decay_t<LHS>>::value && is_sparse_vector_type<std::decay_t<RHS>>::value) &&
+            !(is_tensor_type<std::decay_t<LHS>>::value && is_tensor_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && is_matrix_type<std::decay_t<RHS>>::value) &&
+            !(is_vector_type<std::decay_t<LHS>>::value && is_vector_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && !is_expression_v<RHS>) &&
+            !(is_matrix_type<std::decay_t<RHS>>::value && !is_expression_v<LHS>),
+            BinaryExpression<TypedOpWrapper<ops::minus>, std::decay_t<LHS>, std::decay_t<RHS>>
+        > {
         return make_binary_expression<TypedOpWrapper<ops::minus>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
     template<typename LHS, typename RHS>
     auto operator*(LHS&& lhs, RHS&& rhs) ->
-        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
-                         BinaryExpression<TypedOpWrapper<ops::multiplies>, std::decay_t<LHS>, std::decay_t<RHS>>> {
-        return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
-    }
+        std::enable_if_t<
+            (is_expression_v<LHS> || is_expression_v<RHS>) &&
+            // Exclude container multiplications handled by dedicated overloads
+            !(is_matrix_type<std::decay_t<LHS>>::value && is_matrix_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && is_vector_type<std::decay_t<RHS>>::value) &&
+            !(is_vector_type<std::decay_t<LHS>>::value && is_matrix_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && !is_expression_v<RHS>) &&
+            !(is_matrix_type<std::decay_t<RHS>>::value && !is_expression_v<LHS>) &&
+            !(is_block_matrix_type<std::decay_t<LHS>>::value ||
+              is_block_matrix_type<std::decay_t<RHS>>::value ||
+              is_block_vector_type<std::decay_t<LHS>>::value ||
+              is_block_vector_type<std::decay_t<RHS>>::value) &&
+            // Defer to SparseVector/Tensor scalar overloads
+            !(((std::is_arithmetic_v<std::decay_t<LHS>> || is_complex_number_v<std::decay_t<LHS>> || is_dual_number_v<std::decay_t<LHS>>) && (is_sparse_vector_type<std::decay_t<RHS>>::value || is_tensor_type<std::decay_t<RHS>>::value)) ||
+              ((std::is_arithmetic_v<std::decay_t<RHS>> || is_complex_number_v<std::decay_t<RHS>> || is_dual_number_v<std::decay_t<RHS>>) && (is_sparse_vector_type<std::decay_t<LHS>>::value || is_tensor_type<std::decay_t<LHS>>::value))),
+            BinaryExpression<TypedOpWrapper<ops::multiplies>, std::decay_t<LHS>, std::decay_t<RHS>>
+        > {
+            return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+        }
 
     template<typename LHS, typename RHS>
     auto operator/(LHS&& lhs, RHS&& rhs) ->
-        std::enable_if_t<(is_expression_v<LHS> || is_expression_v<RHS>),
-                         BinaryExpression<TypedOpWrapper<ops::divides>, std::decay_t<LHS>, std::decay_t<RHS>>> {
+        std::enable_if_t<
+            (is_expression_v<LHS> || is_expression_v<RHS>) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && is_matrix_type<std::decay_t<RHS>>::value) &&
+            !(is_matrix_type<std::decay_t<LHS>>::value && !is_expression_v<RHS>) &&
+            !(is_matrix_type<std::decay_t<RHS>>::value && !is_expression_v<LHS>),
+            BinaryExpression<TypedOpWrapper<ops::divides>, std::decay_t<LHS>, std::decay_t<RHS>>
+        > {
         return make_binary_expression<TypedOpWrapper<ops::divides>>(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
     }
 
@@ -963,7 +1054,7 @@ namespace fem::numeric {
 
     template<typename LHS>
     auto operator+(LHS&& lhs, double rhs) ->
-        std::enable_if_t<is_expression_v<LHS>,
+        std::enable_if_t<is_expression_v<LHS> && !is_matrix_type<std::decay_t<LHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::plus>, std::decay_t<LHS>, ScalarExpression<double>>> {
         auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::plus>>(std::forward<LHS>(lhs), std::move(scalar_expr));
@@ -971,7 +1062,7 @@ namespace fem::numeric {
 
     template<typename LHS>
     auto operator-(LHS&& lhs, double rhs) ->
-        std::enable_if_t<is_expression_v<LHS>,
+        std::enable_if_t<is_expression_v<LHS> && !is_matrix_type<std::decay_t<LHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::minus>, std::decay_t<LHS>, ScalarExpression<double>>> {
         auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::minus>>(std::forward<LHS>(lhs), std::move(scalar_expr));
@@ -979,7 +1070,9 @@ namespace fem::numeric {
 
     template<typename LHS>
     auto operator*(LHS&& lhs, double rhs) ->
-        std::enable_if_t<is_expression_v<LHS>,
+        std::enable_if_t<is_expression_v<LHS> && !is_matrix_type<std::decay_t<LHS>>::value &&
+                         !is_sparse_vector_type<std::decay_t<LHS>>::value &&
+                         !is_tensor_type<std::decay_t<LHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::multiplies>, std::decay_t<LHS>, ScalarExpression<double>>> {
         auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::forward<LHS>(lhs), std::move(scalar_expr));
@@ -987,7 +1080,7 @@ namespace fem::numeric {
 
     template<typename LHS>
     auto operator/(LHS&& lhs, double rhs) ->
-        std::enable_if_t<is_expression_v<LHS>,
+        std::enable_if_t<is_expression_v<LHS> && !is_matrix_type<std::decay_t<LHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::divides>, std::decay_t<LHS>, ScalarExpression<double>>> {
         auto scalar_expr = make_scalar_expression(rhs, lhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::divides>>(std::forward<LHS>(lhs), std::move(scalar_expr));
@@ -996,7 +1089,7 @@ namespace fem::numeric {
     // Scalar-Expression operations (scalar on left)
     template<typename RHS>
     auto operator+(double lhs, RHS&& rhs) ->
-        std::enable_if_t<is_expression_v<RHS>,
+        std::enable_if_t<is_expression_v<RHS> && !is_matrix_type<std::decay_t<RHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::plus>, ScalarExpression<double>, std::decay_t<RHS>>> {
         auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::plus>>(std::move(scalar_expr), std::forward<RHS>(rhs));
@@ -1004,7 +1097,7 @@ namespace fem::numeric {
 
     template<typename RHS>
     auto operator-(double lhs, RHS&& rhs) ->
-        std::enable_if_t<is_expression_v<RHS>,
+        std::enable_if_t<is_expression_v<RHS> && !is_matrix_type<std::decay_t<RHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::minus>, ScalarExpression<double>, std::decay_t<RHS>>> {
         auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::minus>>(std::move(scalar_expr), std::forward<RHS>(rhs));
@@ -1012,7 +1105,9 @@ namespace fem::numeric {
 
     template<typename RHS>
     auto operator*(double lhs, RHS&& rhs) ->
-        std::enable_if_t<is_expression_v<RHS>,
+        std::enable_if_t<is_expression_v<RHS> && !is_matrix_type<std::decay_t<RHS>>::value &&
+                         !is_sparse_vector_type<std::decay_t<RHS>>::value &&
+                         !is_tensor_type<std::decay_t<RHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::multiplies>, ScalarExpression<double>, std::decay_t<RHS>>> {
         auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::multiplies>>(std::move(scalar_expr), std::forward<RHS>(rhs));
@@ -1020,7 +1115,7 @@ namespace fem::numeric {
 
     template<typename RHS>
     auto operator/(double lhs, RHS&& rhs) ->
-        std::enable_if_t<is_expression_v<RHS>,
+        std::enable_if_t<is_expression_v<RHS> && !is_matrix_type<std::decay_t<RHS>>::value,
                          BinaryExpression<TypedOpWrapper<ops::divides>, ScalarExpression<double>, std::decay_t<RHS>>> {
         auto scalar_expr = make_scalar_expression(lhs, rhs.shape());
         return make_binary_expression<TypedOpWrapper<ops::divides>>(std::move(scalar_expr), std::forward<RHS>(rhs));
