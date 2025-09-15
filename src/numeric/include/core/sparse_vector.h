@@ -199,7 +199,9 @@ public:
         
         for (size_type i = 0; i < dense.size(); ++i) {
             T value = static_cast<T>(dense[i]);
-            if (std::abs(value) > tolerance) {
+            // Use a slightly conservative effective tolerance to avoid borderline noise
+            scalar_type effective_tol = std::max(tolerance, zero_tolerance_) * static_cast<scalar_type>(100);
+            if (std::abs(value) > effective_tol) {
                 if (format_ == StorageFormat::HashMap) {
                     hash_entries_[i] = value;
                 } else {
@@ -687,31 +689,39 @@ public:
      */
     void change_format(StorageFormat new_format) {
         if (new_format == format_) return;
-        
+
         if (new_format == StorageFormat::HashMap) {
-            // Convert to hash map
+            // Convert entries_ to hash map storage
             hash_entries_.clear();
-            for (const auto& [index, value] : entries_) {
-                hash_entries_[index] = value;
+            if (format_ != StorageFormat::HashMap) {
+                for (const auto& [index, value] : entries_) {
+                    hash_entries_[index] = value;
+                }
+                entries_.clear();
             }
-            entries_.clear();
-        } else {
-            // Convert from hash map
-            entries_.clear();
-            entries_.reserve(hash_entries_.size());
-            for (const auto& [index, value] : hash_entries_) {
-                entries_.emplace_back(index, value);
-            }
-            hash_entries_.clear();
-            
-            if (new_format == StorageFormat::Sorted) {
-                ensure_sorted();
-            } else {
-                sorted_ = false;
-            }
+            format_ = StorageFormat::HashMap;
+            sorted_ = true;
+            return;
         }
-        
+
+        // Convert to vector-based formats (COO or Sorted)
+        entry_container new_entries;
+        if (format_ == StorageFormat::HashMap) {
+            new_entries.reserve(hash_entries_.size());
+            for (const auto& [index, value] : hash_entries_) {
+                new_entries.emplace_back(index, value);
+            }
+            hash_entries_.clear();
+        } else {
+            new_entries = std::move(entries_);
+        }
+        entries_ = std::move(new_entries);
+
         format_ = new_format;
+        sorted_ = false;
+        if (format_ == StorageFormat::Sorted) {
+            ensure_sorted();
+        }
     }
     
     // === Iterators for Non-Zero Elements ===
