@@ -67,3 +67,18 @@ desktop.ini
 # ===== Docs / generated assets =====
 docs/html/
 doxygen/
+/.claude/agents/core-lib-debugger.md
+/.claude/agents/core-library-architect.md
+/src/numeric/tests/unit/base/.claude/agents/core-library-architect.md
+/.claude/agents/numeric-code-reviewer.md
+/.claude/agents/numeric-library-test-specialist.md
+/src/numeric/tests/unit/base/.claude/agents/numeric-library-test-specialist.md
+/.claude/agents/numerics-project-manager.md
+/.claude/agents/core-qa-guardian.md
+/src/numeric/tests/TRAITS_TEST_COVERAGE_REPORT.md
+/COMPONENT_FIX_SUMMARY.md
+/src/core/ARCHITECTURE_UPDATE_SUMMARY.md
+/NUMERIC_BASE_TEST_REVIEW_REPORT.md
+/NUMERIC_LIBRARY_TEST_IMPROVEMENTS_SUMMARY.md
+/src/numeric/tests/CRITICAL_TESTS_INTEGRATION.md
+/src/core/base/REGISTRY_REVIEW.md
