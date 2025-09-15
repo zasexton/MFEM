@@ -163,6 +163,18 @@ function(add_unit_test_executable TEST_CATEGORY TEST_NAME TEST_FILE)
         )
     endif()
 
+    # Apply stricter floating-point semantics for rounding-sensitive tests
+    # to ensure std::fesetround and IEEE rounding modes are respected.
+    if(TEST_NAME STREQUAL "test_ieee754_compliance")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${TEST_EXEC_NAME} PRIVATE
+                    -frounding-math
+                    -fno-fast-math
+                    -fexcess-precision=standard
+            )
+        endif()
+    endif()
+
     # Register with CTest
     add_test(NAME ${TEST_EXEC_NAME}
             COMMAND ${TEST_EXEC_NAME}
