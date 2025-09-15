@@ -442,7 +442,7 @@ TEST_F(SingletonTest, ConstructionException) {
     EXPECT_TRUE(ThrowingTest::instance().was_successfully_constructed());
 }
 
-TEST_F(SingletonTest, DISABLED_ExceptionDuringConcurrentInitialization) {
+TEST_F(SingletonTest, ExceptionDuringConcurrentInitialization) {
     const int num_threads = 5; // Reduced thread count for stability
     std::vector<std::thread> threads;
     std::atomic<int> exception_count{0};
