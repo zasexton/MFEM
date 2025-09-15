@@ -9,8 +9,37 @@
 #include <algorithm>
 #include <numeric>
 #include <complex>
+#include <iostream>
 
 using namespace fem::numeric;
+
+// Detect environments where performance numbers are expected to be lower
+// (Debug builds, coverage, sanitizers). In those cases, relax thresholds
+// to avoid false positives while still catching egregious regressions.
+#if !defined(PERF_RELAXED)
+#  if defined(FEM_DEBUG) || defined(FEM_NUMERIC_DEBUG_BUILD) || \
+      defined(FEM_NUMERIC_COVERAGE_BUILD) || defined(FEM_NUMERIC_SANITIZERS)
+#    define PERF_RELAXED 1
+#  else
+#    define PERF_RELAXED 0
+#  endif
+#endif
+
+static inline double perf_threshold(double strict_ns, double relaxed_ns) {
+#if PERF_RELAXED
+    return relaxed_ns;
+#else
+    return strict_ns;
+#endif
+}
+
+static inline double perf_ratio_threshold(double strict_ratio, double relaxed_ratio) {
+#if PERF_RELAXED
+    return relaxed_ratio;
+#else
+    return strict_ratio;
+#endif
+}
 
 // ============================================================================
 // Performance Regression Detection Tests
@@ -87,10 +116,13 @@ TEST_F(PerformanceRegressionTest, BasicArithmeticFloat) {
         }
     });
     
-    // Performance expectations (adjust based on platform)
-    EXPECT_LT(add_time, 50000.0) << "Float addition too slow: " << add_time << " ns per iteration";
-    EXPECT_LT(mul_time, 50000.0) << "Float multiplication too slow: " << mul_time << " ns per iteration";
-    EXPECT_LT(div_time, 200000.0) << "Float division too slow: " << div_time << " ns per iteration";
+    // Performance expectations (adjust based on platform/build type)
+    EXPECT_LT(add_time, perf_threshold(50000.0, 130000.0))
+        << "Float addition too slow: " << add_time << " ns per iteration";
+    EXPECT_LT(mul_time, perf_threshold(50000.0, 130000.0))
+        << "Float multiplication too slow: " << mul_time << " ns per iteration";
+    EXPECT_LT(div_time, perf_threshold(200000.0, 350000.0))
+        << "Float division too slow: " << div_time << " ns per iteration";
     
     std::cout << "Float arithmetic performance (ns per " << data_size << " operations):" << std::endl;
     std::cout << "  Addition: " << add_time << std::endl;
@@ -126,9 +158,12 @@ TEST_F(PerformanceRegressionTest, BasicArithmeticDouble) {
     });
     
     // Performance expectations
-    EXPECT_LT(add_time, 50000.0) << "Double addition too slow: " << add_time << " ns per iteration";
-    EXPECT_LT(mul_time, 50000.0) << "Double multiplication too slow: " << mul_time << " ns per iteration";
-    EXPECT_LT(fma_time, 100000.0) << "Double FMA too slow: " << fma_time << " ns per iteration";
+    EXPECT_LT(add_time, perf_threshold(50000.0, 140000.0))
+        << "Double addition too slow: " << add_time << " ns per iteration";
+    EXPECT_LT(mul_time, perf_threshold(50000.0, 130000.0))
+        << "Double multiplication too slow: " << mul_time << " ns per iteration";
+    EXPECT_LT(fma_time, perf_threshold(100000.0, 160000.0))
+        << "Double FMA too slow: " << fma_time << " ns per iteration";
     
     std::cout << "Double arithmetic performance (ns per " << data_size << " operations):" << std::endl;
     std::cout << "  Addition: " << add_time << std::endl;
@@ -183,10 +218,14 @@ TEST_F(PerformanceRegressionTest, ComplexArithmetic) {
     });
     
     // Performance expectations for complex operations
-    EXPECT_LT(add_time, 100000.0) << "Complex addition too slow: " << add_time << " ns per iteration";
-    EXPECT_LT(mul_time, 300000.0) << "Complex multiplication too slow: " << mul_time << " ns per iteration";
-    EXPECT_LT(div_time, 800000.0) << "Complex division too slow: " << div_time << " ns per iteration";
-    EXPECT_LT(abs_time, 200000.0) << "Complex absolute value too slow: " << abs_time << " ns per iteration";
+    EXPECT_LT(add_time, perf_threshold(100000.0, 150000.0))
+        << "Complex addition too slow: " << add_time << " ns per iteration";
+    EXPECT_LT(mul_time, perf_threshold(300000.0, 400000.0))
+        << "Complex multiplication too slow: " << mul_time << " ns per iteration";
+    EXPECT_LT(div_time, perf_threshold(800000.0, 1100000.0))
+        << "Complex division too slow: " << div_time << " ns per iteration";
+    EXPECT_LT(abs_time, perf_threshold(200000.0, 260000.0))
+        << "Complex absolute value too slow: " << abs_time << " ns per iteration";
     
     std::cout << "Complex arithmetic performance (ns per " << data_size << " operations):" << std::endl;
     std::cout << "  Addition: " << add_time << std::endl;
@@ -241,11 +280,16 @@ TEST_F(PerformanceRegressionTest, TranscendentalFunctions) {
     });
     
     // Performance expectations for transcendental functions
-    EXPECT_LT(sin_time, 1000000.0) << "Sine function too slow: " << sin_time << " ns per iteration";
-    EXPECT_LT(cos_time, 1000000.0) << "Cosine function too slow: " << cos_time << " ns per iteration";
-    EXPECT_LT(exp_time, 1500000.0) << "Exponential function too slow: " << exp_time << " ns per iteration";
-    EXPECT_LT(log_time, 1500000.0) << "Logarithm function too slow: " << log_time << " ns per iteration";
-    EXPECT_LT(sqrt_time, 300000.0) << "Square root function too slow: " << sqrt_time << " ns per iteration";
+    EXPECT_LT(sin_time, perf_threshold(1000000.0, 1500000.0))
+        << "Sine function too slow: " << sin_time << " ns per iteration";
+    EXPECT_LT(cos_time, perf_threshold(1000000.0, 1500000.0))
+        << "Cosine function too slow: " << cos_time << " ns per iteration";
+    EXPECT_LT(exp_time, perf_threshold(1500000.0, 2000000.0))
+        << "Exponential function too slow: " << exp_time << " ns per iteration";
+    EXPECT_LT(log_time, perf_threshold(1500000.0, 2000000.0))
+        << "Logarithm function too slow: " << log_time << " ns per iteration";
+    EXPECT_LT(sqrt_time, perf_threshold(300000.0, 450000.0))
+        << "Square root function too slow: " << sqrt_time << " ns per iteration";
     
     std::cout << "Transcendental functions performance (ns per " << data_size << " operations):" << std::endl;
     std::cout << "  Sin: " << sin_time << std::endl;
@@ -314,11 +358,16 @@ TEST_F(PerformanceRegressionTest, MemoryOperations) {
     double per_element_seq = sequential_time / data_size;
     double per_element_rand = random_time / data_size;
     
-    EXPECT_LT(per_element_copy, 10.0) << "Memory copy too slow: " << per_element_copy << " ns per element";
-    EXPECT_LT(per_element_fill, 5.0) << "Memory fill too slow: " << per_element_fill << " ns per element";
-    EXPECT_LT(per_element_transform, 15.0) << "Memory transform too slow: " << per_element_transform << " ns per element";
-    EXPECT_LT(per_element_seq, 5.0) << "Sequential access too slow: " << per_element_seq << " ns per element";
-    EXPECT_LT(per_element_rand, 50.0) << "Random access too slow: " << per_element_rand << " ns per element";
+    EXPECT_LT(per_element_copy, perf_threshold(10.0, 15.0))
+        << "Memory copy too slow: " << per_element_copy << " ns per element";
+    EXPECT_LT(per_element_fill, perf_threshold(5.0, 8.0))
+        << "Memory fill too slow: " << per_element_fill << " ns per element";
+    EXPECT_LT(per_element_transform, perf_threshold(15.0, 20.0))
+        << "Memory transform too slow: " << per_element_transform << " ns per element";
+    EXPECT_LT(per_element_seq, perf_threshold(5.0, 8.0))
+        << "Sequential access too slow: " << per_element_seq << " ns per element";
+    EXPECT_LT(per_element_rand, perf_threshold(50.0, 70.0))
+        << "Random access too slow: " << per_element_rand << " ns per element";
     
     std::cout << "Memory operations performance (ns per element, " << data_size << " elements):" << std::endl;
     std::cout << "  Copy: " << per_element_copy << std::endl;
@@ -370,7 +419,8 @@ TEST_F(PerformanceRegressionTest, CacheFriendliness) {
     
     // Cache-friendly should be significantly faster
     double cache_ratio = col_major_time / row_major_time;
-    EXPECT_GT(cache_ratio, 2.0) << "Cache effect not observed. Ratio: " << cache_ratio;
+    EXPECT_GT(cache_ratio, perf_ratio_threshold(2.0, 1.5))
+        << "Cache effect not observed. Ratio: " << cache_ratio;
     EXPECT_LT(cache_ratio, 20.0) << "Excessive cache penalty. Ratio: " << cache_ratio;
     
     std::cout << "Cache performance test:" << std::endl;
@@ -455,7 +505,8 @@ TEST_F(PerformanceRegressionTest, OptimizationEffectiveness) {
     double optimization_ratio = non_optimizable_time / optimizable_time;
     
     // We expect significant optimization (but exact ratio depends on compiler)
-    EXPECT_GT(optimization_ratio, 2.0) << "Compiler optimizations seem ineffective";
+    EXPECT_GT(optimization_ratio, perf_ratio_threshold(2.0, 1.3))
+        << "Compiler optimizations seem ineffective";
     
     std::cout << "Compiler optimization test:" << std::endl;
     std::cout << "  Optimizable time: " << optimizable_time << " ns" << std::endl;
