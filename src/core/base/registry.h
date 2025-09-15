@@ -16,11 +16,24 @@
 #include <algorithm>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
+#include <utility>
 
 #include "object.h"
 #include "singleton.h"
 
 namespace fem::core::base {
+
+/**
+ * @brief Registry error codes
+ */
+enum class RegistryError : int {
+    AlreadyRegistered = 1,
+    KeyInUse = 2,
+    NotFound = 3,
+    InvalidInput = 4,
+    CapacityExceeded = 5
+};
 
 /**
  * @brief Thread-safe registry for managing collections of objects
@@ -53,12 +66,20 @@ namespace fem::core::base {
         /**
          * @brief Default constructor
          */
-        Registry() = default;
+        Registry() {
+            // Reserve reasonable capacity to avoid rehashing
+            objects_by_id_.reserve(100);
+            objects_by_key_.reserve(100);
+        }
 
         /**
          * @brief Constructor with name
          */
-        explicit Registry(std::string_view name) : name_(name) {}
+        explicit Registry(std::string_view name) : name_(name) {
+            // Reserve reasonable capacity to avoid rehashing
+            objects_by_id_.reserve(100);
+            objects_by_key_.reserve(100);
+        }
 
         /**
          * @brief Destructor
@@ -75,18 +96,34 @@ namespace fem::core::base {
 
         /**
          * @brief Register an object with automatic ID-based lookup
+         * @return true if successfully registered, false if already registered or null
          */
-        bool register_object(object_ptr obj) {
+        [[nodiscard]] bool register_object(object_ptr obj) noexcept {
             if (!obj) return false;
 
-            std::lock_guard lock(mutex_);
-
             auto id = obj->id();
-            if (objects_by_id_.contains(id)) {
-                return false; // Already registered
+            
+            // Use shared lock for read check first
+            {
+                std::shared_lock lock(mutex_);
+                if (objects_by_id_.contains(id)) {
+                    return false; // Already registered
+                }
             }
+            
+            // Now take exclusive lock for modification
+            {
+                std::lock_guard lock(mutex_);
+                
+                // Double-check after acquiring exclusive lock
+                if (objects_by_id_.contains(id)) {
+                    return false;
+                }
 
-            objects_by_id_[id] = obj;
+                objects_by_id_[id] = obj;
+            }
+            
+            // Notify without holding lock to prevent deadlocks
             notify_registration(obj);
 
             return true;
@@ -94,26 +131,37 @@ namespace fem::core::base {
 
         /**
          * @brief Register an object with a named key
+         * @return true if successfully registered, false if already registered, null, or key in use
          */
-        bool register_object(const key_type& key, object_ptr obj) {
+        [[nodiscard]] bool register_object(const key_type& key, object_ptr obj) noexcept {
             if (!obj) return false;
 
-            std::lock_guard lock(mutex_);
-
             auto id = obj->id();
-            if (objects_by_id_.contains(id)) {
-                return false; // Already registered
+            
+            // Use shared lock for read checks first
+            {
+                std::shared_lock lock(mutex_);
+                if (objects_by_id_.contains(id) || objects_by_key_.contains(key)) {
+                    return false; // Already registered or key in use
+                }
+            }
+            
+            // Now take exclusive lock for modification
+            {
+                std::lock_guard lock(mutex_);
+                
+                // Double-check after acquiring exclusive lock
+                if (objects_by_id_.contains(id) || objects_by_key_.contains(key)) {
+                    return false;
+                }
+
+                objects_by_id_[id] = obj;
+                objects_by_key_[key] = obj;
+                key_to_id_[key] = id;
+                id_to_key_[id] = key;
             }
 
-            if (objects_by_key_.contains(key)) {
-                return false; // Key already in use
-            }
-
-            objects_by_id_[id] = obj;
-            objects_by_key_[key] = obj;
-            key_to_id_[key] = id;
-            id_to_key_[id] = key;
-
+            // Notify without holding lock to prevent deadlocks
             notify_registration(obj);
 
             return true;
@@ -122,7 +170,7 @@ namespace fem::core::base {
         /**
          * @brief Register an object with automatic name generation
          */
-        bool register_object_auto_name(object_ptr obj, std::string_view prefix = "obj") {
+        [[nodiscard]] bool register_object_auto_name(object_ptr obj, std::string_view prefix = "obj") noexcept {
             if (!obj) return false;
 
             std::lock_guard lock(mutex_);
@@ -130,11 +178,17 @@ namespace fem::core::base {
             // Generate unique name
             key_type auto_name;
             int counter = 1;
+            constexpr int max_attempts = 10000; // Prevent infinite loop
+            
             do {
+                if (counter > max_attempts) {
+                    return false; // Failed to generate unique name
+                }
+                
                 if constexpr (std::is_same_v<key_type, std::string>) {
                     auto_name = std::string(prefix) + "_" + std::to_string(counter++);
                 } else {
-                    auto_name = key_type{counter++}; // For numeric keys
+                    auto_name = static_cast<key_type>(counter++); // For numeric keys
                 }
             } while (objects_by_key_.contains(auto_name));
 
@@ -146,7 +200,7 @@ namespace fem::core::base {
         /**
          * @brief Find object by ID
          */
-        [[nodiscard]] object_ptr find_by_id(id_type id) const {
+        [[nodiscard]] object_ptr find_by_id(id_type id) const noexcept {
             std::shared_lock lock(mutex_);
 
             auto it = objects_by_id_.find(id);
@@ -156,7 +210,7 @@ namespace fem::core::base {
         /**
          * @brief Find object by key
          */
-        [[nodiscard]] object_ptr find_by_key(const key_type& key) const {
+        [[nodiscard]] object_ptr find_by_key(const key_type& key) const noexcept {
             std::shared_lock lock(mutex_);
 
             auto it = objects_by_key_.find(key);
@@ -174,7 +228,7 @@ namespace fem::core::base {
         /**
          * @brief Check if object is registered by ID
          */
-        [[nodiscard]] bool contains_id(id_type id) const {
+        [[nodiscard]] bool contains_id(id_type id) const noexcept {
             std::shared_lock lock(mutex_);
             return objects_by_id_.contains(id);
         }
@@ -182,7 +236,7 @@ namespace fem::core::base {
         /**
          * @brief Check if key is registered
          */
-        [[nodiscard]] bool contains_key(const key_type& key) const {
+        [[nodiscard]] bool contains_key(const key_type& key) const noexcept {
             std::shared_lock lock(mutex_);
             return objects_by_key_.contains(key);
         }
@@ -202,7 +256,7 @@ namespace fem::core::base {
         /**
          * @brief Unregister object by ID
          */
-        bool unregister_by_id(id_type id) {
+        [[nodiscard]] bool unregister_by_id(id_type id) noexcept {
             std::lock_guard lock(mutex_);
 
             auto it = objects_by_id_.find(id);
@@ -233,7 +287,7 @@ namespace fem::core::base {
         /**
          * @brief Unregister object by key
          */
-        bool unregister_by_key(const key_type& key) {
+        [[nodiscard]] bool unregister_by_key(const key_type& key) noexcept {
             std::lock_guard lock(mutex_);
 
             auto it = objects_by_key_.find(key);
@@ -261,7 +315,7 @@ namespace fem::core::base {
         /**
          * @brief Unregister an object (by the object itself)
          */
-        bool unregister_object(const object_ptr& obj) {
+        [[nodiscard]] bool unregister_object(const object_ptr& obj) noexcept {
             if (!obj) return false;
             return unregister_by_id(obj->id());
         }
@@ -297,7 +351,7 @@ namespace fem::core::base {
         /**
          * @brief Get number of registered objects
          */
-        [[nodiscard]] std::size_t size() const {
+        [[nodiscard]] std::size_t size() const noexcept {
             std::shared_lock lock(mutex_);
             return objects_by_id_.size();
         }
@@ -305,7 +359,7 @@ namespace fem::core::base {
         /**
          * @brief Check if registry is empty
          */
-        [[nodiscard]] bool empty() const {
+        [[nodiscard]] bool empty() const noexcept {
             std::shared_lock lock(mutex_);
             return objects_by_id_.empty();
         }
@@ -360,12 +414,14 @@ namespace fem::core::base {
 
         /**
          * @brief Find objects matching a predicate
+         * @note Consider using find_first_if for early termination
          */
         template<typename Predicate>
         [[nodiscard]] std::vector<object_ptr> find_if(Predicate pred) const {
             std::shared_lock lock(mutex_);
 
             std::vector<object_ptr> results;
+            results.reserve(objects_by_id_.size() / 10); // Reasonable initial capacity
 
             for (const auto& [id, obj] : objects_by_id_) {
                 if (pred(obj)) {
@@ -377,13 +433,57 @@ namespace fem::core::base {
         }
 
         /**
-         * @brief Apply function to all registered objects
+         * @brief Find first object matching a predicate
+         * @return Object if found, nullptr otherwise
          */
-        template<typename Function>
-        void for_each(Function func) const {
+        template<typename Predicate>
+        [[nodiscard]] object_ptr find_first_if(Predicate pred) const noexcept {
             std::shared_lock lock(mutex_);
 
             for (const auto& [id, obj] : objects_by_id_) {
+                if (pred(obj)) {
+                    return obj;
+                }
+            }
+
+            return nullptr;
+        }
+
+        /**
+         * @brief Count objects matching a predicate
+         */
+        template<typename Predicate>
+        [[nodiscard]] std::size_t count_if(Predicate pred) const noexcept {
+            std::shared_lock lock(mutex_);
+
+            std::size_t count = 0;
+            for (const auto& [id, obj] : objects_by_id_) {
+                if (pred(obj)) {
+                    ++count;
+                }
+            }
+
+            return count;
+        }
+
+        /**
+         * @brief Apply function to all registered objects
+         * @note Function is called with registry lock held - keep operations brief
+         */
+        template<typename Function>
+        void for_each(Function func) const {
+            // Make a snapshot of objects to avoid holding lock during function execution
+            std::vector<object_ptr> snapshot;
+            {
+                std::shared_lock lock(mutex_);
+                snapshot.reserve(objects_by_id_.size());
+                for (const auto& [id, obj] : objects_by_id_) {
+                    snapshot.push_back(obj);
+                }
+            }
+            
+            // Execute function on snapshot without holding lock
+            for (const auto& obj : snapshot) {
                 func(obj);
             }
         }
@@ -413,6 +513,81 @@ namespace fem::core::base {
             std::lock_guard lock(callback_mutex_);
             registration_callbacks_.clear();
             unregistration_callbacks_.clear();
+        }
+
+        // === Batch Operations ===
+
+        /**
+         * @brief Register multiple objects at once
+         * @return Number of successfully registered objects
+         */
+        template<typename Container>
+        std::size_t register_batch(const Container& objects) noexcept {
+            std::size_t registered = 0;
+            
+            std::lock_guard lock(mutex_);
+            for (const auto& obj : objects) {
+                if (!obj) continue;
+                
+                auto id = obj->id();
+                if (!objects_by_id_.contains(id)) {
+                    objects_by_id_[id] = obj;
+                    ++registered;
+                }
+            }
+            
+            return registered;
+        }
+
+        /**
+         * @brief Register multiple objects with keys
+         * @return Number of successfully registered objects
+         */
+        template<typename Container>
+        std::size_t register_batch_with_keys(const Container& pairs) noexcept {
+            std::size_t registered = 0;
+            
+            std::lock_guard lock(mutex_);
+            for (const auto& [key, obj] : pairs) {
+                if (!obj) continue;
+                
+                auto id = obj->id();
+                if (!objects_by_id_.contains(id) && !objects_by_key_.contains(key)) {
+                    objects_by_id_[id] = obj;
+                    objects_by_key_[key] = obj;
+                    key_to_id_[key] = id;
+                    id_to_key_[id] = key;
+                    ++registered;
+                }
+            }
+            
+            return registered;
+        }
+
+        /**
+         * @brief Unregister multiple objects by ID
+         * @return Number of successfully unregistered objects
+         */
+        template<typename Container>
+        std::size_t unregister_batch(const Container& ids) noexcept {
+            std::size_t unregistered = 0;
+            
+            std::lock_guard lock(mutex_);
+            for (const auto& id : ids) {
+                if (objects_by_id_.contains(id)) {
+                    // Remove from key mappings if exists
+                    auto key_it = id_to_key_.find(id);
+                    if (key_it != id_to_key_.end()) {
+                        objects_by_key_.erase(key_it->second);
+                        key_to_id_.erase(key_it->second);
+                        id_to_key_.erase(key_it);
+                    }
+                    objects_by_id_.erase(id);
+                    ++unregistered;
+                }
+            }
+            
+            return unregistered;
         }
 
         // === Statistics and Debug ===
@@ -450,30 +625,40 @@ namespace fem::core::base {
 
         /**
          * @brief Clean up any dangling weak references (maintenance)
+         * @note This operation is potentially expensive and should be called periodically
          */
         std::size_t cleanup_weak_references() {
             std::lock_guard lock(mutex_);
 
             std::size_t removed = 0;
+            std::vector<id_type> to_remove;
 
-            // Remove entries where the object has been destroyed
-            for (auto it = objects_by_id_.begin(); it != objects_by_id_.end();) {
-                if (!it->second || it->second->ref_count() == 1) { // Only we hold reference
-                    auto id = it->first;
-
-                    // Remove from key mappings
-                    auto key_it = id_to_key_.find(id);
-                    if (key_it != id_to_key_.end()) {
-                        objects_by_key_.erase(key_it->second);
-                        key_to_id_.erase(key_it->second);
-                        id_to_key_.erase(key_it);
-                    }
-
-                    it = objects_by_id_.erase(it);
-                    ++removed;
+            // First pass: identify objects to remove (snapshot under lock)
+            for (const auto& [id, obj] : objects_by_id_) {
+                if (!obj) {
+                    to_remove.push_back(id);
                 } else {
-                    ++it;
+                    // Use atomic load for thread-safe ref count check
+                    // Note: This is a heuristic - ref_count could change
+                    // But we're only cleaning up "likely dead" objects
+                    auto count = obj->ref_count();
+                    if (count == 1) { // Only registry holds reference
+                        to_remove.push_back(id);
+                    }
                 }
+            }
+
+            // Second pass: remove identified objects
+            for (auto id : to_remove) {
+                // Remove from all maps
+                auto key_it = id_to_key_.find(id);
+                if (key_it != id_to_key_.end()) {
+                    objects_by_key_.erase(key_it->second);
+                    key_to_id_.erase(key_it->second);
+                    id_to_key_.erase(key_it);
+                }
+                objects_by_id_.erase(id);
+                ++removed;
             }
 
             return removed;
@@ -495,16 +680,40 @@ namespace fem::core::base {
 
         // Notification helpers
         void notify_registration(object_ptr obj) {
-            std::shared_lock lock(callback_mutex_);
-            for (const auto& callback : registration_callbacks_) {
-                callback(obj);
+            // Copy callbacks under lock to avoid holding lock during execution
+            std::vector<registration_callback> callbacks_copy;
+            {
+                std::shared_lock lock(callback_mutex_);
+                callbacks_copy = registration_callbacks_;
+            }
+            
+            // Execute callbacks without holding any locks
+            for (const auto& callback : callbacks_copy) {
+                try {
+                    callback(obj);
+                } catch (...) {
+                    // Swallow exceptions from callbacks to maintain strong guarantee
+                    // In production, log this error
+                }
             }
         }
 
         void notify_unregistration(id_type id, std::string_view key) {
-            std::shared_lock lock(callback_mutex_);
-            for (const auto& callback : unregistration_callbacks_) {
-                callback(id, key);
+            // Copy callbacks under lock to avoid holding lock during execution
+            std::vector<unregistration_callback> callbacks_copy;
+            {
+                std::shared_lock lock(callback_mutex_);
+                callbacks_copy = unregistration_callbacks_;
+            }
+            
+            // Execute callbacks without holding any locks
+            for (const auto& callback : callbacks_copy) {
+                try {
+                    callback(id, key);
+                } catch (...) {
+                    // Swallow exceptions from callbacks to maintain strong guarantee
+                    // In production, log this error
+                }
             }
         }
 

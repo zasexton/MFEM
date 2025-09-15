@@ -485,10 +485,7 @@ namespace fem::core::base {
  * @brief Concept to check if a type implements an interface
  */
     template<typename T, typename InterfaceType>
-    concept ImplementsInterface = std::is_base_of_v<InterfaceType, T> ||
-    requires(T t) {
-{ dynamic_cast<InterfaceType*>(&t) } -> std::convertible_to<InterfaceType*>;
-};
+    concept ImplementsInterface = std::is_base_of_v<InterfaceType, T>;
 
 /**
  * @brief Check if object implements multiple interfaces
@@ -500,7 +497,7 @@ concept ImplementsInterfaces = (ImplementsInterface<T, Interfaces> && ...);
  * @brief Utility to safely cast to interface and call method
  */
 template<typename InterfaceType, typename ObjectType>
-auto safe_interface_call(ObjectType* obj, auto method, auto... args) -> std::optional<decltype(method(args...))> {
+auto safe_interface_call(ObjectType* obj, auto method, auto... args) -> std::optional<decltype(method(static_cast<InterfaceType*>(nullptr), args...))> {
     if (auto* interface = dynamic_cast<InterfaceType*>(obj)) {
         return method(interface, args...);
     }
