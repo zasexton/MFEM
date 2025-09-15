@@ -100,8 +100,8 @@ namespace fem::core::base {
         /**
          * @brief Internal visit implementation - can be specialized by derived visitors
          */
-        virtual void visit_impl(T& object) {}
-        virtual void visit_impl(const T& object) {}
+        virtual void visit_impl(T& /*object*/) {}
+        virtual void visit_impl(const T& /*object*/) {}
 
     private:
         std::unordered_set<std::type_index> derived_types_;
@@ -179,6 +179,8 @@ namespace fem::core::base {
             }
         }
 
+        using Visitor<T>::visit; // Bring base class const overload into scope
+
         /**
          * @brief Set traversal order
          */
@@ -198,7 +200,7 @@ namespace fem::core::base {
         /**
          * @brief Get children of an object (to be implemented by derived classes)
          */
-        virtual std::vector<T*> get_children(T& object) { return {}; }
+        virtual std::vector<T*> get_children(T& /*object*/) { return {}; }
 
     private:
         void visit_pre_order(T& object) {
@@ -463,6 +465,9 @@ namespace fem::core::base {
             for (auto& obj : objects) {
                 if constexpr (std::is_pointer_v<typename Container::value_type>) {
                     if (obj) visitor.visit(*obj);
+                } else if constexpr (requires { obj.get(); obj.operator bool(); }) {
+                    // Handle smart pointers (shared_ptr, unique_ptr, etc.)
+                    if (obj) visitor.visit(*obj);
                 } else {
                     visitor.visit(obj);
                 }
@@ -476,6 +481,9 @@ namespace fem::core::base {
         static void apply_visitor_if(Visitor<T>& visitor, Container& objects, Predicate pred) {
             for (auto& obj : objects) {
                 if constexpr (std::is_pointer_v<typename Container::value_type>) {
+                    if (obj && pred(*obj)) visitor.visit(*obj);
+                } else if constexpr (requires { obj.get(); obj.operator bool(); }) {
+                    // Handle smart pointers (shared_ptr, unique_ptr, etc.)
                     if (obj && pred(*obj)) visitor.visit(*obj);
                 } else {
                     if (pred(obj)) visitor.visit(obj);
@@ -505,6 +513,9 @@ namespace fem::core::base {
 #endif
             for (size_t i = 0; i < objects.size(); ++i) {
                 if constexpr (std::is_pointer_v<typename Container::value_type>) {
+                    if (objects[i]) visitor.visit(*objects[i]);
+                } else if constexpr (requires { objects[i].get(); objects[i].operator bool(); }) {
+                    // Handle smart pointers (shared_ptr, unique_ptr, etc.)
                     if (objects[i]) visitor.visit(*objects[i]);
                 } else {
                     visitor.visit(objects[i]);
