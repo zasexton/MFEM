@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <sstream>
 #include <complex>
-#include "../../include/core/block_vector.h"
+#include <core/block_vector.h>
 
 using namespace fem::numeric;
 

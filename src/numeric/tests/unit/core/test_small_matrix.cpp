@@ -7,7 +7,7 @@
 #include <sstream>
 #include <complex>
 #include <chrono>
-#include "../../include/core/small_matrix.h"
+#include <core/small_matrix.h>
 
 using namespace fem::numeric;
 

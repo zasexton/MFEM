@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../../../../../../src/numeric/include/core/tensor.h"
+#include <core/tensor.h>
 #include <vector>
 #include <complex>
 #include <random>
