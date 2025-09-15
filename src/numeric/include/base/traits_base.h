@@ -78,8 +78,11 @@ namespace fem::numeric {
             std::is_trivially_copyable_v<T> && !is_dual_number_v<T>;
 
         // Can we use SIMD operations?
+        // Allow SIMD for arithmetic scalars and complex numbers of arithmetic scalars.
         static constexpr bool supports_simd =
-            std::is_arithmetic_v<T> && !is_dual_number_v<T>;
+            !is_dual_number_v<T> && (
+                std::is_arithmetic_v<T> || is_complex_number_v<T>
+            );
 
         // Should we use aligned allocation for better performance?
         static constexpr bool prefers_alignment =
