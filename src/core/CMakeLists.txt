@@ -166,6 +166,8 @@ file(GLOB ROOT_HEADERS
 )
 
 if(ROOT_SOURCES)
+    # Filter out files that have main() functions (like verify_registry.cpp)
+    list(FILTER ROOT_SOURCES EXCLUDE REGEX ".*verify_registry\\.cpp$")
     list(APPEND CORE_SOURCES ${ROOT_SOURCES})
 endif()
 if(ROOT_HEADERS)

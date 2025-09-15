@@ -117,6 +117,13 @@ namespace fem::core::base {
          * @brief Get component dependencies (other component types this depends on)
          */
         virtual std::vector<std::type_index> get_dependencies() const { return {}; }
+        
+        /**
+         * @brief Static helper to get dependencies without instance
+         * @note Default implementation returns empty dependencies
+         */
+        template<typename T>
+        static std::vector<std::type_index> get_static_dependencies() { return {}; }
 
         /**
          * @brief Check if component is compatible with another component type
@@ -201,13 +208,13 @@ namespace fem::core::base {
 
             std::type_index type_id = component->get_type();
 
-            // Check dependencies
-            if (!check_dependencies<T>()) {
+            // Check dependencies using the instance we just created
+            if (!check_dependencies_with_instance(component.get())) {
                 return nullptr;
             }
 
-            // Check compatibility
-            if (!check_compatibility(type_id)) {
+            // Check compatibility (bidirectional)
+            if (!check_compatibility(component.get())) {
                 return nullptr;
             }
 
@@ -343,29 +350,35 @@ namespace fem::core::base {
 
     protected:
         /**
-         * @brief Check if all dependencies for component type T are satisfied
+         * @brief Helper to get dependencies for a component type
+         * @note Uses the component we already created to avoid default construction
          */
         template<typename T>
-        bool check_dependencies() {
-            // Create temporary instance to get dependencies
-            T temp_component;
-            auto dependencies = temp_component.get_dependencies();
-
+        bool check_dependencies_with_instance(T* component) {
+            auto dependencies = component->get_dependencies();
+            
             for (auto dep_type : dependencies) {
                 if (components_.find(dep_type) == components_.end()) {
                     return false; // Missing dependency
                 }
             }
-
+            
             return true;
         }
 
         /**
          * @brief Check if component type is compatible with existing components
          */
-        bool check_compatibility(std::type_index new_type) {
-            for (auto& [existing_type, component] : components_) {
-                if (!component->is_compatible_with(new_type)) {
+        bool check_compatibility(Component* new_component) {
+            std::type_index new_type = new_component->get_type();
+
+            for (auto& [existing_type, existing_component] : components_) {
+                // Check if existing component is compatible with new component
+                if (!existing_component->is_compatible_with(new_type)) {
+                    return false;
+                }
+                // Check if new component is compatible with existing component
+                if (!new_component->is_compatible_with(existing_type)) {
                     return false;
                 }
             }
