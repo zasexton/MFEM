@@ -504,10 +504,23 @@ TEST_F(SparseMatrixTest, FEMStiffnessMatrix) {
     EXPECT_GT(K.nnz(), 0);
     EXPECT_EQ(K.rows(), n_dofs);
     EXPECT_EQ(K.cols(), n_dofs);
-    
-    for (size_t i = 0; i < n_dofs; i += 2) {
-        EXPECT_GT(K(i, i), 0.0);
-        EXPECT_GT(K(i + 1, i + 1), 0.0);
+
+    // Only nodes that participate in elements are expected to have positive diagonals
+    std::vector<bool> active_node(n_nodes, false);
+    for (const auto& elem : elements) {
+        for (auto n : elem) active_node[n] = true;
+    }
+
+    for (size_t node = 0; node < n_nodes; ++node) {
+        size_t dof0 = node * 2;
+        size_t dof1 = dof0 + 1;
+        if (active_node[node]) {
+            EXPECT_GT(K(dof0, dof0), 0.0);
+            EXPECT_GT(K(dof1, dof1), 0.0);
+        } else {
+            EXPECT_EQ(K(dof0, dof0), 0.0);
+            EXPECT_EQ(K(dof1, dof1), 0.0);
+        }
     }
 }
 
