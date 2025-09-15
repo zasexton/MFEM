@@ -5,7 +5,7 @@
 namespace fem::core::base {
 
 // Static member initialization
-std::atomic<Object::id_type> Object::next_id_{0};
+std::atomic<Object::id_type> Object::next_id_{1};
 
 Object::Object(std::string_view class_name, const std::source_location& loc)
     : id_(next_id_.fetch_add(1, std::memory_order_relaxed))
