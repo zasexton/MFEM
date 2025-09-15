@@ -66,6 +66,17 @@ target_compile_definitions(fem_numeric_test_utils INTERFACE
         $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
 )
 
+# Propagate build environment macros to tests so they can adapt expectations
+if(FEM_NUMERIC_ENABLE_COVERAGE)
+    target_compile_definitions(fem_numeric_test_utils INTERFACE FEM_NUMERIC_COVERAGE_BUILD)
+endif()
+if(FEM_NUMERIC_USE_SANITIZERS)
+    target_compile_definitions(fem_numeric_test_utils INTERFACE FEM_NUMERIC_SANITIZERS)
+endif()
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(fem_numeric_test_utils INTERFACE FEM_NUMERIC_DEBUG_BUILD)
+endif()
+
 # Add test include directories if they exist
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_include_directories(fem_numeric_test_utils INTERFACE
