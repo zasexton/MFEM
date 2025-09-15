@@ -14,6 +14,8 @@
 #include <concepts>
 #include <functional>
 #include <optional>
+#include <shared_mutex>
+#include <mutex>
 
 namespace fem::core::base {
 
@@ -466,6 +468,7 @@ namespace fem::core::base {
          * @brief Update all entities in the system
          */
         void update_all_entities(double dt) {
+            std::shared_lock lock(entities_mutex_);
             for (auto* entity : managed_entities_) {
                 if (entity->is_active()) {
                     entity->update(dt);
@@ -477,6 +480,7 @@ namespace fem::core::base {
          * @brief Register entity with system for management
          */
         void manage_entity(Entity* entity) {
+            std::lock_guard lock(entities_mutex_);
             managed_entities_.insert(entity);
         }
 
@@ -484,12 +488,14 @@ namespace fem::core::base {
          * @brief Unregister entity from system
          */
         void unmanage_entity(Entity* entity) {
+            std::lock_guard lock(entities_mutex_);
             managed_entities_.erase(entity);
         }
 
     private:
         std::unordered_map<std::type_index, std::function<std::unique_ptr<Component>()>> component_factories_;
         std::unordered_set<Entity*> managed_entities_;
+        mutable std::shared_mutex entities_mutex_;
     };
 
 } // namespace fem::core
