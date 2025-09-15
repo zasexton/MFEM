@@ -202,6 +202,123 @@ Each class includes debug methods:
 - `debug_info()`: Detailed state information
 - `get_statistics()`: Performance metrics
 
+## 🤖 AI Agent-Specific Guidelines
+
+### Namespace Context & Import Patterns
+**Full namespace**: `fem::core::base`
+**Required includes**: Always include the specific header for the class you're using
+
+```cpp
+#include "object.h"        // For Object, make_object
+#include "factory.h"       // For Factory<T>
+#include "component.h"     // For Component, Entity
+
+// Common using declarations:
+using namespace fem::core::base;
+// OR specific imports:
+using fem::core::base::Object;
+using fem::core::base::make_object;
+```
+
+### Template Constraints & Concepts (Critical for AI)
+**ObjectDerived Concept**: Many templates require `ObjectDerived<T>`
+- `Factory<T>` requires T inherits from Object
+- `object_ptr<T>` requires T inherits from Object
+- `make_object<T>()` requires T inherits from Object
+
+**CRTP Requirements**:
+- `Singleton<T>` requires T to friend-declare `Singleton<T>`
+- `NonCopyable<T>` requires T to inherit as `class T : public NonCopyable<T>`
+
+```cpp
+// Correct CRTP usage:
+class MyManager : public Singleton<MyManager> {
+    friend class Singleton<MyManager>;  // Required!
+private:
+    MyManager() = default;  // Private constructor
+};
+
+class ResourceHandle : public NonCopyable<ResourceHandle> {
+    // Automatically non-copyable but movable
+};
+```
+
+### Memory Management Rules (AI Must Follow)
+**NEVER use raw pointers** for Object-derived classes
+**ALWAYS use object_ptr<T>** instead of std::shared_ptr<T>
+**ALWAYS use make_object<T>()** instead of std::make_shared<T>()
+
+```cpp
+❌ Wrong: auto obj = std::make_shared<MyElement>();
+❌ Wrong: auto obj = new MyElement();
+✅ Right: auto obj = make_object<MyElement>();
+```
+
+### Common Pitfalls for AI Agents
+1. **Factory Registration**: Must happen before first use
+2. **Component Dependencies**: Check dependencies before adding components
+3. **Event Handling**: Events can be marked as "handled" to stop propagation
+4. **Thread Safety**: All classes are thread-safe, but combinations may not be
+5. **Object Lifecycle**: Objects auto-cleanup via ref counting, don't manual delete
+
+### Integration Rules for AI
+**When creating new FEM classes**:
+1. Inherit from Object if needs identity/lifecycle
+2. Use Factory if configuration-driven creation needed
+3. Use Components for multi-physics composition
+4. Use Observer for cross-module communication
+5. Use Visitor for hierarchy operations
+
+**File naming**: `my_class.h/.cpp` (snake_case)
+**Class naming**: `MyClass` (PascalCase)
+**Namespace**: Always `fem::core::base`
+
+### Testing Requirements (AI Should Know)
+Each new class MUST include:
+- Basic construction/destruction tests
+- Thread safety verification (if applicable)
+- Integration with Object system (if inherits from Object)
+- Performance benchmarks (for core infrastructure)
+- Exception safety tests
+
+### AI Code Generation Rules
+**When AI generates new classes in this folder**:
+1. Always include proper doxygen comments
+2. Always include thread safety documentation
+3. Always include usage examples in comments
+4. Always follow RAII patterns
+5. Always use C++20 features appropriately
+6. Always include both .h and .cpp files
+7. Always add to CMakeLists.txt if creating new files
+
+### Correct API Usage Examples
+```cpp
+// Object creation and management
+auto element = make_object<MyElement>();
+auto id = element->id();  // Unique identifier
+
+// Factory pattern
+Factory<Solver>::instance().register_type<DirectSolver>("direct");
+auto solver = Factory<Solver>::instance().create("direct");
+
+// Component system
+Entity entity("MultiPhysics");
+entity.add_component<MechanicalComponent>();
+entity.add_component<ThermalComponent>();
+
+// Event system
+auto subscription = subscribe_to_events<MeshEvent>(
+    [](const MeshEvent& event) {
+        // Handle event
+    });
+emit_event<MeshEvent>(MeshEvent::Type::REFINED, mesh_id);
+
+// Registry usage
+Registry<Element> elements("Elements");
+elements.register_object("beam_1", beam);
+auto found = elements.find_by_key("beam_1");
+```
+
 ## 🔮 Future Extensions
 - Command pattern for undo/redo
 - State machines for complex lifecycles
