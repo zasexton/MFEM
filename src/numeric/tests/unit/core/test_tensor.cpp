@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <sstream>
 #include <complex>
-#include "../../include/core/tensor.h"
+#include <core/tensor.h>
 
 using namespace fem::numeric;
 
