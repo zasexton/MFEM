@@ -15,7 +15,36 @@
 #include <limits>
 #include <cassert>
 #include <stdexcept>
+#include <type_traits>
 // #include <format> // C++20 format not available everywhere
+
+// Detection idiom for SFINAE
+namespace fem::numeric::detail {
+    struct nonesuch {
+        ~nonesuch() = delete;
+        nonesuch(nonesuch const&) = delete;
+        void operator=(nonesuch const&) = delete;
+    };
+
+    template<class Default, class AlwaysVoid,
+             template<class...> class Op, class... Args>
+    struct detector {
+        using value_t = std::false_type;
+        using type = Default;
+    };
+
+    template<class Default, template<class...> class Op, class... Args>
+    struct detector<Default, std::void_t<Op<Args...>>, Op, Args...> {
+        using value_t = std::true_type;
+        using type = Op<Args...>;
+    };
+
+    template<template<class...> class Op, class... Args>
+    using is_detected = typename detector<nonesuch, void, Op, Args...>::value_t;
+
+    template<template<class...> class Op, class... Args>
+    constexpr bool is_detected_v = is_detected<Op, Args...>::value;
+}
 
 #include "../base/numeric_base.h"
 #include "../base/container_base.h"
@@ -141,6 +170,22 @@ public:
         std::copy(view.begin(), view.end(), begin());
     }
 
+    /**
+     * @brief Const view constructor
+     */
+    explicit Vector(const const_view_type& view)
+        : Vector(view.size()) {
+        std::copy(view.begin(), view.end(), begin());
+    }
+
+    /**
+     * @brief Construct from raw pointer and length (copies data)
+     */
+    explicit Vector(const_pointer data_ptr, size_type n)
+        : Vector(n) {
+        std::copy(data_ptr, data_ptr + n, begin());
+    }
+
     // === Assignment Operators ===
 
     Vector& operator=(const Vector& other) {
@@ -250,6 +295,11 @@ public:
     void resize(size_type new_size) {
         storage_.resize(new_size);
         base_type::shape_ = Shape{new_size};
+    }
+
+    // Allow resizing from a generic Shape (used by expression templates)
+    void resize(const Shape& sh) {
+        resize(sh.size());
     }
 
     void resize(size_type new_size, const T& value) {
@@ -587,10 +637,42 @@ public:
 
     // === Expression Template Interface ===
 
+    // Required by ExpressionBase CRTP
+    Shape shape() const noexcept {
+        return Shape{size()};
+    }
+
     size_type expression_size() const noexcept {
         return size();
     }
 
+    template<typename U>
+    auto eval(size_type i) const -> const T& {
+        return (*this)[i];
+    }
+
+    template<typename U, typename... Indices>
+    auto eval_at(Indices... indices) const -> const T& {
+        static_assert(sizeof...(indices) == 1, "Vector eval_at expects single index");
+        return (*this)[static_cast<size_type>((indices, ...))]; // C++17 fold expression
+    }
+
+    template<typename Container>
+    void eval_to(Container& result) const {
+        using result_type = typename Container::value_type;
+        if (result.size() != size()) {
+            result.resize(size());
+        }
+        for (size_type i = 0; i < size(); ++i) {
+            result[i] = static_cast<result_type>((*this)[i]);
+        }
+    }
+
+    bool is_parallelizable() const noexcept { return true; }
+    bool is_vectorizable() const noexcept { return true; }
+    size_t complexity() const noexcept { return size(); }
+
+    // Legacy compatibility
     template<typename Index>
     const T& evaluate(Index i) const noexcept {
         return (*this)[i];
@@ -686,11 +768,52 @@ private:
 
     template<typename Expr>
     void assign_expression(const Expr& expr) {
-        resize(expr.expression_size());
-        for (size_type i = 0; i < size(); ++i) {
-            (*this)[i] = expr.evaluate(i);
+        if constexpr (has_shape_method_v<Expr>) {
+            auto expr_shape = expr.shape();
+            if (expr_shape.rank() != 1) {
+                throw std::invalid_argument("Cannot assign non-1D expression to Vector");
+            }
+            resize(expr_shape.size());
+        } else if constexpr (has_expression_size_method_v<Expr>) {
+            resize(expr.expression_size());
+        } else {
+            resize(expr.size());
+        }
+        
+        // Use expression template evaluation
+        if constexpr (has_eval_to_method_v<Expr>) {
+            expr.eval_to(*this);
+        } else {
+            for (size_type i = 0; i < size(); ++i) {
+                if constexpr (has_eval_method_v<Expr>) {
+                    (*this)[i] = expr.template eval<T>(i);
+                } else {
+                    (*this)[i] = expr.evaluate(i);
+                }
+            }
         }
     }
+
+    // SFINAE helpers for expression template integration
+    template<typename T_>
+    using has_shape_method_t = decltype(std::declval<T_>().shape());
+    template<typename T_>
+    static constexpr bool has_shape_method_v = detail::is_detected_v<has_shape_method_t, T_>;
+
+    template<typename T_>
+    using has_expression_size_method_t = decltype(std::declval<T_>().expression_size());
+    template<typename T_>
+    static constexpr bool has_expression_size_method_v = detail::is_detected_v<has_expression_size_method_t, T_>;
+
+    template<typename T_>
+    using has_eval_method_t = decltype(std::declval<T_>().template eval<T>(std::declval<size_type>()));
+    template<typename T_>
+    static constexpr bool has_eval_method_v = detail::is_detected_v<has_eval_method_t, T_>;
+
+    template<typename T_>
+    using has_eval_to_method_t = decltype(std::declval<T_>().eval_to(std::declval<Vector&>()));
+    template<typename T_>
+    static constexpr bool has_eval_to_method_v = detail::is_detected_v<has_eval_to_method_t, T_>;
 };
 
 // === Type Aliases ===
@@ -711,72 +834,180 @@ using VectorCF = VectorDefault<std::complex<float>>;
 using VectorCD = VectorDefault<std::complex<double>>;
 using VectorCLD = VectorDefault<std::complex<long double>>;
 
-// === Non-member Operations ===
+// === Non-member Operations (Expression Template Compatible) ===
 
-// Binary arithmetic operators
-template<StorableType T, typename S1, typename S2>
-auto operator+(const Vector<T, S1>& lhs, const Vector<T, S2>& rhs) {
-    Vector<T, S1> result(lhs);
-    return result += rhs;
+// Forward declarations needed for template metaprogramming
+template<typename T> struct is_vector : std::false_type {};
+template<typename T, typename S> struct is_vector<Vector<T, S>> : std::true_type {};
+template<typename T> inline constexpr bool is_vector_v = is_vector<T>::value;
+
+// Import expression template types from expression_base.h
+using fem::numeric::TerminalExpression;
+using fem::numeric::ScalarExpression;
+using fem::numeric::BinaryExpression;
+using fem::numeric::UnaryExpression;
+using fem::numeric::make_binary_expression;
+using fem::numeric::make_unary_expression;
+using fem::numeric::make_scalar_expression;
+
+// Helper to create terminal expressions from vectors
+template<typename T, typename S>
+auto make_vector_expression(const Vector<T, S>& vec) {
+    return TerminalExpression<Vector<T, S>>(vec);
 }
 
-template<StorableType T, typename S>
-auto operator+(const Vector<T, S>& vec, const T& scalar) {
-    Vector<T, S> result(vec);
-    return result += Vector<T, S>(vec.size(), scalar);
+template<typename T, typename S>
+auto make_vector_expression(Vector<T, S>&& vec) {
+    return TerminalExpression<Vector<T, S>>(std::move(vec));
 }
 
-template<StorableType T, typename S>
-auto operator+(const T& scalar, const Vector<T, S>& vec) {
-    return vec + scalar;
+// Binary arithmetic operators using expression templates
+template<typename LHS, typename RHS>
+auto operator+(LHS&& lhs, RHS&& rhs) -> 
+    std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
+                     BinaryExpression<ops::plus<>, 
+                                     TerminalExpression<std::decay_t<LHS>>,
+                                     TerminalExpression<std::decay_t<RHS>>>> {
+    return make_binary_expression<ops::plus<>>(
+        make_vector_expression(std::forward<LHS>(lhs)),
+        make_vector_expression(std::forward<RHS>(rhs))
+    );
 }
 
-template<StorableType T, typename S1, typename S2>
-auto operator-(const Vector<T, S1>& lhs, const Vector<T, S2>& rhs) {
-    Vector<T, S1> result(lhs);
-    return result -= rhs;
+template<typename LHS, typename RHS>
+auto operator-(LHS&& lhs, RHS&& rhs) -> 
+    std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
+                     BinaryExpression<ops::minus<>, 
+                                     TerminalExpression<std::decay_t<LHS>>,
+                                     TerminalExpression<std::decay_t<RHS>>>> {
+    return make_binary_expression<ops::minus<>>(
+        make_vector_expression(std::forward<LHS>(lhs)),
+        make_vector_expression(std::forward<RHS>(rhs))
+    );
 }
 
-template<StorableType T, typename S>
-auto operator-(const Vector<T, S>& vec, const T& scalar) {
-    Vector<T> result(vec);
-    return result -= Vector<T>(vec.size(), scalar);
+template<typename LHS, typename RHS>
+auto operator*(LHS&& lhs, RHS&& rhs) -> 
+    std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
+                     BinaryExpression<ops::multiplies<>, 
+                                     TerminalExpression<std::decay_t<LHS>>,
+                                     TerminalExpression<std::decay_t<RHS>>>> {
+    return make_binary_expression<ops::multiplies<>>(
+        make_vector_expression(std::forward<LHS>(lhs)),
+        make_vector_expression(std::forward<RHS>(rhs))
+    );
 }
 
-template<StorableType T, typename S>
-auto operator-(const T& scalar, const Vector<T, S>& vec) {
-    Vector<T> result(vec.size(), scalar);
-    return result -= vec;
+template<typename LHS, typename RHS>
+auto operator/(LHS&& lhs, RHS&& rhs) -> 
+    std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
+                     BinaryExpression<ops::divides<>, 
+                                     TerminalExpression<std::decay_t<LHS>>,
+                                     TerminalExpression<std::decay_t<RHS>>>> {
+    return make_binary_expression<ops::divides<>>(
+        make_vector_expression(std::forward<LHS>(lhs)),
+        make_vector_expression(std::forward<RHS>(rhs))
+    );
 }
 
-template<StorableType T, typename S>
-auto operator*(const Vector<T, S>& vec, const T& scalar) {
-    Vector<T> result(vec);
-    return result *= scalar;
+// Vector-Scalar operations (creates scalar expression for broadcasting)
+template<typename T, typename S, typename Scalar>
+auto operator+(const Vector<T, S>& vec, const Scalar& scalar) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::plus<>,
+                                     TerminalExpression<Vector<T, S>>,
+                                     ScalarExpression<Scalar>>> {
+    auto vec_expr = make_vector_expression(vec);
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    return make_binary_expression<ops::plus<>>(vec_expr, scalar_expr);
 }
 
-template<StorableType T, typename S>
-auto operator*(const T& scalar, const Vector<T, S>& vec) {
-    return vec * scalar;
+template<typename T, typename S, typename Scalar>
+auto operator+(const Scalar& scalar, const Vector<T, S>& vec) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::plus<>,
+                                     ScalarExpression<Scalar>,
+                                     TerminalExpression<Vector<T, S>>>> {
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    auto vec_expr = make_vector_expression(vec);
+    return make_binary_expression<ops::plus<>>(scalar_expr, vec_expr);
 }
 
-template<StorableType T, typename S>
-auto operator/(const Vector<T, S>& vec, const T& scalar) {
-    Vector<T> result(vec);
-    return result /= scalar;
+template<typename T, typename S, typename Scalar>
+auto operator-(const Vector<T, S>& vec, const Scalar& scalar) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::minus<>,
+                                     TerminalExpression<Vector<T, S>>,
+                                     ScalarExpression<Scalar>>> {
+    auto vec_expr = make_vector_expression(vec);
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    return make_binary_expression<ops::minus<>>(vec_expr, scalar_expr);
 }
 
-// Element-wise operations
+template<typename T, typename S, typename Scalar>
+auto operator-(const Scalar& scalar, const Vector<T, S>& vec) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::minus<>,
+                                     ScalarExpression<Scalar>,
+                                     TerminalExpression<Vector<T, S>>>> {
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    auto vec_expr = make_vector_expression(vec);
+    return make_binary_expression<ops::minus<>>(scalar_expr, vec_expr);
+}
+
+template<typename T, typename S, typename Scalar>
+auto operator*(const Vector<T, S>& vec, const Scalar& scalar) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::multiplies<>,
+                                     TerminalExpression<Vector<T, S>>,
+                                     ScalarExpression<Scalar>>> {
+    auto vec_expr = make_vector_expression(vec);
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    return make_binary_expression<ops::multiplies<>>(vec_expr, scalar_expr);
+}
+
+template<typename T, typename S, typename Scalar>
+auto operator*(const Scalar& scalar, const Vector<T, S>& vec) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::multiplies<>,
+                                     ScalarExpression<Scalar>,
+                                     TerminalExpression<Vector<T, S>>>> {
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    auto vec_expr = make_vector_expression(vec);
+    return make_binary_expression<ops::multiplies<>>(scalar_expr, vec_expr);
+}
+
+template<typename T, typename S, typename Scalar>
+auto operator/(const Vector<T, S>& vec, const Scalar& scalar) ->
+    std::enable_if_t<std::is_arithmetic_v<Scalar>,
+                     BinaryExpression<ops::divides<>,
+                                     TerminalExpression<Vector<T, S>>,
+                                     ScalarExpression<Scalar>>> {
+    auto vec_expr = make_vector_expression(vec);
+    auto scalar_expr = make_scalar_expression(scalar, vec.shape());
+    return make_binary_expression<ops::divides<>>(vec_expr, scalar_expr);
+}
+
+// Element-wise operations (explicit names to avoid ambiguity)
 template<typename T, typename S1, typename S2>
 auto multiply(const Vector<T, S1>& lhs, const Vector<T, S2>& rhs) {
-    Vector<T> result(lhs);
-    return result *= rhs;
+    auto lhs_expr = make_vector_expression(lhs);
+    auto rhs_expr = make_vector_expression(rhs);
+    return make_binary_expression<ops::multiplies<>>(lhs_expr, rhs_expr);
 }
 
 template<typename T, typename S1, typename S2>
 auto divide(const Vector<T, S1>& lhs, const Vector<T, S2>& rhs) {
-    Vector<T> result(lhs);
-    return result /= rhs;
+    auto lhs_expr = make_vector_expression(lhs);
+    auto rhs_expr = make_vector_expression(rhs);
+    return make_binary_expression<ops::divides<>>(lhs_expr, rhs_expr);
+}
+
+// Unary operators with expression templates
+template<typename T, typename S>
+auto operator-(const Vector<T, S>& vec) {
+    auto vec_expr = make_vector_expression(vec);
+    return make_unary_expression<ops::negate<>>(vec_expr);
 }
 
 // === Stream Operators ===
