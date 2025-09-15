@@ -32,6 +32,14 @@ public:
     // Inherit constructors
     using ViewBase<T>::ViewBase;
     
+    // Fill all elements with a value (only for non-const views)
+    template<typename U = T, typename = std::enable_if_t<!std::is_const_v<U>>>
+    void fill(const value_type& value) {
+        for (size_type i = 0; i < this->size(); ++i) {
+            (*this)[i] = value;
+        }
+    }
+    
     // Mathematical operations
     scalar_type norm() const {
         scalar_type scale{0};
