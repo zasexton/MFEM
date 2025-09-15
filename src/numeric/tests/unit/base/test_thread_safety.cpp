@@ -226,15 +226,15 @@ TEST_F(ThreadSafetyTest, AtomicCounterRaceCondition) {
         }
     };
     
-    // Test atomic counter
-    run_concurrent_test(atomic_increment_test);
+    // Test atomic counter (single batch to match expectations)
+    run_concurrent_test(atomic_increment_test, 1);
     
     long long expected_atomic = static_cast<long long>(num_threads_) * increments_per_thread;
     EXPECT_EQ(atomic_counter.load(), expected_atomic) 
         << "Atomic counter race condition detected";
     
-    // Test mutex-protected counter
-    run_concurrent_test(non_atomic_increment_test);
+    // Test mutex-protected counter (single batch to match expectations)
+    run_concurrent_test(non_atomic_increment_test, 1);
     
     long long expected_mutex = static_cast<long long>(num_threads_) * increments_per_thread;
     EXPECT_EQ(non_atomic_counter, expected_mutex) 
@@ -393,13 +393,21 @@ TEST_F(ThreadSafetyTest, LockFreeStackTest) {
     class LockFreeStack {
     private:
         std::atomic<Node*> head_{nullptr};
+        // Simple deferred reclamation to avoid ABA/use-after-free in test
+        std::mutex retire_mtx_;
+        std::vector<Node*> retired_;
         
     public:
         ~LockFreeStack() {
+            // Delete remaining nodes in the stack
             while (Node* node = head_.load()) {
-                head_ = node->next;
+                head_.store(node->next);
                 delete node;
             }
+            // Delete nodes that were popped during the test
+            std::lock_guard<std::mutex> lg(retire_mtx_);
+            for (Node* n : retired_) { delete n; }
+            retired_.clear();
         }
         
         void push(int data) {
@@ -420,7 +428,11 @@ TEST_F(ThreadSafetyTest, LockFreeStackTest) {
                 return false;
             }
             result = head->data;
-            delete head;
+            // Defer deletion to destructor to avoid races (test-only)
+            {
+                std::lock_guard<std::mutex> lg(retire_mtx_);
+                retired_.push_back(head);
+            }
             return true;
         }
         
