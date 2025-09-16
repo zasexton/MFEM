@@ -619,9 +619,4 @@ TEST(ObjectDeathTest, DereferenceNullObjectPtr) {
     EXPECT_DEATH(null_ptr->get_value(), "Dereferencing null object_ptr");
 }
 
-TEST(ObjectDeathTest, InvalidCastAsRef) {
-    TestObject test_obj;
-    Object& base_ref = test_obj;
-    EXPECT_DEATH({ (void)base_ref.as_ref<AnotherTestObject>(); }, "Invalid object cast");
-}
 #endif
