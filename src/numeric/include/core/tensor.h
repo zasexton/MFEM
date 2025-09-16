@@ -47,6 +47,15 @@ namespace fem::numeric::detail {
 
     template<template<class...> class Op, class... Args>
     constexpr bool is_detected_v = is_detected<Op, Args...>::value;
+
+    template<typename... Args>
+    struct all_integral : std::conjunction<std::is_integral<std::decay_t<Args>>...> {};
+
+    template<typename... Args>
+    inline constexpr bool all_integral_v = all_integral<Args...>::value;
+
+    template<typename T>
+    struct always_false : std::false_type {};
 }
 
 #include "../base/numeric_base.h"
@@ -367,7 +376,45 @@ public:
      * @brief Get tensor strides
      */
     const strides_type& strides() const noexcept { return strides_; }
-    
+
+    // === Views and Slicing ===
+
+    view_type view() {
+        return make_full_view(*this);
+    }
+
+    const_view_type view() const {
+        return make_full_view(*this);
+    }
+
+    view_type view(const MultiIndex& indices) {
+        return build_view(*this, indices);
+    }
+
+    const_view_type view(const MultiIndex& indices) const {
+        return build_view(*this, indices);
+    }
+
+    view_type operator()(const MultiIndex& indices) {
+        return view(indices);
+    }
+
+    const_view_type operator()(const MultiIndex& indices) const {
+        return view(indices);
+    }
+
+    template<typename... Args,
+             std::enable_if_t<!detail::all_integral_v<Args...>, int> = 0>
+    view_type operator()(Args&&... args) {
+        return view(make_multi_index(std::forward<Args>(args)...));
+    }
+
+    template<typename... Args,
+             std::enable_if_t<!detail::all_integral_v<Args...>, int> = 0>
+    const_view_type operator()(Args&&... args) const {
+        return view(make_multi_index(std::forward<Args>(args)...));
+    }
+
     // === Element Access ===
     
     /**
@@ -513,9 +560,10 @@ public:
             }
         } else {
             // General case - use recursive index permutation
-            copy_with_permutation(*this, result, axes, {}, 0);
+            std::array<size_type, Rank> idx{};
+            copy_with_permutation(*this, result, axes, idx, 0);
         }
-        
+
         return result;
     }
     
@@ -865,6 +913,158 @@ private:
         }
     }
 
+    template<typename Self>
+    static auto make_full_view(Self& tensor) {
+        using view_value = std::conditional_t<std::is_const_v<Self>, const T, T>;
+        Shape base_shape = tensor.shape();
+        size_t base_rank = base_shape.rank();
+
+        std::vector<size_type> dims(base_rank);
+        for (size_t i = 0; i < base_rank; ++i) {
+            dims[i] = base_shape[i];
+        }
+
+        std::vector<std::ptrdiff_t> stride_vec(base_rank, 1);
+        if constexpr (Rank > 0) {
+            const size_t count = std::min(base_rank, static_cast<size_t>(Rank));
+            for (size_t i = 0; i < count; ++i) {
+                stride_vec[i] = static_cast<std::ptrdiff_t>(tensor.strides_[i]);
+            }
+        }
+
+        auto ptr = tensor.data();
+        return TensorView<view_value, Rank>(ptr, std::move(dims), std::move(stride_vec));
+    }
+
+    template<typename Self>
+    static auto build_view(Self& tensor, const MultiIndex& raw_index) {
+        using view_value = std::conditional_t<std::is_const_v<Self>, const T, T>;
+
+        Shape base_shape = tensor.shape();
+        size_t base_rank = base_shape.rank();
+
+        std::vector<size_type> dims(base_rank);
+        for (size_t i = 0; i < base_rank; ++i) {
+            dims[i] = base_shape[i];
+        }
+
+        std::vector<std::ptrdiff_t> base_strides(base_rank, 1);
+        if constexpr (Rank > 0) {
+            const size_t count = std::min(base_rank, static_cast<size_t>(Rank));
+            for (size_t i = 0; i < count; ++i) {
+                base_strides[i] = static_cast<std::ptrdiff_t>(tensor.strides_[i]);
+            }
+        }
+
+        MultiIndex normalized = raw_index.normalize(base_shape);
+        const auto& components = normalized.components();
+
+        std::vector<size_type> out_shape;
+        std::vector<std::ptrdiff_t> out_strides;
+        out_shape.reserve(components.size() + (base_rank > components.size() ? base_rank - components.size() : 0));
+        out_strides.reserve(out_shape.capacity());
+
+        std::ptrdiff_t offset = 0;
+        size_t src_dim = 0;
+
+        for (const auto& component : components) {
+            if (std::holds_alternative<NewAxis>(component)) {
+                out_shape.push_back(1);
+                out_strides.push_back(0);
+                continue;
+            }
+
+            if (src_dim >= base_rank) {
+                throw std::out_of_range("Too many indices for tensor");
+            }
+
+            size_type dim_size = dims[src_dim];
+            std::ptrdiff_t stride = base_strides[src_dim];
+
+            if (std::holds_alternative<All>(component)) {
+                out_shape.push_back(dim_size);
+                out_strides.push_back(stride);
+                src_dim++;
+            } else if (std::holds_alternative<Slice>(component)) {
+                const auto& slice = std::get<Slice>(component);
+                auto normalized_slice = slice.normalize(dim_size);
+                auto count = slice.count(dim_size);
+                out_shape.push_back(count);
+                out_strides.push_back(stride * normalized_slice.step());
+                offset += static_cast<std::ptrdiff_t>(normalized_slice.start()) * stride;
+                src_dim++;
+            } else if (std::holds_alternative<std::ptrdiff_t>(component)) {
+                std::ptrdiff_t idx = std::get<std::ptrdiff_t>(component);
+                if (idx < 0) {
+                    idx += static_cast<std::ptrdiff_t>(dim_size);
+                }
+                if (idx < 0 || idx >= static_cast<std::ptrdiff_t>(dim_size)) {
+                    throw std::out_of_range("Tensor index out of range");
+                }
+                offset += idx * stride;
+                src_dim++;
+            } else if (std::holds_alternative<std::vector<std::ptrdiff_t>>(component) ||
+                       std::holds_alternative<std::vector<bool>>(component)) {
+                throw std::invalid_argument("Fancy indexing is not yet supported for Tensor views");
+            } else {
+                throw std::invalid_argument("Unsupported tensor index type");
+            }
+        }
+
+        while (src_dim < base_rank) {
+            out_shape.push_back(dims[src_dim]);
+            out_strides.push_back(base_strides[src_dim]);
+            src_dim++;
+        }
+
+        auto ptr = tensor.data() + offset;
+        return TensorView<view_value, Rank>(ptr, std::move(out_shape), std::move(out_strides));
+    }
+
+    template<typename... Args>
+    static MultiIndex make_multi_index(Args&&... args) {
+        std::vector<IndexVariant> components;
+        components.reserve(sizeof...(Args));
+        (components.push_back(to_index_variant(std::forward<Args>(args))), ...);
+        return MultiIndex(components);
+    }
+
+    static IndexVariant to_index_variant(const IndexVariant& idx) { return idx; }
+    static IndexVariant to_index_variant(IndexVariant&& idx) { return std::move(idx); }
+    static IndexVariant to_index_variant(const Slice& slice) { return slice; }
+    static IndexVariant to_index_variant(Slice&& slice) { return slice; }
+    static IndexVariant to_index_variant(All) { return all; }
+    static IndexVariant to_index_variant(NewAxis) { return newaxis; }
+    static IndexVariant to_index_variant(Ellipsis) { return ellipsis; }
+
+    template<typename U>
+    static std::enable_if_t<std::is_integral_v<std::decay_t<U>>, IndexVariant>
+    to_index_variant(U value) {
+        return static_cast<std::ptrdiff_t>(value);
+    }
+
+    template<typename U>
+    static IndexVariant to_index_variant(U&&) {
+        static_assert(detail::always_false<std::decay_t<U>>::value, "Unsupported tensor index type");
+        return IndexVariant{};
+    }
+
+    template<typename TensorType, size_t R>
+    static auto element_at_indices(TensorType& tensor, const std::array<size_type, R>& idx) -> decltype(auto) {
+        return element_at_indices_impl(tensor, idx, std::make_index_sequence<R>{});
+    }
+
+    template<typename TensorType, size_t R, size_t... Is>
+    static auto element_at_indices_impl(TensorType& tensor,
+                                        const std::array<size_type, R>& idx,
+                                        std::index_sequence<Is...>) -> decltype(auto) {
+        if constexpr (R == 0) {
+            return tensor();
+        } else {
+            return tensor(idx[Is]...);
+        }
+    }
+
 public:
     // === Output ==="}
     
@@ -917,11 +1117,10 @@ private:
             for (size_t i = 0; i < R; ++i) {
                 src_indices[axes[i]] = indices[i];
             }
-            
-            // This is complex for general case - simplified for now
+            element_at_indices(dst, indices) = element_at_indices(src, src_indices);
             return;
         }
-        
+
         // Recursive case
         for (size_type i = 0; i < dst.shape_[dim]; ++i) {
             indices[dim] = i;
@@ -1037,23 +1236,157 @@ auto operator*(TensorType&& tensor, Scalar&& scalar) {
         std::move(tensor_expr), std::move(scalar_expr));
 }
 
-// === Tensor View Classes (Placeholder) ===
+// === Tensor View Classes ===
 
-/**
- * @brief View of a tensor slice
- */
-template<typename T, size_t Rank>
-class TensorView {
-    // To be implemented for advanced slicing
+template<typename Derived>
+class TensorViewBase : public ExpressionBase<Derived> {
+public:
+    using value_type = typename Derived::value_type;
+
+    Shape shape() const { return static_cast<const Derived&>(*this).shape_impl(); }
+    size_t size() const noexcept { return static_cast<const Derived&>(*this).size_impl(); }
+    size_t rank() const noexcept { return static_cast<const Derived&>(*this).rank_impl(); }
+    bool is_parallelizable() const noexcept { return true; }
+    bool is_vectorizable() const noexcept { return static_cast<const Derived&>(*this).is_vectorizable_impl(); }
+    size_t complexity() const noexcept { return size(); }
 };
 
-/**
- * @brief Slice of a tensor
- */
 template<typename T, size_t Rank>
-class TensorSlice {
-    // To be implemented for tensor slicing operations
+class TensorView : public TensorViewBase<TensorView<T, Rank>> {
+public:
+    using value_type = std::remove_const_t<T>;
+    using pointer = std::conditional_t<std::is_const_v<T>, const value_type*, value_type*>;
+    using reference = std::conditional_t<std::is_const_v<T>, const value_type&, value_type&>;
+    using const_reference = const value_type&;
+    using size_type = size_t;
+    using difference_type = std::ptrdiff_t;
+
+    TensorView() = default;
+
+    TensorView(pointer data,
+               std::vector<size_type> shape,
+               std::vector<difference_type> strides)
+        : data_(data),
+          shape_(std::move(shape)),
+          strides_(std::move(strides)) {}
+
+    pointer data() const noexcept { return data_; }
+
+    size_t rank_impl() const noexcept { return shape_.size(); }
+
+    size_type size_impl() const noexcept {
+        if (shape_.empty()) {
+            return 1;
+        }
+        return std::accumulate(shape_.begin(), shape_.end(), size_type{1}, std::multiplies<size_type>());
+    }
+
+    Shape shape_impl() const { return Shape(shape_); }
+
+    bool empty() const noexcept { return size_impl() == 0; }
+
+    reference operator[](size_type index) {
+        if (size_impl() == 0) {
+            throw std::out_of_range("TensorView index out of range");
+        }
+        return data_[offset_from_linear(index)];
+    }
+
+    const_reference operator[](size_type index) const {
+        if (size_impl() == 0) {
+            throw std::out_of_range("TensorView index out of range");
+        }
+        return data_[offset_from_linear(index)];
+    }
+
+    template<typename... Indices>
+    reference operator()(Indices... indices) {
+        static_assert(sizeof...(indices) >= 0, "Invalid number of indices");
+        std::array<size_type, sizeof...(indices)> idx{static_cast<size_type>(indices)...};
+        if (idx.size() != shape_.size()) {
+            throw std::out_of_range("Incorrect number of indices for TensorView");
+        }
+        return data_[offset_from_indices(idx.data(), idx.size())];
+    }
+
+    template<typename... Indices>
+    const_reference operator()(Indices... indices) const {
+        static_assert(sizeof...(indices) >= 0, "Invalid number of indices");
+        std::array<size_type, sizeof...(indices)> idx{static_cast<size_type>(indices)...};
+        if (idx.size() != shape_.size()) {
+            throw std::out_of_range("Incorrect number of indices for TensorView");
+        }
+        return data_[offset_from_indices(idx.data(), idx.size())];
+    }
+
+    template<typename U>
+    auto eval(size_type i) const {
+        return static_cast<U>(data_[offset_from_linear(i)]);
+    }
+
+    template<typename Container>
+    void eval_to(Container& result) const {
+        if (result.shape() != shape_impl()) {
+            result.resize(shape_impl());
+        }
+        using result_type = typename Container::value_type;
+        const size_type total = size_impl();
+        for (size_type i = 0; i < total; ++i) {
+            result.data()[i] = static_cast<result_type>(data_[offset_from_linear(i)]);
+        }
+    }
+
+    bool is_vectorizable_impl() const noexcept {
+        if (shape_.empty()) { return true; }
+        // Vectorizable if last stride is 1 and all others are non-negative
+        if (strides_.empty()) { return true; }
+        if (strides_.back() != 1) { return false; }
+        for (size_t i = 0; i + 1 < strides_.size(); ++i) {
+            if (strides_[i] <= 0) { return false; }
+        }
+        return true;
+    }
+
+    const std::vector<size_type>& dims() const noexcept { return shape_; }
+    const std::vector<difference_type>& strides() const noexcept { return strides_; }
+
+private:
+    difference_type offset_from_linear(size_type index) const {
+        if (shape_.empty()) {
+            return 0;
+        }
+        difference_type offset = 0;
+        size_type remainder = index;
+        for (size_t i = shape_.size(); i-- > 0;) {
+            size_type dim = shape_[i];
+            if (dim == 0) {
+                return 0;
+            }
+            size_type coord = remainder % dim;
+            remainder /= dim;
+            offset += static_cast<difference_type>(coord) * strides_[i];
+        }
+        return offset;
+    }
+
+    difference_type offset_from_indices(const size_type* idx, size_t count) const {
+        difference_type offset = 0;
+        for (size_t i = 0; i < count; ++i) {
+            if (idx[i] >= shape_[i]) {
+                throw std::out_of_range("TensorView index out of range");
+            }
+            offset += static_cast<difference_type>(idx[i]) * strides_[i];
+        }
+        return offset;
+    }
+
+    pointer data_ = nullptr;
+    std::vector<size_type> shape_;
+    std::vector<difference_type> strides_;
 };
+
+template<typename T, size_t Rank>
+using TensorSlice = TensorView<T, Rank>;
 
 } // namespace fem::numeric
 

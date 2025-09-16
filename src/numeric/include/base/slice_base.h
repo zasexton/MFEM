@@ -212,6 +212,10 @@ namespace fem::numeric {
         const IndexVariant& operator[](size_t i) const { return indices_[i]; }
         IndexVariant& operator[](size_t i) { return indices_[i]; }
 
+        const std::vector<IndexVariant>& components() const noexcept { return indices_; }
+        auto begin() const noexcept { return indices_.begin(); }
+        auto end() const noexcept { return indices_.end(); }
+
         // Check if contains ellipsis
         bool has_ellipsis() const {
             for (const auto& idx : indices_) {
@@ -279,6 +283,11 @@ namespace fem::numeric {
                     result.append(idx);
                     shape_idx++;
                 }
+            }
+
+            while (shape_idx < shape.rank()) {
+                result.append(All{});
+                shape_idx++;
             }
 
             return result;

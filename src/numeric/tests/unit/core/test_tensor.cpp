@@ -157,6 +157,77 @@ TEST_F(TensorTest, DataAccess) {
     EXPECT_EQ(const_data[0], 99.0);
 }
 
+TEST_F(TensorTest, ViewReflectsData) {
+    Tensor<double, 3> t({2, 2, 2}, 0.0);
+    auto v = t.view();
+    v(0, 0, 0) = 42.0;
+    EXPECT_EQ(t(0, 0, 0), 42.0);
+
+    const Tensor<double, 3> ct = t;
+    auto cv = ct.view();
+    EXPECT_EQ(cv(0, 0, 0), 42.0);
+}
+
+TEST_F(TensorTest, MultiIndexSlicingView) {
+    Tensor<double, 3> t({2, 3, 4});
+    size_t counter = 0;
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            for (size_t k = 0; k < 4; ++k) {
+                t(i, j, k) = static_cast<double>(++counter);
+            }
+        }
+    }
+
+    auto sub = t(idx(1, Slice(0, 3, 2), all));
+    Tensor<double, 2> sliced(sub);
+    EXPECT_EQ(sliced.shape()[0], 2u);
+    EXPECT_EQ(sliced.shape()[1], 4u);
+
+    for (size_t j = 0; j < 2; ++j) {
+        for (size_t k = 0; k < 4; ++k) {
+            EXPECT_EQ(sliced(j, k), t(1, j * 2, k));
+        }
+    }
+
+    auto trailing = t(idx(Slice(0, 1)));
+    Tensor<double, 3> trailing_tensor(trailing);
+    EXPECT_EQ(trailing_tensor.shape()[0], 1u);
+    EXPECT_EQ(trailing_tensor.shape()[1], 3u);
+    EXPECT_EQ(trailing_tensor.shape()[2], 4u);
+}
+
+TEST_F(TensorTest, NewAxisInsertionView) {
+    Tensor<double, 3> t({2, 3, 4});
+    size_t counter = 0;
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            for (size_t k = 0; k < 4; ++k) {
+                t(i, j, k) = static_cast<double>(++counter);
+            }
+        }
+    }
+
+    auto expanded = t(idx(newaxis, all, all, all));
+    Tensor<double, 4> expanded_tensor(expanded);
+    EXPECT_EQ(expanded_tensor.shape()[0], 1u);
+    EXPECT_EQ(expanded_tensor.shape()[1], 2u);
+    EXPECT_EQ(expanded_tensor.shape()[2], 3u);
+    EXPECT_EQ(expanded_tensor.shape()[3], 4u);
+
+    auto inserted = t(idx(all, newaxis, Slice(1, 3), 0));
+    Tensor<double, 3> inserted_tensor(inserted);
+    EXPECT_EQ(inserted_tensor.shape()[0], 2u);
+    EXPECT_EQ(inserted_tensor.shape()[1], 1u);
+    EXPECT_EQ(inserted_tensor.shape()[2], 2u);
+
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t k = 0; k < 2; ++k) {
+            EXPECT_EQ(inserted_tensor(i, 0, k), t(i, k + 1, 0));
+        }
+    }
+}
+
 // === Tensor Operations Tests ===
 
 TEST_F(TensorTest, Fill) {
@@ -250,6 +321,31 @@ TEST_F(TensorTest, Transpose2D) {
     EXPECT_EQ(transposed(1, 0), 2);
     EXPECT_EQ(transposed(0, 1), 4);
     EXPECT_EQ(transposed(1, 1), 5);
+}
+
+TEST_F(TensorTest, PermuteAxes3DGeneral) {
+    Tensor<int, 3> t({2, 3, 4});
+    int value = 0;
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            for (size_t k = 0; k < 4; ++k) {
+                t(i, j, k) = value++;
+            }
+        }
+    }
+
+    auto permuted = t.permute({2, 0, 1});
+    EXPECT_EQ(permuted.size(0), 4u);
+    EXPECT_EQ(permuted.size(1), 2u);
+    EXPECT_EQ(permuted.size(2), 3u);
+
+    for (size_t a = 0; a < 4; ++a) {
+        for (size_t b = 0; b < 2; ++b) {
+            for (size_t c = 0; c < 3; ++c) {
+                EXPECT_EQ(permuted(a, b, c), t(b, c, a));
+            }
+        }
+    }
 }
 
 // === Arithmetic Operations Tests ===
