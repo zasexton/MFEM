@@ -57,7 +57,8 @@ namespace fem::core::logging {
             std::string timestamp_format = "%Y-%m-%d %H:%M:%S";
         };
 
-        explicit BasicLogFormatter(const Options& options = Options{})
+        BasicLogFormatter();
+        explicit BasicLogFormatter(const Options& options)
                 : options_(options) {}
 
         [[nodiscard]] std::string format(const LogMessage& message) const override {
@@ -169,7 +170,8 @@ namespace fem::core::logging {
             std::string logger_field = "logger";
         };
 
-        explicit JsonLogFormatter(const Options& options = Options{})
+        JsonLogFormatter();
+        explicit JsonLogFormatter(const Options& options)
                 : options_(options) {}
 
         [[nodiscard]] std::string format(const LogMessage& message) const override {
@@ -445,6 +447,14 @@ namespace fem::core::logging {
             return std::string(pos != std::string_view::npos ? sv.substr(pos + 1) : sv);
         }
     };
+
+// ============================================================================
+// Default Constructor Implementations
+// ============================================================================
+
+inline BasicLogFormatter::BasicLogFormatter() : BasicLogFormatter(Options{}) {}
+
+inline JsonLogFormatter::JsonLogFormatter() : JsonLogFormatter(Options{}) {}
 
 } // namespace fem::core::logging
 
