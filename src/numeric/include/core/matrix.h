@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <numeric>
 #include <functional>
+#include <utility>
 #include <memory>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <cmath>
 #include <execution>
 #include <limits>
@@ -764,41 +766,206 @@ public:
     }
 };
 
+namespace detail {
+
+template<typename MatrixType>
+class MatrixTerminal : public ExpressionBase<MatrixTerminal<MatrixType>> {
+public:
+    using value_type = typename MatrixType::value_type;
+
+    explicit MatrixTerminal(const MatrixType& matrix)
+        : matrix_ptr_(&matrix), shape_(matrix.shape()) {}
+
+    explicit MatrixTerminal(MatrixType&& matrix)
+        : owned_matrix_(std::make_unique<MatrixType>(std::move(matrix))),
+          matrix_ptr_(owned_matrix_.get()),
+          shape_(matrix_ptr_->shape()) {}
+
+    MatrixTerminal(const MatrixTerminal& other) {
+        if (other.owned_matrix_) {
+            owned_matrix_ = std::make_unique<MatrixType>(*other.owned_matrix_);
+            matrix_ptr_ = owned_matrix_.get();
+        } else {
+            matrix_ptr_ = other.matrix_ptr_;
+        }
+        shape_ = other.shape_;
+    }
+
+    MatrixTerminal(MatrixTerminal&& other) noexcept
+        : owned_matrix_(std::move(other.owned_matrix_)),
+          matrix_ptr_(owned_matrix_ ? owned_matrix_.get() : other.matrix_ptr_),
+          shape_(other.shape_) {}
+
+    MatrixTerminal& operator=(const MatrixTerminal& other) {
+        if (this != &other) {
+            if (other.owned_matrix_) {
+                owned_matrix_ = std::make_unique<MatrixType>(*other.owned_matrix_);
+                matrix_ptr_ = owned_matrix_.get();
+            } else {
+                owned_matrix_.reset();
+                matrix_ptr_ = other.matrix_ptr_;
+            }
+            shape_ = other.shape_;
+        }
+        return *this;
+    }
+
+    MatrixTerminal& operator=(MatrixTerminal&& other) noexcept {
+        if (this != &other) {
+            owned_matrix_ = std::move(other.owned_matrix_);
+            matrix_ptr_ = owned_matrix_ ? owned_matrix_.get() : other.matrix_ptr_;
+            shape_ = other.shape_;
+        }
+        return *this;
+    }
+
+    Shape shape() const { return shape_; }
+
+    template<typename T>
+    auto eval(size_t index) const {
+        size_t cols = shape_[1];
+        size_t row = index / cols;
+        size_t col = index % cols;
+        return static_cast<T>((*matrix_ptr_)(row, col));
+    }
+
+    template<typename T, typename... Indices>
+    auto eval_at(Indices... indices) const {
+        static_assert(sizeof...(indices) == 2, "MatrixTerminal expects two indices");
+        size_t coords[]{static_cast<size_t>(indices)...};
+        return static_cast<T>((*matrix_ptr_)(coords[0], coords[1]));
+    }
+
+    template<typename Container>
+    void eval_to(Container& result) const {
+        matrix_ptr_->eval_to(result);
+    }
+
+    bool is_parallelizable() const noexcept {
+        return matrix_ptr_->is_parallelizable();
+    }
+
+    bool is_vectorizable() const noexcept {
+        return matrix_ptr_->is_vectorizable();
+    }
+
+    size_t complexity() const noexcept {
+        return matrix_ptr_->complexity();
+    }
+
+private:
+    std::unique_ptr<MatrixType> owned_matrix_;
+    const MatrixType* matrix_ptr_{};
+    Shape shape_;
+};
+
+template<typename LeftExpr, typename RightExpr, typename Op>
+class MatrixBinaryExpression : public ExpressionBase<MatrixBinaryExpression<LeftExpr, RightExpr, Op>> {
+public:
+    using value_type = std::common_type_t<typename LeftExpr::value_type,
+                                          typename RightExpr::value_type>;
+
+    MatrixBinaryExpression(LeftExpr left,
+                           RightExpr right,
+                           Op op,
+                           const char* op_name)
+        : left_(std::move(left)),
+          right_(std::move(right)),
+          op_(std::move(op)),
+          shape_(left_.shape()),
+          error_message_(std::string("Matrix dimensions must match for ") + op_name),
+          dimension_mismatch_(right_.shape() != shape_) {}
+
+    Shape shape() const { return shape_; }
+
+    template<typename T>
+    auto eval(size_t index) const {
+        ensure_dimensions();
+        auto left_val = left_.template eval<T>(index);
+        auto right_val = right_.template eval<T>(index);
+        return op_(left_val, right_val);
+    }
+
+    template<typename T, typename... Indices>
+    auto eval_at(Indices... indices) const {
+        static_assert(sizeof...(indices) == 2, "MatrixBinaryExpression expects two indices");
+        ensure_dimensions();
+        size_t coords[]{static_cast<size_t>(indices)...};
+        size_t index = coords[0] * shape_[1] + coords[1];
+        return eval<T>(index);
+    }
+
+    template<typename Container>
+    void eval_to(Container& result) const {
+        ensure_dimensions();
+        if (result.shape() != shape_) {
+            result.resize(shape_);
+        }
+        using result_type = typename Container::value_type;
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            result.data()[i] = static_cast<result_type>(eval<result_type>(i));
+        }
+    }
+
+    bool is_parallelizable() const noexcept {
+        return !dimension_mismatch_ && left_.is_parallelizable() && right_.is_parallelizable();
+    }
+
+    bool is_vectorizable() const noexcept {
+        return left_.is_vectorizable() && right_.is_vectorizable();
+    }
+
+    size_t complexity() const noexcept {
+        return left_.complexity() + right_.complexity() + shape_.size();
+    }
+
+private:
+    void ensure_dimensions() const {
+        if (dimension_mismatch_) {
+            throw DimensionError(error_message_);
+        }
+    }
+
+    LeftExpr left_;
+    RightExpr right_;
+    Op op_;
+    Shape shape_;
+    std::string error_message_;
+    bool dimension_mismatch_;
+};
+
+template<typename T, typename S, StorageOrder O>
+auto make_matrix_expression(Matrix<T, S, O>& mat) {
+    return MatrixTerminal<Matrix<T, S, O>>(mat);
+}
+
+template<typename T, typename S, StorageOrder O>
+auto make_matrix_expression(const Matrix<T, S, O>& mat) {
+    return MatrixTerminal<Matrix<T, S, O>>(mat);
+}
+
+template<typename T, typename S, StorageOrder O>
+auto make_matrix_expression(Matrix<T, S, O>&& mat) {
+    return MatrixTerminal<Matrix<T, S, O>>(std::move(mat));
+}
+
+template<typename Op, typename Left, typename Right>
+auto make_matrix_binary_expression(Left&& left,
+                                   Right&& right,
+                                   const char* op_name) {
+    using LeftType = std::decay_t<Left>;
+    using RightType = std::decay_t<Right>;
+    return MatrixBinaryExpression<LeftType, RightType, Op>(
+        std::forward<Left>(left),
+        std::forward<Right>(right),
+        Op{},
+        op_name
+    );
+}
+
+} // namespace detail
+
 // === Non-member Operations ===
-
-// Matrix addition
-template<typename T1, typename S1, StorageOrder O1,
-         typename T2, typename S2, StorageOrder O2>
-auto operator+(const Matrix<T1, S1, O1>& A, const Matrix<T2, S2, O2>& B) {
-    using result_type = decltype(T1{} + T2{});
-    if (A.rows() != B.rows() || A.cols() != B.cols()) {
-        throw std::invalid_argument("Matrix dimensions must match for addition");
-    }
-    Matrix<result_type> R(A.rows(), A.cols());
-    for (size_t i = 0; i < A.rows(); ++i) {
-        for (size_t j = 0; j < A.cols(); ++j) {
-            R(i, j) = static_cast<result_type>(A(i, j)) + static_cast<result_type>(B(i, j));
-        }
-    }
-    return R;
-}
-
-// Matrix subtraction
-template<typename T1, typename S1, StorageOrder O1,
-         typename T2, typename S2, StorageOrder O2>
-auto operator-(const Matrix<T1, S1, O1>& A, const Matrix<T2, S2, O2>& B) {
-    using result_type = decltype(T1{} - T2{});
-    if (A.rows() != B.rows() || A.cols() != B.cols()) {
-        throw std::invalid_argument("Matrix dimensions must match for subtraction");
-    }
-    Matrix<result_type> R(A.rows(), A.cols());
-    for (size_t i = 0; i < A.rows(); ++i) {
-        for (size_t j = 0; j < A.cols(); ++j) {
-            R(i, j) = static_cast<result_type>(A(i, j)) - static_cast<result_type>(B(i, j));
-        }
-    }
-    return R;
-}
 
 // Helper to detect Matrix types and exclude them from scalar overloads
 template<typename T>
@@ -808,52 +975,158 @@ struct is_matrix<Matrix<T, S, O>> : std::true_type {};
 template<typename T>
 inline constexpr bool is_matrix_v = is_matrix<std::remove_cv_t<std::remove_reference_t<T>>>::value;
 
-// Scalar * Matrix
-template<typename T, typename S, StorageOrder O, typename Scalar>
-    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) && requires (T a, Scalar s) { a * s; s * a; })
-auto operator*(const Scalar& s, const Matrix<T, S, O>& M) {
-    using result_type = decltype(s * T{});
-    Matrix<result_type> R(M.rows(), M.cols());
-    for (size_t i = 0; i < M.rows(); ++i) {
-        for (size_t j = 0; j < M.cols(); ++j) {
-            R(i, j) = static_cast<result_type>(s) * static_cast<result_type>(M(i, j));
-        }
-    }
-    return R;
+// Matrix addition (element-wise, lazy evaluation)
+template<typename LHS, typename RHS>
+    requires (is_matrix_v<LHS> && is_matrix_v<RHS>)
+auto operator+(LHS&& lhs, RHS&& rhs) {
+    auto lhs_expr = detail::make_matrix_expression(std::forward<LHS>(lhs));
+    auto rhs_expr = detail::make_matrix_expression(std::forward<RHS>(rhs));
+    return detail::make_matrix_binary_expression<TypedOpWrapper<ops::plus>>(
+        std::move(lhs_expr),
+        std::move(rhs_expr),
+        "addition"
+    );
 }
 
-// Matrix * Scalar
+// Matrix subtraction (element-wise, lazy evaluation)
+template<typename LHS, typename RHS>
+    requires (is_matrix_v<LHS> && is_matrix_v<RHS>)
+auto operator-(LHS&& lhs, RHS&& rhs) {
+    auto lhs_expr = detail::make_matrix_expression(std::forward<LHS>(lhs));
+    auto rhs_expr = detail::make_matrix_expression(std::forward<RHS>(rhs));
+    return detail::make_matrix_binary_expression<TypedOpWrapper<ops::minus>>(
+        std::move(lhs_expr),
+        std::move(rhs_expr),
+        "subtraction"
+    );
+}
+
+// Expression + Matrix (avoid copying matrix operand)
+template<typename Expr, typename T, typename S, StorageOrder O>
+    requires (!is_matrix_v<Expr> && is_expression_v<std::decay_t<Expr>>)
+auto operator+(Expr&& expr, const Matrix<T, S, O>& M) {
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::plus>>(
+        std::forward<Expr>(expr),
+        std::move(matrix_expr)
+    );
+}
+
+// Matrix + Expression (avoid copying matrix operand)
+template<typename T, typename S, StorageOrder O, typename Expr>
+    requires (!is_matrix_v<Expr> && is_expression_v<std::decay_t<Expr>>)
+auto operator+(const Matrix<T, S, O>& M, Expr&& expr) {
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::plus>>(
+        std::move(matrix_expr),
+        std::forward<Expr>(expr)
+    );
+}
+
+// Expression - Matrix (avoid copying matrix operand)
+template<typename Expr, typename T, typename S, StorageOrder O>
+    requires (!is_matrix_v<Expr> && is_expression_v<std::decay_t<Expr>>)
+auto operator-(Expr&& expr, const Matrix<T, S, O>& M) {
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::minus>>(
+        std::forward<Expr>(expr),
+        std::move(matrix_expr)
+    );
+}
+
+// Matrix - Expression (avoid copying matrix operand)
+template<typename T, typename S, StorageOrder O, typename Expr>
+    requires (!is_matrix_v<Expr> && is_expression_v<std::decay_t<Expr>>)
+auto operator-(const Matrix<T, S, O>& M, Expr&& expr) {
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::minus>>(
+        std::move(matrix_expr),
+        std::forward<Expr>(expr)
+    );
+}
+
+// Scalar * Matrix (broadcast, lazy evaluation)
+template<typename Scalar, typename T, typename S, StorageOrder O>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) && requires (T a, Scalar s) { a * s; s * a; })
+auto operator*(const Scalar& s, const Matrix<T, S, O>& M) {
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::multiplies>>(
+        std::move(scalar_expr),
+        std::move(matrix_expr)
+    );
+}
+
+// Matrix * Scalar (broadcast, lazy evaluation)
 template<typename T, typename S, StorageOrder O, typename Scalar>
     requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>) && requires (T a, Scalar s) { a * s; s * a; })
 auto operator*(const Matrix<T, S, O>& M, const Scalar& s) {
-    return s * M;
+    auto matrix_expr = detail::make_matrix_expression(M);
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    return make_binary_expression<TypedOpWrapper<ops::multiplies>>(
+        std::move(matrix_expr),
+        std::move(scalar_expr)
+    );
 }
 
-// Matrix + Scalar
+// Matrix + Scalar (broadcast, lazy evaluation)
 template<typename T, typename S, StorageOrder O, typename Scalar>
     requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>))
 auto operator+(const Matrix<T, S, O>& M, const Scalar& s) {
-    using result_type = decltype(T{} + Scalar{});
-    Matrix<result_type> R(M.rows(), M.cols());
-    for (size_t i=0;i<M.rows();++i) for (size_t j=0;j<M.cols();++j)
-        R(i,j) = static_cast<result_type>(M(i,j)) + static_cast<result_type>(s);
-    return R;
+    auto matrix_expr = detail::make_matrix_expression(M);
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    return make_binary_expression<TypedOpWrapper<ops::plus>>(
+        std::move(matrix_expr),
+        std::move(scalar_expr)
+    );
 }
 
-// Scalar + Matrix
+// Scalar + Matrix (broadcast, lazy evaluation)
+template<typename Scalar, typename T, typename S, StorageOrder O>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>))
+auto operator+(const Scalar& s, const Matrix<T, S, O>& M) {
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::plus>>(
+        std::move(scalar_expr),
+        std::move(matrix_expr)
+    );
+}
+
+// Matrix - Scalar (broadcast, lazy evaluation)
 template<typename T, typename S, StorageOrder O, typename Scalar>
     requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>))
-auto operator+(const Scalar& s, const Matrix<T, S, O>& M) { return M + s; }
+auto operator-(const Matrix<T, S, O>& M, const Scalar& s) {
+    auto matrix_expr = detail::make_matrix_expression(M);
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    return make_binary_expression<TypedOpWrapper<ops::minus>>(
+        std::move(matrix_expr),
+        std::move(scalar_expr)
+    );
+}
 
-// Matrix / Scalar
+// Scalar - Matrix (broadcast, lazy evaluation)
+template<typename Scalar, typename T, typename S, StorageOrder O>
+    requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar> || is_dual_number_v<Scalar>))
+auto operator-(const Scalar& s, const Matrix<T, S, O>& M) {
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    auto matrix_expr = detail::make_matrix_expression(M);
+    return make_binary_expression<TypedOpWrapper<ops::minus>>(
+        std::move(scalar_expr),
+        std::move(matrix_expr)
+    );
+}
+
+// Matrix / Scalar (broadcast, lazy evaluation)
 template<typename T, typename S, StorageOrder O, typename Scalar>
     requires (!is_matrix_v<Scalar> && (std::is_arithmetic_v<Scalar> || is_complex_number_v<Scalar>))
 auto operator/(const Matrix<T, S, O>& M, const Scalar& s) {
-    using result_type = decltype(T{} / Scalar{});
-    Matrix<result_type> R(M.rows(), M.cols());
-    for (size_t i=0;i<M.rows();++i) for (size_t j=0;j<M.cols();++j)
-        R(i,j) = static_cast<result_type>(M(i,j)) / static_cast<result_type>(s);
-    return R;
+    auto matrix_expr = detail::make_matrix_expression(M);
+    auto scalar_expr = make_scalar_expression(s, M.shape());
+    return make_binary_expression<TypedOpWrapper<ops::divides>>(
+        std::move(matrix_expr),
+        std::move(scalar_expr)
+    );
 }
 
 // === Matrix View Classes (Placeholder) ===

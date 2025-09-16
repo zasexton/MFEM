@@ -64,6 +64,16 @@ namespace fem::numeric {
         }
 
         /**
+         * @brief Convenience for 2-D expressions (e.g. matrices)
+         */
+        template<typename D = Derived,
+                 typename Value = typename D::value_type,
+                 typename = decltype(std::declval<const D&>().template eval_at<Value>(size_t{}, size_t{}))>
+        auto operator()(size_t i, size_t j) const {
+            return derived().template eval_at<Value>(i, j);
+        }
+
+        /**
          * @brief Evaluate expression at multi-dimensional index
          */
         template<typename T, typename... Indices>
@@ -364,6 +374,25 @@ namespace fem::numeric {
             // std::cout << " result=" << result << std::endl;
 
             return result;
+        }
+
+        template<typename T, typename... Indices>
+        auto eval_at(Indices... indices) const {
+            static_assert(sizeof...(Indices) > 0, "eval_at requires at least one index");
+            if (sizeof...(Indices) != rank_) {
+                throw DimensionError("Incorrect number of indices for expression evaluation");
+            }
+
+            size_t coords[] { static_cast<size_t>(indices)... };
+            size_t linear = 0;
+            size_t multiplier = 1;
+            for (size_t i = rank_; i > 0; --i) {
+                size_t dim = i - 1;
+                linear += coords[dim] * multiplier;
+                multiplier *= shape_[dim];
+            }
+
+            return eval<T>(linear);
         }
 
         template<typename Container>
