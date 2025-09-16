@@ -57,7 +57,7 @@ namespace fem::core::logging {
             std::string timestamp_format = "%Y-%m-%d %H:%M:%S";
         };
 
-        explicit BasicLogFormatter(const Options& options = {})
+        explicit BasicLogFormatter(const Options& options = Options{})
                 : options_(options) {}
 
         [[nodiscard]] std::string format(const LogMessage& message) const override {
@@ -169,7 +169,7 @@ namespace fem::core::logging {
             std::string logger_field = "logger";
         };
 
-        explicit JsonLogFormatter(const Options& options = {})
+        explicit JsonLogFormatter(const Options& options = Options{})
                 : options_(options) {}
 
         [[nodiscard]] std::string format(const LogMessage& message) const override {
@@ -269,7 +269,7 @@ namespace fem::core::logging {
 
         [[nodiscard]] std::string escape_json(const std::string& str) const {
             std::string escaped;
-            escaped.reserve(str.size() * 1.2);
+            escaped.reserve(str.size() + str.size() / 5);  // ~20% extra space without float conversion
 
             for (char c : str) {
                 switch (c) {
@@ -325,14 +325,14 @@ namespace fem::core::logging {
                                   const LogMessage& message,
                                   const std::string& key) const {
             // Try common types
-            if (auto val = message.get_context<int>(key)) {
-                json << *val;
-            } else if (auto val = message.get_context<double>(key)) {
-                json << *val;
-            } else if (auto val = message.get_context<bool>(key)) {
-                json << (*val ? "true" : "false");
-            } else if (auto val = message.get_context<std::string>(key)) {
-                json << '"' << escape_json(*val) << '"';
+            if (auto int_val = message.get_context<int>(key)) {
+                json << *int_val;
+            } else if (auto double_val = message.get_context<double>(key)) {
+                json << *double_val;
+            } else if (auto bool_val = message.get_context<bool>(key)) {
+                json << (*bool_val ? "true" : "false");
+            } else if (auto string_val = message.get_context<std::string>(key)) {
+                json << '"' << escape_json(*string_val) << '"';
             } else {
                 json << "\"<unknown type>\"";
             }
