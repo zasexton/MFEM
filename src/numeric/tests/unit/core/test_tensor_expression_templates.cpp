@@ -5,6 +5,7 @@
 #include <random>
 #include <algorithm>
 #include <numeric>
+#include <chrono>
 
 using namespace fem::numeric;
 
@@ -491,11 +492,10 @@ TEST_F(TensorExpressionTemplateTest, SizeCompatibilityCheck) {
     t1(0, 0) = 1.0;
     t2(0, 0) = 2.0;
     
-    // Expression creation should succeed
-    auto expr = t1 + t2;
-    
-    // But evaluation should throw due to shape mismatch
-    EXPECT_THROW(([&](){ Tensor<double, 2> result = expr; }()), std::exception);
+    EXPECT_THROW({
+        auto expr = t1 + t2;
+        (void)expr;
+    }, std::exception);
 }
 
 // === Different Rank Operations ===

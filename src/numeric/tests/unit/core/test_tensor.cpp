@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <sstream>
 #include <complex>
+#include <type_traits>
 #include <core/tensor.h>
 
 using namespace fem::numeric;
@@ -382,11 +383,14 @@ TEST_F(TensorTest, NonMemberAddition) {
     Tensor<double, 2> a(shape, 1.0);
     Tensor<int, 2> b(shape, 2);
     
-    auto result = a + b;
-    
-    // Check result type promotion
-    static_assert(std::is_same_v<decltype(result), Tensor<double, 2>>);
-    
+    auto expr = a + b;
+
+    // Ensure we returned an expression template
+    using expr_type = std::decay_t<decltype(expr)>;
+    static_assert(std::is_base_of_v<ExpressionBase<expr_type>, expr_type>);
+
+    Tensor<double, 2> result(expr);
+
     for (size_t i = 0; i < 2; ++i) {
         for (size_t j = 0; j < 2; ++j) {
             EXPECT_EQ(result(i, j), 3.0);
@@ -399,7 +403,8 @@ TEST_F(TensorTest, NonMemberSubtraction) {
     Tensor<double, 2> a(shape, 5.0);
     Tensor<float, 2> b(shape, 2.0f);
     
-    auto result = a - b;
+    auto expr = a - b;
+    Tensor<double, 2> result(expr);
     
     for (size_t i = 0; i < 2; ++i) {
         for (size_t j = 0; j < 2; ++j) {
@@ -412,9 +417,12 @@ TEST_F(TensorTest, ScalarMultiplicationNonMember) {
     std::array<size_t, 2> shape = {2, 2};
     Tensor<double, 2> t(shape, 3.0);
     
-    auto result1 = 2.0 * t;
-    auto result2 = t * 2.0;
-    
+    auto expr1 = 2.0 * t;
+    auto expr2 = t * 2.0;
+
+    Tensor<double, 2> result1(expr1);
+    Tensor<double, 2> result2(expr2);
+
     for (size_t i = 0; i < 2; ++i) {
         for (size_t j = 0; j < 2; ++j) {
             EXPECT_EQ(result1(i, j), 6.0);
