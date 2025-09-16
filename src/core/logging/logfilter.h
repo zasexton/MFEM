@@ -6,6 +6,7 @@
 #include <regex>
 #include <functional>
 #include <unordered_set>
+#include <queue>
 
 #include "logmessage.h"
 
@@ -168,7 +169,7 @@ namespace fem::core::logging {
         RateLimitFilter(size_t max_messages, int64_t window_ms)
                 : max_messages_(max_messages), window_ms_(window_ms) {}
 
-        [[nodiscard]] bool should_log(const LogMessage& message) const override {
+        [[nodiscard]] bool should_log(const LogMessage& /* message */) const override {
             auto now = std::chrono::steady_clock::now();
 
             // Clean old timestamps
