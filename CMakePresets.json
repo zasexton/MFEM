@@ -1,0 +1,66 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ninja-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "ninja-gcc-debug",
+      "displayName": "Ninja Debug (GCC)",
+      "description": "Configure the full MFEMSolver project using the Ninja generator in Debug mode.",
+      "inherits": "ninja-base",
+      "binaryDir": "${sourceDir}/build/ninja-gcc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "ninja-gcc-release",
+      "displayName": "Ninja Release (GCC)",
+      "description": "Release build of MFEMSolver using the Ninja generator.",
+      "inherits": "ninja-base",
+      "binaryDir": "${sourceDir}/build/ninja-gcc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ninja-gcc-debug",
+      "configurePreset": "ninja-gcc-debug"
+    },
+    {
+      "name": "ninja-gcc-release",
+      "configurePreset": "ninja-gcc-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ninja-gcc-debug",
+      "configurePreset": "ninja-gcc-debug",
+      "output": {
+        "shortProgress": true
+      }
+    },
+    {
+      "name": "ninja-gcc-release",
+      "configurePreset": "ninja-gcc-release",
+      "output": {
+        "shortProgress": true
+      }
+    }
+  ]
+}

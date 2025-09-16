@@ -35,6 +35,28 @@ cmake .. \
 make -j
 ```
 
+### Ninja Build Presets
+```bash
+# Configure Debug build with Ninja
+cmake --preset ninja-gcc-debug
+
+# Build targets using Ninja
+cmake --build --preset ninja-gcc-debug
+
+# Optional: run tests (when enabled)
+ctest --preset ninja-gcc-debug
+```
+
+To build only the numeric library with Ninja:
+
+```bash
+cd src/numeric
+cmake --preset ninja-gcc-debug
+cmake --build --preset ninja-gcc-debug
+```
+
+Use the corresponding `ninja-gcc-release` preset for optimized builds.
+
 ### OpenMP-Only Build (Single Node)
 ```bash
 cmake .. -DENABLE_OPENMP=ON -DENABLE_MPI=OFF
