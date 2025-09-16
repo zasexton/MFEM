@@ -16,6 +16,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <type_traits>
+#include <string>
 // #include <format> // C++20 format not available everywhere
 
 // Detection idiom for SFINAE
@@ -850,64 +851,232 @@ using fem::numeric::make_binary_expression;
 using fem::numeric::make_unary_expression;
 using fem::numeric::make_scalar_expression;
 
+
 // Helper to create terminal expressions from vectors
+namespace detail {
+
+template<typename VectorType>
+class VectorTerminal : public ExpressionBase<VectorTerminal<VectorType>> {
+public:
+    using value_type = typename VectorType::value_type;
+
+    explicit VectorTerminal(const VectorType& vec)
+        : vec_ptr_(&vec), shape_(vec.shape()) {}
+
+    explicit VectorTerminal(VectorType&& vec)
+        : owned_vec_(std::make_unique<VectorType>(std::move(vec))),
+          vec_ptr_(owned_vec_.get()),
+          shape_(vec_ptr_->shape()) {}
+
+    VectorTerminal(const VectorTerminal& other) {
+        if (other.owned_vec_) {
+            owned_vec_ = std::make_unique<VectorType>(*other.owned_vec_);
+            vec_ptr_ = owned_vec_.get();
+        } else {
+            vec_ptr_ = other.vec_ptr_;
+        }
+        shape_ = other.shape_;
+    }
+
+    VectorTerminal(VectorTerminal&& other) noexcept
+        : owned_vec_(std::move(other.owned_vec_)),
+          vec_ptr_(owned_vec_ ? owned_vec_.get() : other.vec_ptr_),
+          shape_(other.shape_) {}
+
+    VectorTerminal& operator=(const VectorTerminal& other) {
+        if (this != &other) {
+            if (other.owned_vec_) {
+                owned_vec_ = std::make_unique<VectorType>(*other.owned_vec_);
+                vec_ptr_ = owned_vec_.get();
+            } else {
+                owned_vec_.reset();
+                vec_ptr_ = other.vec_ptr_;
+            }
+            shape_ = other.shape_;
+        }
+        return *this;
+    }
+
+    VectorTerminal& operator=(VectorTerminal&& other) noexcept {
+        if (this != &other) {
+            owned_vec_ = std::move(other.owned_vec_);
+            vec_ptr_ = owned_vec_ ? owned_vec_.get() : other.vec_ptr_;
+            shape_ = other.shape_;
+        }
+        return *this;
+    }
+
+    Shape shape() const { return shape_; }
+
+    template<typename T>
+    auto eval(size_t index) const {
+        return static_cast<T>((*vec_ptr_)[index]);
+    }
+
+    template<typename Container>
+    void eval_to(Container& result) const {
+        vec_ptr_->eval_to(result);
+    }
+
+    bool is_parallelizable() const noexcept { return vec_ptr_->is_parallelizable(); }
+    bool is_vectorizable() const noexcept { return vec_ptr_->is_vectorizable(); }
+    size_t complexity() const noexcept { return vec_ptr_->complexity(); }
+
+private:
+    std::unique_ptr<VectorType> owned_vec_;
+    const VectorType* vec_ptr_{};
+    Shape shape_;
+};
+
+template<typename LeftExpr, typename RightExpr, typename Op>
+class VectorBinaryExpression : public ExpressionBase<VectorBinaryExpression<LeftExpr, RightExpr, Op>> {
+public:
+    using value_type = std::common_type_t<typename LeftExpr::value_type,
+                                          typename RightExpr::value_type>;
+
+    VectorBinaryExpression(LeftExpr left,
+                           RightExpr right,
+                           Op op,
+                           const char* op_name)
+        : left_(std::move(left)),
+          right_(std::move(right)),
+          op_(std::move(op)),
+          shape_(left_.shape()),
+          error_message_(std::string("Vector sizes must match for ") + op_name),
+          dimension_mismatch_(right_.shape() != shape_) {}
+
+    Shape shape() const { return shape_; }
+
+    template<typename T>
+    auto eval(size_t index) const {
+        ensure_dimensions();
+        auto left_val = left_.template eval<T>(index);
+        auto right_val = right_.template eval<T>(index);
+        return op_(left_val, right_val);
+    }
+
+    template<typename Container>
+    void eval_to(Container& result) const {
+        ensure_dimensions();
+        if (result.shape() != shape_) {
+            result.resize(shape_);
+        }
+        using result_type = typename Container::value_type;
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            result.data()[i] = static_cast<result_type>(eval<result_type>(i));
+        }
+    }
+
+    bool is_parallelizable() const noexcept {
+        return !dimension_mismatch_ && left_.is_parallelizable() && right_.is_parallelizable();
+    }
+
+    bool is_vectorizable() const noexcept {
+        return left_.is_vectorizable() && right_.is_vectorizable();
+    }
+
+    size_t complexity() const noexcept {
+        return left_.complexity() + right_.complexity() + shape_.size();
+    }
+
+private:
+    void ensure_dimensions() const {
+        if (dimension_mismatch_) {
+            throw DimensionError(error_message_);
+        }
+    }
+
+    LeftExpr left_;
+    RightExpr right_;
+    Op op_;
+    Shape shape_;
+    std::string error_message_;
+    bool dimension_mismatch_;
+};
+
+template<typename T, typename S>
+auto make_vector_terminal(const Vector<T, S>& vec) {
+    return VectorTerminal<Vector<T, S>>(vec);
+}
+
+template<typename T, typename S>
+auto make_vector_terminal(Vector<T, S>&& vec) {
+    return VectorTerminal<Vector<T, S>>(std::move(vec));
+}
+
+template<typename Op, typename Left, typename Right>
+auto make_vector_binary_expression(Left&& left,
+                                   Right&& right,
+                                   const char* op_name) {
+    using LeftType = std::decay_t<Left>;
+    using RightType = std::decay_t<Right>;
+    return VectorBinaryExpression<LeftType, RightType, Op>(
+        std::forward<Left>(left),
+        std::forward<Right>(right),
+        Op{},
+        op_name
+    );
+}
+
+} // namespace detail
+
 template<typename T, typename S>
 auto make_vector_expression(const Vector<T, S>& vec) {
-    return TerminalExpression<Vector<T, S>>(vec);
+    return detail::make_vector_terminal(vec);
 }
 
 template<typename T, typename S>
 auto make_vector_expression(Vector<T, S>&& vec) {
-    return TerminalExpression<Vector<T, S>>(std::move(vec));
+    return detail::make_vector_terminal(std::move(vec));
 }
 
 // Binary arithmetic operators using expression templates
 template<typename LHS, typename RHS>
-auto operator+(LHS&& lhs, RHS&& rhs) -> 
+auto operator+(LHS&& lhs, RHS&& rhs) ->
     std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
-                     BinaryExpression<ops::plus<>, 
-                                     TerminalExpression<std::decay_t<LHS>>,
-                                     TerminalExpression<std::decay_t<RHS>>>> {
-    return make_binary_expression<ops::plus<>>(
-        make_vector_expression(std::forward<LHS>(lhs)),
-        make_vector_expression(std::forward<RHS>(rhs))
-    );
+                     detail::VectorBinaryExpression<
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<LHS>(lhs)))>,
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<RHS>(rhs)))>,
+                         ops::plus<>>> {
+    auto left = detail::make_vector_terminal(std::forward<LHS>(lhs));
+    auto right = detail::make_vector_terminal(std::forward<RHS>(rhs));
+    return detail::make_vector_binary_expression<ops::plus<>>(std::move(left), std::move(right), "addition");
 }
 
 template<typename LHS, typename RHS>
-auto operator-(LHS&& lhs, RHS&& rhs) -> 
+auto operator-(LHS&& lhs, RHS&& rhs) ->
     std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
-                     BinaryExpression<ops::minus<>, 
-                                     TerminalExpression<std::decay_t<LHS>>,
-                                     TerminalExpression<std::decay_t<RHS>>>> {
-    return make_binary_expression<ops::minus<>>(
-        make_vector_expression(std::forward<LHS>(lhs)),
-        make_vector_expression(std::forward<RHS>(rhs))
-    );
+                     detail::VectorBinaryExpression<
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<LHS>(lhs)))>,
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<RHS>(rhs)))>,
+                         ops::minus<>>> {
+    auto left = detail::make_vector_terminal(std::forward<LHS>(lhs));
+    auto right = detail::make_vector_terminal(std::forward<RHS>(rhs));
+    return detail::make_vector_binary_expression<ops::minus<>>(std::move(left), std::move(right), "subtraction");
 }
 
 template<typename LHS, typename RHS>
-auto operator*(LHS&& lhs, RHS&& rhs) -> 
+auto operator*(LHS&& lhs, RHS&& rhs) ->
     std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
-                     BinaryExpression<ops::multiplies<>, 
-                                     TerminalExpression<std::decay_t<LHS>>,
-                                     TerminalExpression<std::decay_t<RHS>>>> {
-    return make_binary_expression<ops::multiplies<>>(
-        make_vector_expression(std::forward<LHS>(lhs)),
-        make_vector_expression(std::forward<RHS>(rhs))
-    );
+                     detail::VectorBinaryExpression<
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<LHS>(lhs)))>,
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<RHS>(rhs)))>,
+                         ops::multiplies<>>> {
+    auto left = detail::make_vector_terminal(std::forward<LHS>(lhs));
+    auto right = detail::make_vector_terminal(std::forward<RHS>(rhs));
+    return detail::make_vector_binary_expression<ops::multiplies<>>(std::move(left), std::move(right), "multiplication");
 }
 
 template<typename LHS, typename RHS>
-auto operator/(LHS&& lhs, RHS&& rhs) -> 
+auto operator/(LHS&& lhs, RHS&& rhs) ->
     std::enable_if_t<(is_vector_v<std::decay_t<LHS>> && is_vector_v<std::decay_t<RHS>>),
-                     BinaryExpression<ops::divides<>, 
-                                     TerminalExpression<std::decay_t<LHS>>,
-                                     TerminalExpression<std::decay_t<RHS>>>> {
-    return make_binary_expression<ops::divides<>>(
-        make_vector_expression(std::forward<LHS>(lhs)),
-        make_vector_expression(std::forward<RHS>(rhs))
-    );
+                     detail::VectorBinaryExpression<
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<LHS>(lhs)))>,
+                         std::decay_t<decltype(detail::make_vector_terminal(std::forward<RHS>(rhs)))>,
+                         ops::divides<>>> {
+    auto left = detail::make_vector_terminal(std::forward<LHS>(lhs));
+    auto right = detail::make_vector_terminal(std::forward<RHS>(rhs));
+    return detail::make_vector_binary_expression<ops::divides<>>(std::move(left), std::move(right), "division");
 }
 
 // Vector-Scalar operations (creates scalar expression for broadcasting)
