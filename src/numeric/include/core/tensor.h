@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <numeric>
 #include <functional>
+#include <utility>
 #include <memory>
 #include <iostream>
 #include <sstream>
@@ -18,6 +19,7 @@
 #include <iomanip>
 #include <array>
 #include <type_traits>
+#include <vector>
 
 // Detection idiom for SFINAE (reuse from vector.h and matrix.h)
 namespace fem::numeric::detail {
@@ -285,22 +287,8 @@ public:
 
     // Construct from an expression (evaluates into this tensor)
     template<typename Expr>
-    Tensor(const ExpressionBase<Expr>& expr) {
-        // Initialize to a shape compatible with the expression
-        if constexpr (Rank == 0) {
-            shape_ = {};
-        } else if constexpr (Rank == 1) {
-            shape_[0] = expr.derived().shape()[0];
-        } else if constexpr (Rank == 2) {
-            auto sh = expr.derived().shape();
-            shape_[0] = sh[0];
-            shape_[1] = sh[1];
-        } else {
-            // For higher ranks, the expression must be flattened-compatible
-            // We rely on assign_expression to validate/resize if needed
-        }
-        compute_strides();
-        storage_.resize(size());
+    Tensor(const ExpressionBase<Expr>& expr)
+        : Tensor() {
         assign_expression(expr.derived());
     }
     
@@ -764,43 +752,106 @@ private:
     static constexpr bool has_eval_method_v = detail::is_detected_v<has_eval_method_t, T_>;
 
     template<typename T_>
+    using has_expression_size_method_t = decltype(std::declval<T_>().expression_size());
+    template<typename T_>
+    static constexpr bool has_expression_size_method_v = detail::is_detected_v<has_expression_size_method_t, T_>;
+
+    template<typename T_>
     using has_eval_to_method_t = decltype(std::declval<T_>().eval_to(std::declval<Tensor&>()));
     template<typename T_>
     static constexpr bool has_eval_to_method_v = detail::is_detected_v<has_eval_to_method_t, T_>;
 
+    void sync_base_shape() {
+        if constexpr (Rank == 0) {
+            this->base_type::shape_ = Shape{1};
+        } else if constexpr (Rank == 1) {
+            this->base_type::shape_ = Shape{shape_[0]};
+        } else if constexpr (Rank == 2) {
+            this->base_type::shape_ = Shape{shape_[0], shape_[1]};
+        } else {
+            std::vector<size_t> dims;
+            dims.reserve(Rank);
+            for (size_t i = 0; i < Rank; ++i) {
+                dims.push_back(shape_[i]);
+            }
+            this->base_type::shape_ = Shape(dims);
+        }
+    }
+
+    size_type total_elements_from_shape() const {
+        if constexpr (Rank == 0) {
+            return 1;
+        } else {
+            size_type total = 1;
+            for (size_t i = 0; i < Rank; ++i) {
+                total *= shape_[i];
+            }
+            return total;
+        }
+    }
+
+    void apply_shape(const Shape& expr_shape) {
+        if constexpr (Rank == 0) {
+            sync_base_shape();
+            if (storage_.size() != 1) {
+                storage_.resize(1);
+            }
+            return;
+        }
+
+        if (expr_shape.rank() != Rank) {
+            throw std::invalid_argument("Expression rank does not match tensor rank");
+        }
+
+        bool changed = false;
+        for (size_t i = 0; i < Rank; ++i) {
+            auto dim = static_cast<size_type>(expr_shape[i]);
+            if (shape_[i] != dim) {
+                shape_[i] = dim;
+                changed = true;
+            }
+        }
+
+        sync_base_shape();
+        compute_strides();
+
+        const size_type required = total_elements_from_shape();
+        if (changed || storage_.size() != required) {
+            storage_.resize(required);
+        }
+    }
+
+    void apply_flat_shape(size_type total_elements) {
+        if constexpr (Rank == 0) {
+            sync_base_shape();
+            if (storage_.size() != 1) {
+                storage_.resize(1);
+            }
+            return;
+        }
+
+        if constexpr (Rank >= 1) {
+            shape_[0] = static_cast<size_type>(total_elements);
+            for (size_t i = 1; i < Rank; ++i) {
+                shape_[i] = 1;
+            }
+        }
+
+        sync_base_shape();
+        compute_strides();
+        storage_.resize(total_elements_from_shape());
+    }
+
     template<typename Expr>
     void assign_expression(const Expr& expr) {
         if constexpr (has_shape_method_v<Expr>) {
-            auto expr_shape = expr.shape();
-            // Handle shape conversion based on tensor rank
-            if constexpr (Rank == 1) {
-                if (expr_shape.rank() != 1) {
-                    throw std::invalid_argument("Cannot assign non-1D expression to 1D Tensor");
-                }
-                if (shape_[0] != expr_shape[0]) {
-                    shape_[0] = expr_shape[0];
-                    compute_strides();
-                    storage_.resize(size());
-                }
-            } else if constexpr (Rank == 2) {
-                if (expr_shape.rank() != 2) {
-                    throw std::invalid_argument("Cannot assign non-2D expression to 2D Tensor");
-                }
-                if (shape_[0] != expr_shape[0] || shape_[1] != expr_shape[1]) {
-                    shape_[0] = expr_shape[0];
-                    shape_[1] = expr_shape[1];
-                    compute_strides();
-                    storage_.resize(size());
-                }
-            } else {
-                // For higher rank, we accept flattened expressions
-                if (size() != expr_shape.size()) {
-                    throw std::invalid_argument("Expression size must match tensor size for higher rank tensors");
-                }
-            }
+            apply_shape(expr.shape());
+        } else if constexpr (has_expression_size_method_v<Expr>) {
+            apply_flat_shape(expr.expression_size());
+        } else {
+            apply_flat_shape(expr.size());
         }
-        
-        // Use expression template evaluation
+
         if constexpr (has_eval_to_method_v<Expr>) {
             expr.eval_to(*this);
         } else {
@@ -923,71 +974,68 @@ auto make_tensor_expression(Tensor<T, Rank, S>&& tensor) {
     return TerminalExpression<Tensor<T, Rank, S>>(std::move(tensor));
 }
 
-// === Eager Non-member Operations matching unit tests ===
+namespace detail {
 
-// Element-wise addition producing a concrete Tensor
-template<typename T1, typename T2, size_t Rank, typename S1, typename S2>
-auto operator+(const Tensor<T1, Rank, S1>& a, const Tensor<T2, Rank, S2>& b) {
-    using result_type = std::common_type_t<T1, T2>;
-    bool dims_match = true;
-    for (size_t d = 0; d < Rank; ++d) {
-        if (a.size(d) != b.size(d)) { dims_match = false; break; }
-    }
-    Tensor<result_type, Rank> result(a.dims());
-    if (dims_match) {
-        const auto n = a.size();
-        for (size_t i = 0; i < n; ++i) {
-            result[i] = static_cast<result_type>(a[i]) + static_cast<result_type>(b[i]);
-        }
-    } else {
-        // Defer error to copy/evaluation to align with expression tests
-        result.mark_invalid_expression();
-    }
-    return result;
+template<typename T>
+struct is_tensor_decay : is_tensor<std::remove_cv_t<std::remove_reference_t<T>>> {};
+
+template<typename T>
+inline constexpr bool is_tensor_decay_v = is_tensor_decay<T>::value;
+
+template<typename Scalar>
+inline constexpr bool is_valid_tensor_scalar_v =
+    std::is_arithmetic_v<std::decay_t<Scalar>> ||
+    is_complex_number_v<std::decay_t<Scalar>> ||
+    is_dual_number_v<std::decay_t<Scalar>>;
+
+template<typename Op, typename Left, typename Right>
+auto make_tensor_binary_expression(Left&& left, Right&& right) {
+    auto left_expr = make_tensor_expression(std::forward<Left>(left));
+    auto right_expr = make_tensor_expression(std::forward<Right>(right));
+    return make_binary_expression<Op>(std::move(left_expr), std::move(right_expr));
 }
 
-// Element-wise subtraction producing a concrete Tensor
-template<typename T1, typename T2, size_t Rank, typename S1, typename S2>
-auto operator-(const Tensor<T1, Rank, S1>& a, const Tensor<T2, Rank, S2>& b) {
-    using result_type = std::common_type_t<T1, T2>;
-    bool dims_match = true;
-    for (size_t d = 0; d < Rank; ++d) {
-        if (a.size(d) != b.size(d)) { dims_match = false; break; }
-    }
-    Tensor<result_type, Rank> result(a.dims());
-    if (dims_match) {
-        const auto n = a.size();
-        for (size_t i = 0; i < n; ++i) {
-            result[i] = static_cast<result_type>(a[i]) - static_cast<result_type>(b[i]);
-        }
-    } else {
-        result.mark_invalid_expression();
-    }
-    return result;
+} // namespace detail
+
+// Tensor-Tensor binary operations (lazy evaluation)
+template<typename LHS, typename RHS,
+         std::enable_if_t<detail::is_tensor_decay_v<LHS> && detail::is_tensor_decay_v<RHS>, int> = 0>
+auto operator+(LHS&& lhs, RHS&& rhs) {
+    return detail::make_tensor_binary_expression<TypedOpWrapper<ops::plus>>(
+        std::forward<LHS>(lhs), std::forward<RHS>(rhs));
 }
 
-// Scalar-tensor multiplication (element-wise)
-template<typename T, size_t Rank, typename S, typename Scalar>
-auto operator*(const Scalar& s, const Tensor<T, Rank, S>& t)
-    -> std::enable_if_t<std::is_arithmetic_v<Scalar>, Tensor<std::common_type_t<T, Scalar>, Rank>>
-{
-    using result_type = std::common_type_t<T, Scalar>;
-    Tensor<result_type, Rank> result(t.dims());
-    const auto n = t.size();
-    for (size_t i = 0; i < n; ++i) {
-        result[i] = static_cast<result_type>(s) * static_cast<result_type>(t[i]);
-    }
-    return result;
+template<typename LHS, typename RHS,
+         std::enable_if_t<detail::is_tensor_decay_v<LHS> && detail::is_tensor_decay_v<RHS>, int> = 0>
+auto operator-(LHS&& lhs, RHS&& rhs) {
+    return detail::make_tensor_binary_expression<TypedOpWrapper<ops::minus>>(
+        std::forward<LHS>(lhs), std::forward<RHS>(rhs));
 }
 
-template<typename T, size_t Rank, typename S, typename Scalar>
-auto operator*(const Tensor<T, Rank, S>& t, const Scalar& s)
-    -> std::enable_if_t<std::is_arithmetic_v<Scalar>, Tensor<std::common_type_t<T, Scalar>, Rank>>
-{
-    return s * t;
+// Tensor-scalar element-wise operations (lazy evaluation)
+template<typename Scalar, typename TensorType,
+         std::enable_if_t<!detail::is_tensor_decay_v<Scalar> &&
+                          detail::is_tensor_decay_v<TensorType> &&
+                          detail::is_valid_tensor_scalar_v<Scalar>, int> = 0>
+auto operator*(Scalar&& scalar, TensorType&& tensor) {
+    auto shape = tensor.shape();
+    auto tensor_expr = make_tensor_expression(std::forward<TensorType>(tensor));
+    auto scalar_expr = make_scalar_expression(std::forward<Scalar>(scalar), shape);
+    return make_binary_expression<TypedOpWrapper<ops::multiplies>>(
+        std::move(scalar_expr), std::move(tensor_expr));
 }
 
-// Remove expression-template variants to prefer eager operators above
+template<typename TensorType, typename Scalar,
+         std::enable_if_t<detail::is_tensor_decay_v<TensorType> &&
+                          !detail::is_tensor_decay_v<Scalar> &&
+                          detail::is_valid_tensor_scalar_v<Scalar>, int> = 0>
+auto operator*(TensorType&& tensor, Scalar&& scalar) {
+    auto shape = tensor.shape();
+    auto tensor_expr = make_tensor_expression(std::forward<TensorType>(tensor));
+    auto scalar_expr = make_scalar_expression(std::forward<Scalar>(scalar), shape);
+    return make_binary_expression<TypedOpWrapper<ops::multiplies>>(
+        std::move(tensor_expr), std::move(scalar_expr));
+}
 
 // === Tensor View Classes (Placeholder) ===
 
