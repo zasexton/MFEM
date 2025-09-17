@@ -15,7 +15,7 @@ Build a high-performance, extensible material model infrastructure for multiphys
 ## 📁 Module Structure
 
 ```
-fem/material/
+materials/
 ├── base/                    # Core material interfaces
 │   ├── material_base.h      # Base material class
 │   ├── material_point.h     # Material state at integration point
