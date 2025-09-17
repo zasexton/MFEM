@@ -34,9 +34,8 @@ plugin_repository.hpp // Plugin repository management
 ```cpp
 plugin_interface.hpp // Stable API interfaces
 service_locator.hpp  // Service discovery
-message_bus.hpp      // Inter-plugin messaging
 shared_context.hpp   // Shared data between plugins
-plugin_events.hpp    // Plugin event system
+plugin_event_adapters.hpp // Bridges into the core events bus
 ```
 
 ### Loading & Lifecycle
@@ -65,6 +64,8 @@ plugin_manifest.hpp  // Manifest parsing
 plugin_bundle.hpp    // Plugin packaging
 plugin_tools.hpp     // Development tools
 ```
+
+> **Event Integration**: All plugin messaging routes through the shared `events/` module; plugins do not ship a parallel message bus, but rather adapters and helpers that leverage the existing infrastructure.
 
 ## Detailed Component Specifications
 

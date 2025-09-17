@@ -34,6 +34,8 @@ concurrent_pool.hpp     // Lock-free memory pool
 growing_pool.hpp        // Dynamically growing pool
 ```
 
+> **Thread Safety Note**: These pool implementations—including the concurrent variants—are the single source of truth for pooled allocation inside the core library. The `concurrency/` module reuses them for task scheduling support instead of maintaining parallel implementations.
+
 ### Specialized Containers
 ```cpp
 small_vector.hpp        // Small buffer optimization vector

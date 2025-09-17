@@ -39,6 +39,8 @@ parallel_pipeline.hpp // Parallel stage execution
 error_handler.hpp   // Pipeline error handling
 ```
 
+> **Built on Concurrency**: These workflow pipelines wrap the low-level `concurrency/parallel_pipeline.hpp` primitives to add orchestration concerns (error handling, branching, undo logic) without maintaining a second execution engine.
+
 ### Task Scheduling
 ```cpp
 scheduler.hpp       // Task scheduler interface
