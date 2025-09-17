@@ -122,10 +122,13 @@ numeric/
 │   │   ├── tracking_allocator.h      # Memory debugging
 │   │   └── ad_allocator.h            # Specialized for AD types
 │   │
-│   ├── sparse/                       # Sparse matrix support (PLANNED)
-│   │   ├── formats/
-│   │   ├── operations/
-│   │   └── builders/
+│   ├── sparse/                       # Sparse support utilities (PLANNED)
+│   │   ├── AGENT.md
+│   │   ├── builder.h
+│   │   ├── pattern.h
+│   │   ├── format_conversion.h
+│   │   ├── compress.h
+│   │   └── sparse_view.h
 │   │
 │   ├── block/                        # Block-structured operations (PLANNED)
 │   │   ├── block_operations.h
@@ -146,31 +149,31 @@ numeric/
 │   │   ├── reordering.h
 │   │   └── partitioning.h
 │   │
-│   ├── polynomial/                   # Polynomial operations (PLANNED)
-│   │   ├── quadrature.h
-│   │   ├── legendre.h
-│   │   ├── chebyshev.h
-│   │   └── interpolation.h
-│   │
-│   ├── expressions/                  # Expression templates (PLANNED)
+│   ├── expressions/                  # User-facing expression combinators (PLANNED)
+│   │   ├── AGENT.md
 │   │   ├── expression.h
 │   │   ├── binary_ops.h
 │   │   ├── unary_ops.h
+│   │   ├── fused_ops.h
 │   │   └── evaluation.h
 │   │
-│   ├── operations/                   # Mathematical operations (PLANNED)
+│   ├── operations/                   # Element-wise kernels & reductions (PLANNED)
+│   │   ├── AGENT.md
 │   │   ├── arithmetic.h
 │   │   ├── transcendental.h
 │   │   ├── tensor_contraction.h
 │   │   └── reductions.h
 │   │
-│   ├── linear_algebra/               # Linear algebra operations (PLANNED)
+│   ├── linear_algebra/               # BLAS-level routines & sparse ops (PLANNED)
+│   │   ├── AGENT.md
 │   │   ├── blas_level1.h
 │   │   ├── blas_level2.h
 │   │   ├── blas_level3.h
+│   │   ├── sparse_ops.h
 │   │   └── norms.h
 │   │
-│   ├── decompositions/               # Matrix decompositions (PLANNED)
+│   ├── decompositions/               # Factorization algorithms (PLANNED)
+│   │   ├── AGENT.md
 │   │   ├── lu.h
 │   │   ├── qr.h
 │   │   ├── svd.h
@@ -184,42 +187,68 @@ numeric/
 │   │   ├── newton/
 │   │   └── preconditioners/
 │   │
-│   ├── matrix_free/                  # Matrix-free methods (PLANNED)
+│   ├── backends/                     # Optional acceleration adapters (PLANNED)
+│   │   ├── AGENT.md
+│   │   ├── backend_registry.h
+│   │   ├── blas_backend.h
+│   │   ├── mkl_backend.h
+│   │   └── cuda_backend.h
+│   │
+│   ├── parallel/                     # Numeric-specific concurrency (PLANNED)
+│   │   ├── AGENT.md
+│   │   ├── thread_pool.h
+│   │   ├── parallel_for.h
+│   │   ├── parallel_reduce.h
+│   │   ├── parallel_scan.h
+│   │   └── parallel_assembly.h
+│   │
+│   ├── matrix_free/                  # Matrix-free operators (PLANNED)
+│   │   ├── AGENT.md
 │   │   ├── operator.h
 │   │   ├── sum_factorization.h
+│   │   ├── apply_kernels.h
 │   │   └── matrix_free_preconditioner.h
 │   │
-│   ├── indexing/                     # Indexing and slicing (PLANNED)
+│   ├── indexing/                     # High-level indexing helpers (PLANNED)
+│   │   ├── AGENT.md
 │   │   ├── index.h
-│   │   ├── slice.h
-│   │   └── fancy_indexing.h
+│   │   ├── fancy_indexing.h
+│   │   ├── ellipsis.h
+│   │   └── slice_parser.h
+│   │
+│   ├── math/                         # Scalar math helpers (PLANNED)
+│   │   ├── AGENT.md
+│   │   ├── math_functions.h
+│   │   ├── comparison.h
+│   │   └── polynomial_utils.h
+│   │
+│   ├── diagnostics/                  # Timing & instrumentation (PLANNED)
+│   │   ├── AGENT.md
+│   │   ├── timer.h
+│   │   ├── profiler.h
+│   │   └── instrumentation.h
+│   │
+│   ├── support/                      # Error handling & helpers (PLANNED)
+│   │   ├── AGENT.md
+│   │   ├── error_handling.h
+│   │   ├── assert.h
+│   │   └── scope_guard.h
 │   │
 │   ├── optimization/                 # Optimization algorithms (PLANNED)
 │   │   ├── gradient_descent.h
 │   │   ├── lbfgs.h
 │   │   └── levenberg_marquardt.h
 │   │
-│   ├── parallel/                     # Parallelization support (PLANNED)
-│   │   ├── parallel_for.h
-│   │   ├── parallel_reduce.h
-│   │   ├── parallel_assembly.h
-│   │   └── thread_pool.h
-│   │
 │   ├── io/                           # Input/output (PLANNED)
 │   │   ├── matrix_market.h
 │   │   ├── numpy_format.h
 │   │   └── hdf5_io.h
 │   │
-│   ├── utilities/                    # Utility functions (PLANNED)
-│   │   ├── math_functions.h
-│   │   ├── comparison.h
-│   │   ├── timer.h
-│   │   └── error_handling.h
-│   │
-│   └── backends/                     # External library backends (PLANNED)
-│       ├── blas_backend.h
-│       ├── mkl_backend.h
-│       └── cuda_backend.h
+│   └── polynomial/                   # Polynomial operations (PLANNED)
+│       ├── quadrature.h
+│       ├── legendre.h
+│       ├── chebyshev.h
+│       └── interpolation.h
 │
 ├── tests/                            # Comprehensive testing
 │   ├── CMakeLists.txt
@@ -236,6 +265,17 @@ numeric/
 ```
 
 ## Key Design Features
+
+## Module Relationships & Boundaries
+
+- **Expressions ↔ Base**: `expressions/` composes user-facing expression nodes from the CRTP scaffolding in `base/`. It does not implement kernels; instead it routes evaluation to `operations/` and `linear_algebra/`.
+- **Operations → Linear Algebra → Decompositions**: Element-wise kernels live in `operations/`; BLAS-like routines and sparse operations build on those kernels in `linear_algebra/`; matrix factorizations in `decompositions/` depend on the linear-algebra layer. This layering keeps responsibilities narrow and enables backend swapping.
+- **Backends**: `backends/` supplies adapters for optional acceleration libraries. Other modules interact with accelerators through the backend interfaces, keeping fallback implementations in the main code paths.
+- **Indexing**: `indexing/` offers high-level fancy indexing helpers that translate into the core slice/view infrastructure so vectors, matrices, and tensors share a consistent indexing story.
+- **Parallel & Matrix-Free**: `parallel/` houses the numeric-specific thread pool and parallel algorithms. `matrix_free/` builds on `parallel/` (and the core kernels) to implement matrix-free operators and sum-factorization without duplicating concurrency logic.
+- **Support Modules**: `math/`, `diagnostics/`, and `support/` replace the former catch-all utilities. Math holds scalar helpers, diagnostics contains timing/profiling tools, and support centralizes error handling—keeping each concern isolated.
+- **Solver Boundary**: `solvers/` here provides reusable linear/nonlinear solver components for downstream libraries. FEM-level orchestration, including boundary conditions and full-system coupling, is handled by the top-level `src/solvers/` module.
+- **Parallel Boundary**: Thread-level facilities live in `numeric/parallel/`; accelerator execution policies are delegated to `src/device/`; MPI communication remains in `src/parallel/`.
 
 ### 1. Compositional Automatic Differentiation
 ```cpp
