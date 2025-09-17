@@ -31,3 +31,6 @@ graph/
 ## Notes
 - Keep implementations deterministic where possible for reproducibility.
 - Provide both sequential and parallel variants of algorithms.
+
+## Scope Notes
+- `graph/` is the owner of partitioning, coloring, and reordering algorithms used across the numeric stack. Modules such as `parallel/` should depend on these algorithms rather than reimplementing them. Scheduling and execution policies live in `parallel/`; algorithmic graph logic lives here.

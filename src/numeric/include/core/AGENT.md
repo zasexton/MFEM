@@ -31,9 +31,12 @@ core/
 ├── small_matrix.h      # Small compile-time sized matrices
 ├── small_vector.h      # Small vectors
 ├── sparse_vector.h     # High-level sparse vector interface
-└── sparse_matrix.h     # High-level sparse matrix interface
+├── sparse_matrix.h     # High-level sparse matrix interface
+└── sparse_tensor.h     # Optional: high-level sparse tensor interface (storage in storage/sparse)
 ```
 
 ## Notes
 - Keep container interfaces header-only and constexpr-friendly.
 - Ensure constructors/operators accept a wide range of storage backends.
+-
+- Ownership note: Core does not own sparse storage formats. If `sparse_tensor.h` is provided here, it is a thin, high-level interface that relies on implementations under `storage/sparse/*` (CSR/CSC/COO/hybrid) and views. Core should not reimplement sparse storage mechanics.

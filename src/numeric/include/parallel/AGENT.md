@@ -32,3 +32,6 @@ parallel/
 ## Notes
 - Keep deterministic assembly options for reproducibility.
 - Provide knobs for affinity, grain size, and scheduling policies.
+
+## Scope Notes
+- Partitioning algorithms and ordering heuristics are owned by `graph/` (see `graph/partitioning.h`). If `parallel/partitioning.h` exists, it must be a thin adapter that delegates to `graph/` for algorithmic choices and only exposes scheduling-friendly wrappers; do not duplicate graph logic here.
