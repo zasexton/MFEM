@@ -626,12 +626,16 @@ TEST(DebugStreamTest, RapidToggling) {
     }
 
     // Should only have even-numbered messages
+    // Use more precise matching to avoid "Message 1" matching "Message 10", etc.
+    std::string output = capture.get_output();
     for (int i = 0; i < 100; ++i) {
-        std::string msg = "Message " + std::to_string(i);
+        // Look for "Message N" followed by newline (more precise than substring search)
+        std::string msg_with_newline = "Message " + std::to_string(i) + "\n";
+        bool found = output.find(msg_with_newline) != std::string::npos;
         if (i % 2 == 0) {
-            EXPECT_TRUE(capture.contains(msg));
+            EXPECT_TRUE(found) << "Message " << i << " should be present";
         } else {
-            EXPECT_FALSE(capture.contains(msg));
+            EXPECT_FALSE(found) << "Message " << i << " should NOT be present";
         }
     }
 }

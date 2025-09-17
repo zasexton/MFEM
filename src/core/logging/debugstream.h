@@ -186,6 +186,7 @@ public:
 
     void set_enabled(bool enabled) {
         enabled_.store(enabled);
+        config_.enabled = enabled;  // Keep config in sync
     }
 
     bool is_enabled() const {
@@ -214,6 +215,8 @@ public:
     // Output methods
     DebugStream& operator()(DebugLevel level) {
         current_level_.store(static_cast<int>(level));
+        // Always increment message count for any attempt
+        message_count_.fetch_add(1);
         if (should_log(level)) {
             start_message();
         }
@@ -233,9 +236,16 @@ public:
     DebugStream& operator<<(std::ostream& (*manip)(std::ostream&)) {
         auto level = static_cast<DebugLevel>(current_level_.load());
         if (should_log(level)) {
-            manip(*this);
             if (manip == static_cast<std::ostream& (*)(std::ostream&)>(std::endl)) {
-                end_message();
+                // Write suffix before endl
+                write_footer();
+                manip(*this);
+                // Flush after endl if needed
+                if (config_.auto_flush) {
+                    flush();
+                }
+            } else {
+                manip(*this);
             }
         }
         return *this;
@@ -296,11 +306,11 @@ public:
 private:
     void start_message() {
         write_header();
-        message_count_.fetch_add(1);
+        // Message count is now incremented in operator(), not here
     }
 
     void end_message() {
-        write_footer();
+        // Deprecated - footer is now written before endl in operator<<
         if (config_.auto_flush) {
             flush();
         }
@@ -308,11 +318,22 @@ private:
 
     void write_timestamp() {
         auto now = std::chrono::system_clock::now();
-        auto ms_since_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()).count();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
 
-        // Write directly to base stream to avoid recursion - simplified timestamp
-        static_cast<std::ostream&>(*this) << "[" << ms_since_epoch << "ms] ";
+        // Format: [YYYY-MM-DD HH:MM:SS.mmm]
+        std::tm tm = *std::localtime(&time_t);
+        static_cast<std::ostream&>(*this) << "["
+            << std::setfill('0')
+            << std::setw(4) << (tm.tm_year + 1900) << "-"
+            << std::setw(2) << (tm.tm_mon + 1) << "-"
+            << std::setw(2) << tm.tm_mday << " "
+            << std::setw(2) << tm.tm_hour << ":"
+            << std::setw(2) << tm.tm_min << ":"
+            << std::setw(2) << tm.tm_sec << "."
+            << std::setw(3) << ms.count()
+            << "] ";
     }
 
     void write_thread_id() {
