@@ -675,16 +675,20 @@ fem/
 ├── python/                         # Python bindings for FEM (pybind11-based)
 │   ├── CMakeLists.txt              # Build configuration for Python module
 │   ├── module.cpp                  # Top-level pybind11 module definition
+│   ├── core_bindings.cpp           # FEM core utilities (traits, performance counters)
 │   ├── element_bindings.cpp        # Element/topology bindings
-│   ├── node_bindings.cpp           # Node/DOF management bindings
-│   ├── shape_bindings.cpp          # Shape function bindings
-│   ├── field_bindings.cpp          # Field variable bindings
+│   ├── node_bindings.cpp           # Node/DOF connectivity and mesh relations
+│   ├── dof_bindings.cpp            # DOF management, numbering, and sparsity pattern inference
+│   ├── constraints_bindings.cpp    # Constraint interfaces (Dirichlet, MPC, etc.)
+│   ├── equation_systems_bindings.cpp # Equation system assembly/preallocation interfaces
+│   ├── shape_bindings.cpp          # Shape functions and basis evaluation
 │   ├── integration_bindings.cpp    # Quadrature/integration bindings
-│   ├── assembly_bindings.cpp       # Assembly helpers (maps lowered forms to element assembly)
-│   ├── formulation_bindings.cpp    # Weak-form assembly wrappers (consume variational outputs)
-│   ├── solver_bindings.cpp         # Bridges to top-level solvers (assembly/solve entry points)
-│   ├── materials_bindings.cpp      # Optional bridge to top-level materials library
-│   ├── utilities_bindings.cpp      # Diagnostics/profiling/IO helpers
+│   ├── field_bindings.cpp          # Field variables and operations
+│   ├── boundary_bindings.cpp       # Boundary condition wrappers
+│   ├── spaces_bindings.cpp         # Function space adapters (bridge fem/spaces)
+│   ├── variational_bindings.cpp    # DSL/IR/lowering accessors
+│   ├── formulation_bindings.cpp    # Formulation wrappers consuming variational outputs
+│   ├── utilities_bindings.cpp      # FEM-specific diagnostics/profiling helpers
 │   └── __init__.py                 # Python package initializer
 │
 ├── special/                         # Special FEM methods
