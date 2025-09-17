@@ -6,14 +6,19 @@
 #include <cassert>
 #include <stdexcept>
 #include <format>
-
-#include "logger.h"
-#include "loggermanager.h"
+#include <functional>
+#include <source_location>
+#include <cstdio>
 
 namespace fem::core::logging {
 
 /**
  * @brief Assertion handler with logging integration
+ *
+ * This module is designed to be standalone to allow unit testing without
+ * requiring the full logging infrastructure. When the logger is fully
+ * integrated, the fprintf calls can be replaced with logger->fatal() and
+ * logger->error() calls.
  *
  * Provides assertion macros that integrate with the logging system.
  * Failed assertions are logged before terminating or throwing.
@@ -56,15 +61,14 @@ namespace fem::core::logging {
                 const std::string& message,
                 const std::source_location& location) {
 
-            // Get assert logger
-            auto logger = get_logger("fem.assert");
-
-            // Log the failure
-            logger->fatal("Assertion failed: {}\n"
-                          "  Message: {}\n"
-                          "  Location: {}:{}:{}\n"
-                          "  Function: {}",
-                          condition, message,
+            // Output assertion failure
+            // Note: When logger infrastructure is fully integrated, this will use the logger
+            // For now, use stderr for standalone testing
+            std::fprintf(stderr, "[FATAL] Assertion failed: %s\n"
+                          "  Message: %s\n"
+                          "  Location: %s:%u:%u\n"
+                          "  Function: %s\n",
+                          condition.c_str(), message.c_str(),
                           location.file_name(), location.line(), location.column(),
                           location.function_name());
 
@@ -105,12 +109,12 @@ namespace fem::core::logging {
                 const std::string& message,
                 const std::source_location& location) {
 
-            auto logger = get_logger("fem.assert");
-
-            logger->error("Verification failed: {}\n"
-                          "  Message: {}\n"
-                          "  Location: {}:{}",
-                          condition, message,
+            // Output verification failure
+            // Note: When logger infrastructure is fully integrated, this will use the logger
+            std::fprintf(stderr, "[ERROR] Verification failed: %s\n"
+                          "  Message: %s\n"
+                          "  Location: %s:%u\n",
+                          condition.c_str(), message.c_str(),
                           location.file_name(), location.line());
 
             return false;
@@ -159,6 +163,38 @@ namespace fem::core::logging {
 } // namespace fem::core::logging
 
 // Assertion macros
+
+// Undefine any conflicting macros from debug.h if they exist
+#ifdef FEM_ASSERT
+#undef FEM_ASSERT
+#endif
+#ifdef FEM_ASSERT_ALWAYS
+#undef FEM_ASSERT_ALWAYS
+#endif
+#ifdef FEM_VERIFY
+#undef FEM_VERIFY
+#endif
+#ifdef FEM_VERIFY_DEBUG
+#undef FEM_VERIFY_DEBUG
+#endif
+#ifdef FEM_UNREACHABLE
+#undef FEM_UNREACHABLE
+#endif
+#ifdef FEM_NOT_IMPLEMENTED
+#undef FEM_NOT_IMPLEMENTED
+#endif
+#ifdef FEM_STATIC_ASSERT
+#undef FEM_STATIC_ASSERT
+#endif
+#ifdef FEM_PRECONDITION
+#undef FEM_PRECONDITION
+#endif
+#ifdef FEM_POSTCONDITION
+#undef FEM_POSTCONDITION
+#endif
+#ifdef FEM_INVARIANT
+#undef FEM_INVARIANT
+#endif
 
 /**
  * @brief Debug assertion - only active in debug builds
