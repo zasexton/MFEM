@@ -97,18 +97,109 @@ fem/material/
 │   ├── mfront_interface.h   # MFront integration
 │   └── constitutive_api.h   # Generic API
 │
-├── utilities/               # Support utilities
-│   ├── tensor_operations.h  # Tensor algebra
-│   ├── invariants.h         # Stress/strain invariants
+├── utilities/               # Support utilities (thin wrappers)
+│   ├── measures.h           # Stress/strain measure conversions (builds on numeric)
 │   ├── transformations.h    # Coordinate transformations
-│   ├── units.h              # Unit conversions
-│   └── verification.h       # Tangent checking
+│   ├── units.h              # Unit conversions (optional; prefer core units if available)
+│   └── verification.h       # Tangent checking (uses numeric/autodiff)
 │
 └── database/                # Material database
     ├── material_library.h    # Predefined materials
     ├── property_database.h   # Material properties DB
     └── calibration_data.h    # Experimental data storage
 ```
+
+> Note on examples: Code snippets in this document use generic placeholders for device annotations (e.g., `DEVICE_FUNC`) and tensor types. In implementation, use the project’s numeric containers and the appropriate device annotations from the device layer.
+
+## Library Dependencies & Boundaries
+
+Materials is a standalone shared library that reuses other high‑level libraries instead of duplicating them:
+
+| Dependency | Type | Purpose | Notes |
+|------------|------|---------|-------|
+| `numeric`  | public | Containers (vector/matrix/tensor), autodiff, tensor ops, invariants, linear algebra | All math lives here; no reimplementation in materials |
+| `device`   | public | Execution spaces, device annotations, kernel launch helpers, host–device buffers | Device code must be allocation‑free and trivially copyable |
+| `core`     | private | Factory/registry, configuration, serialization, diagnostics | Do not create a parallel config/logging stack in materials |
+| `assembly` | consumer | Calls materials from element kernels | Materials expose evaluate() only; no element loops here |
+| `io_formats` | optional | Persist material properties/calibration data | Materials provide schemas/adapters, not parsers |
+
+Non‑dependencies: `physics`, `coupling`, `analysis`. Physics pass field values via `MaterialInputs`; materials return constitutive responses and tangents.
+
+## Reuse‑Over‑Reimplement Checklist
+
+- Use `numeric/operations` and `numeric/math` for tensor algebra, invariants, and spectral utilities.
+- Reuse `numeric/autodiff` for verification/production tangents; do not embed a separate AD machinery.
+- Use `device` for kernels/launch; no device wrappers inside materials.
+- For property I/O, prefer `io_formats` or application code; materials define property schemas only.
+- For optimization/calibration, rely on `numeric/optimization`; materials expose property accessors and residual/Jacobian callbacks.
+
+## Unified Evaluation Contracts
+
+To support multiphysics consistently, all material models share a common evaluation interface with structured inputs, outputs, and coupled tangents.
+
+```cpp
+// Inputs available to every material (fill only the fields you need)
+struct MaterialInputs {
+    // Kinematics
+    Tensor2 F;          // deformation gradient (finite strain)
+    SymTensor2 eps;     // small-strain tensor (small strain)
+    Tensor2 L;          // velocity gradient (rate-dependent)
+    // Field variables
+    double T = 293.15;  // temperature
+    double p = 0.0;     // pore pressure
+    Vector3 E;          // electric field
+    Vector3 B;          // magnetic flux density
+    double c = 0.0;     // concentration/chemical potential proxy
+    // Gradients (for nonlocal/phase-field)
+    Vector3 grad_T;
+    Vector3 grad_c;
+    // Time increment
+    double dt = 0.0;
+    // Regime flags
+    enum class Kinematics { SmallStrain, FiniteStrain } kin = Kinematics::FiniteStrain;
+    enum class Domain { PlaneStress, PlaneStrain, ThreeD } domain = Domain::ThreeD;
+    bool compressible = true;
+};
+
+// Outputs to be consumed by assembly
+struct MaterialOutputs {
+    Tensor2 P;          // first Piola-Kirchhoff (finite strain) or Cauchy (small strain)
+    Tensor4 C;          // consistent tangent in the chosen stress/strain measure
+    double psi = 0.0;   // free energy density (optional)
+    Vector3 q;          // heat flux (optional)
+    Vector3 j;          // mass/charge flux (optional)
+};
+
+// Block-structured coupled tangents (optional, when multiphysics present)
+struct TangentBlocks {
+    Tensor4 dP_dEps;    // ∂σ/∂ε or ∂P/∂F (consistent measure)
+    Tensor2 dP_dT;      // thermal stress tangent
+    Tensor2 dP_dp;      // poroelastic coupling
+    Matrix dFlux_dGrad; // generic flux vs gradient (Fourier/Fick)
+    // Extend with other blocks as needed; unused blocks can be empty.
+};
+
+// Canonical evaluate contract
+template<class State>
+void evaluate(const MaterialInputs& in, State& state, MaterialOutputs& out,
+              TangentBlocks* tb = nullptr) const;
+```
+
+Guidelines:
+- Choose one kinematics regime per model instance (small vs finite strain) and document the returned stress/tangent measures.
+- If multiple fields are coupled, populate `TangentBlocks` consistently so global assembly can place blocks without guesswork.
+
+## Packaging & Build
+
+- Build materials as an independent shared library that publicly depends on `numeric` and `device`, and privately on `core`.
+- Export only public headers needed by consumers (model interfaces, `MaterialInputs/Outputs/TangentBlocks`, adapters). Keep internal kernels/state manifests private.
+
+## Kinematics and Regimes
+
+- Small-strain vs finite-strain: expose a model trait or configuration setting and use a consistent stress/strain measure (e.g., Cauchy/ε for small strain, P/F for finite strain). Provide helpers to convert measures where necessary.
+- Plane stress/plane strain/3D: declare domain in `MaterialInputs` and implement enforcement (e.g., plane stress iterative enforcement of σ_zz = 0).
+- Inelastic kinematics: for plasticity/viscoplasticity adopt multiplicative split F = Fe·Fp and store Fe, Fp (or their invariants) in state. Provide invariant helpers (I1, J2, etc.) and spectral utilities for anisotropy.
+
 
 ## Core Design Patterns
 
@@ -121,7 +212,7 @@ class MaterialModel {
 public:
     // Interface that derived classes must implement
     template<typename StressType, typename StrainType>
-    EIGEN_DEVICE_FUNC inline void compute_stress(
+    DEVICE_FUNC inline void compute_stress(
         const StrainType& strain,
         StateType& state,
         StressType& stress) const {
@@ -130,7 +221,7 @@ public:
     
     // Tangent computation with automatic differentiation option
     template<typename TangentType>
-    EIGEN_DEVICE_FUNC inline void compute_tangent(
+    DEVICE_FUNC inline void compute_tangent(
         const StateType& state,
         TangentType& tangent) const {
         static_cast<const Derived*>(this)->compute_tangent_impl(state, tangent);
@@ -144,7 +235,7 @@ class NeoHookean : public MaterialModel<NeoHookean<ScalarType>,
     using State = NeoHookeanState<ScalarType>;
     
     template<typename StressType, typename StrainType>
-    EIGEN_DEVICE_FUNC inline void compute_stress_impl(
+    DEVICE_FUNC inline void compute_stress_impl(
         const StrainType& F,  // Deformation gradient
         State& state,
         StressType& P) const { // First Piola-Kirchhoff stress
@@ -244,7 +335,7 @@ class MaterialPointArray {
     DeviceArray<ScalarType> state_data_;  // All history variables
     
 public:
-    EIGEN_DEVICE_FUNC MaterialPointView<ScalarType, Dim> 
+    DEVICE_FUNC MaterialPointView<ScalarType, Dim> 
     operator[](int idx) {
         return MaterialPointView<ScalarType, Dim>(
             &F_data_[idx * Dim * Dim],
@@ -254,6 +345,16 @@ public:
     }
 };
 ```
+
+State update discipline:
+- Provide a two-phase update API: `begin_trial()` to write trial history variables; `accept()` to commit at convergence; `reject()` to roll back on line-search failure. This guarantees consistent states across Newton iterations.
+- Prefer compile-time sized state where feasible; otherwise maintain a manifest that maps indices to named variables to keep SoA layouts stable and versionable.
+
+## Property System Enhancements
+
+- Support scalar, vector, and tensor-valued properties with clear units. Include orientation frames for anisotropic materials.
+- Allow temperature/field-dependent property curves with unit-aware evaluation and bounds checking.
+- Provide calibration hooks so `database/` and `optimization/` can drive parameter identification (cost functions, priors, constraints).
 
 ### 4. **Multiphysics Coupling Interface**
 
@@ -298,6 +399,10 @@ private:
 };
 ```
 
+Coupling specifics:
+- Provide reference coupling terms (e.g., thermal stresses, Biot poroelastic coupling, electro/magnetostriction) and populate the appropriate `TangentBlocks` entries.
+- Expose field sensitivities via `MaterialOutputs` or a dedicated API to streamline block assembly in global systems.
+
 ### 5. **GPU Material Evaluation**
 
 ```cpp
@@ -337,6 +442,11 @@ public:
     }
 };
 ```
+
+Device/parallel requirements:
+- No dynamic allocation or virtual dispatch in device code. Use trivially copyable functors and pre-sized SoA buffers.
+- Define memory layout and alignment guarantees; ensure coalesced access patterns (document indexing formulas).
+- Batch evaluation by material type where possible to improve SIMD and cache efficiency.
 
 ### 6. **History Variable Management**
 
@@ -544,6 +654,13 @@ public:
 };
 ```
 
+## Cross-Module Dependencies
+
+- Depends on `src/numeric` for containers, autodiff types, and tensor utilities.
+- Uses `src/device` for device annotations and execution policies.
+- Integrates with `src/assembly` for element-level integration and global assembly.
+- May use `src/core` factory/configuration helpers. Materials should not depend on physics modules; physics supply field values via `MaterialInputs`.
+
 ### Factory Registration
 
 ```cpp
@@ -583,6 +700,13 @@ public:
 REGISTER_MATERIAL(NeoHookean, "NeoHookean")
 REGISTER_MATERIAL(VonMisesPlasticity, "VonMises")
 ```
+
+## External Interfaces and Adapters
+
+Adapters normalize external material interfaces (UMAT/MFront/Python) into the unified contract:
+- Map external inputs/outputs into `MaterialInputs`/`MaterialOutputs` consistently.
+- Provide configuration-time dynamic selection; evaluation-time paths must be static and allocation-free for performance.
+- Python materials are for prototyping and validation, not hot loops.
 
 ## Performance Optimization Strategies
 
@@ -629,6 +753,24 @@ class TensorExpression {
 };
 ```
 
+## Return Mapping and Consistent Tangents
+
+Standardize plasticity/viscoplasticity interfaces:
+- Trial state computation, yield/check, projection/return mapping, and consistent tangent formation.
+- Provide convergence safeguards, optional line search, and robust stopping criteria.
+- Encapsulate hardening laws as interchangeable policies.
+
+## Automatic Differentiation Integration
+
+Use AD (numeric/autodiff) for tangent verification and, where feasible, production tangents. Document when analytical tangents are recommended (e.g., stiff inelastic regimes). Provide switches to compare AD vs analytical during testing.
+
+## Nonlocal / Gradient-Enhanced Models
+
+For damage/phase-field and other gradient-enhanced materials:
+- Accept and use field gradients (e.g., ∇c, ∇T) from `MaterialInputs`.
+- Support neighborhood-based nonlocal averaging (element patch or graph neighborhoods) via extension points.
+- Clarify communication needs for assembly so neighboring data is available.
+
 ## Testing Infrastructure
 
 ```cpp
@@ -645,11 +787,15 @@ protected:
     }
     
     void test_tangent_consistency() {
-        // Tangent verification
+        // Tangent verification (multi-field): check all coupled blocks
     }
     
     void test_convergence() {
         // Newton convergence with material tangent
+    }
+    
+    void test_gpu_parity() {
+        // CPU vs GPU evaluation parity within tolerances
     }
 };
 
