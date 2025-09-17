@@ -672,6 +672,20 @@ fem/
 │   ├── error_indicator.hpp         # Error indicators
 │   └── effectivity_index.hpp       # Effectivity computation
 │
+├── python/                         # Python bindings for FEM (pybind11-based)
+│   ├── CMakeLists.txt              # Build configuration for Python module
+│   ├── module.cpp                  # Top-level pybind11 module definition
+│   ├── element_bindings.cpp        # Element/topology bindings
+│   ├── mesh_bindings.cpp           # Mesh/node/DOF bindings
+│   ├── shape_bindings.cpp          # Shape function bindings
+│   ├── field_bindings.cpp          # Field variable bindings
+│   ├── integration_bindings.cpp    # Quadrature/integration bindings
+│   ├── formulation_bindings.cpp    # Weak-form assembly wrappers (consume variational outputs)
+│   ├── solver_bindings.cpp         # Delegates to top-level solvers (assembly/solve entry points)
+│   ├── materials_bindings.cpp      # Optional bridge to materials library
+│   ├── utilities_bindings.cpp      # Diagnostics/profiling/IO helpers
+│   └── __init__.py                 # Python package initializer
+│
 ├── special/                         # Special FEM methods
 │   ├── xfem/                       # Extended FEM
 │   │   ├── level_set.hpp
