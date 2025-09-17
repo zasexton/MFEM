@@ -20,6 +20,7 @@
 #include <array>
 #include <type_traits>
 #include <vector>
+#include <optional>
 
 // Detection idiom for SFINAE (reuse from vector.h and matrix.h)
 namespace fem::numeric::detail {
@@ -73,7 +74,8 @@ namespace fem::numeric {
 
 // Forward declarations
 template<typename T, size_t Rank> class TensorView;
-template<typename T, size_t Rank> class TensorSlice;
+template<typename T, size_t Rank>
+using TensorSlice = TensorView<T, Rank>;
 
 /**
  * @brief N-dimensional tensor class for numerical computing
@@ -406,13 +408,23 @@ public:
     template<typename... Args,
              std::enable_if_t<!detail::all_integral_v<Args...>, int> = 0>
     view_type operator()(Args&&... args) {
-        return view(make_multi_index(std::forward<Args>(args)...));
+        if constexpr (sizeof...(Args) == 1 &&
+                      (std::is_same_v<std::decay_t<Args>, MultiIndex> && ...)) {
+            return view(std::forward<Args>(args)...);
+        } else {
+            return view(make_multi_index(std::forward<Args>(args)...));
+        }
     }
 
     template<typename... Args,
              std::enable_if_t<!detail::all_integral_v<Args...>, int> = 0>
     const_view_type operator()(Args&&... args) const {
-        return view(make_multi_index(std::forward<Args>(args)...));
+        if constexpr (sizeof...(Args) == 1 &&
+                      (std::is_same_v<std::decay_t<Args>, MultiIndex> && ...)) {
+            return view(std::forward<Args>(args)...);
+        } else {
+            return view(make_multi_index(std::forward<Args>(args)...));
+        }
     }
 
     // === Element Access ===
@@ -453,13 +465,17 @@ public:
     /**
      * @brief Access element without bounds checking
      */
-    template<typename... Indices>
+    template<typename... Indices,
+             std::enable_if_t<(sizeof...(Indices) == Rank) && detail::all_integral_v<Indices...>, int> = 0>
     inline reference operator()(Indices... indices) noexcept {
+        static_assert(sizeof...(indices) == Rank, "Number of indices must match tensor rank");
         return storage_[linear_index(indices...)];
     }
-    
-    template<typename... Indices>
+
+    template<typename... Indices,
+             std::enable_if_t<(sizeof...(Indices) == Rank) && detail::all_integral_v<Indices...>, int> = 0>
     inline const_reference operator()(Indices... indices) const noexcept {
+        static_assert(sizeof...(indices) == Rank, "Number of indices must match tensor rank");
         return storage_[linear_index(indices...)];
     }
     
@@ -933,7 +949,11 @@ private:
         }
 
         auto ptr = tensor.data();
-        return TensorView<view_value, Rank>(ptr, std::move(dims), std::move(stride_vec));
+        std::vector<typename TensorView<view_value, Rank>::index_map_type> index_maps(dims.size());
+        return TensorView<view_value, Rank>(ptr,
+                                            std::move(dims),
+                                            std::move(stride_vec),
+                                            std::move(index_maps));
     }
 
     template<typename Self>
@@ -961,8 +981,10 @@ private:
 
         std::vector<size_type> out_shape;
         std::vector<std::ptrdiff_t> out_strides;
+        std::vector<typename TensorView<view_value, Rank>::index_map_type> index_maps;
         out_shape.reserve(components.size() + (base_rank > components.size() ? base_rank - components.size() : 0));
         out_strides.reserve(out_shape.capacity());
+        index_maps.reserve(out_shape.capacity());
 
         std::ptrdiff_t offset = 0;
         size_t src_dim = 0;
@@ -971,6 +993,7 @@ private:
             if (std::holds_alternative<NewAxis>(component)) {
                 out_shape.push_back(1);
                 out_strides.push_back(0);
+                index_maps.emplace_back(std::nullopt);
                 continue;
             }
 
@@ -984,6 +1007,7 @@ private:
             if (std::holds_alternative<All>(component)) {
                 out_shape.push_back(dim_size);
                 out_strides.push_back(stride);
+                index_maps.emplace_back(std::nullopt);
                 src_dim++;
             } else if (std::holds_alternative<Slice>(component)) {
                 const auto& slice = std::get<Slice>(component);
@@ -992,6 +1016,7 @@ private:
                 out_shape.push_back(count);
                 out_strides.push_back(stride * normalized_slice.step());
                 offset += static_cast<std::ptrdiff_t>(normalized_slice.start()) * stride;
+                index_maps.emplace_back(std::nullopt);
                 src_dim++;
             } else if (std::holds_alternative<std::ptrdiff_t>(component)) {
                 std::ptrdiff_t idx = std::get<std::ptrdiff_t>(component);
@@ -1005,7 +1030,36 @@ private:
                 src_dim++;
             } else if (std::holds_alternative<std::vector<std::ptrdiff_t>>(component) ||
                        std::holds_alternative<std::vector<bool>>(component)) {
-                throw std::invalid_argument("Fancy indexing is not yet supported for Tensor views");
+                std::vector<size_type> mapped_indices;
+                if (std::holds_alternative<std::vector<std::ptrdiff_t>>(component)) {
+                    const auto& raw = std::get<std::vector<std::ptrdiff_t>>(component);
+                    mapped_indices.reserve(raw.size());
+                    for (auto idx : raw) {
+                        if (idx < 0) {
+                            idx += static_cast<std::ptrdiff_t>(dim_size);
+                        }
+                        if (idx < 0 || idx >= static_cast<std::ptrdiff_t>(dim_size)) {
+                            throw std::out_of_range("Tensor fancy index out of range");
+                        }
+                        mapped_indices.push_back(static_cast<size_type>(idx));
+                    }
+                } else {
+                    const auto& mask = std::get<std::vector<bool>>(component);
+                    if (mask.size() != dim_size) {
+                        throw std::invalid_argument("Boolean mask size mismatch for tensor axis");
+                    }
+                    mapped_indices.reserve(mask.size());
+                    for (size_type i = 0; i < mask.size(); ++i) {
+                        if (mask[i]) {
+                            mapped_indices.push_back(i);
+                        }
+                    }
+                }
+
+                out_shape.push_back(mapped_indices.size());
+                out_strides.push_back(stride);
+                index_maps.emplace_back(std::move(mapped_indices));
+                src_dim++;
             } else {
                 throw std::invalid_argument("Unsupported tensor index type");
             }
@@ -1014,11 +1068,15 @@ private:
         while (src_dim < base_rank) {
             out_shape.push_back(dims[src_dim]);
             out_strides.push_back(base_strides[src_dim]);
+            index_maps.emplace_back(std::nullopt);
             src_dim++;
         }
 
         auto ptr = tensor.data() + offset;
-        return TensorView<view_value, Rank>(ptr, std::move(out_shape), std::move(out_strides));
+        return TensorView<view_value, Rank>(ptr,
+                                            std::move(out_shape),
+                                            std::move(out_strides),
+                                            std::move(index_maps));
     }
 
     template<typename... Args>
@@ -1238,10 +1296,10 @@ auto operator*(TensorType&& tensor, Scalar&& scalar) {
 
 // === Tensor View Classes ===
 
-template<typename Derived>
+template<typename Derived, typename ValueType>
 class TensorViewBase : public ExpressionBase<Derived> {
 public:
-    using value_type = typename Derived::value_type;
+    using value_type = ValueType;
 
     Shape shape() const { return static_cast<const Derived&>(*this).shape_impl(); }
     size_t size() const noexcept { return static_cast<const Derived&>(*this).size_impl(); }
@@ -1252,7 +1310,7 @@ public:
 };
 
 template<typename T, size_t Rank>
-class TensorView : public TensorViewBase<TensorView<T, Rank>> {
+class TensorView : public TensorViewBase<TensorView<T, Rank>, std::remove_const_t<T>> {
 public:
     using value_type = std::remove_const_t<T>;
     using pointer = std::conditional_t<std::is_const_v<T>, const value_type*, value_type*>;
@@ -1263,12 +1321,22 @@ public:
 
     TensorView() = default;
 
+    using index_map_type = std::optional<std::vector<size_type>>;
+
     TensorView(pointer data,
                std::vector<size_type> shape,
-               std::vector<difference_type> strides)
+               std::vector<difference_type> strides,
+               std::vector<index_map_type> index_maps = {})
         : data_(data),
           shape_(std::move(shape)),
-          strides_(std::move(strides)) {}
+          strides_(std::move(strides)),
+          index_maps_(index_maps.empty()
+                          ? std::vector<index_map_type>(shape_.size())
+                          : std::move(index_maps)) {
+        if (index_maps_.size() != shape_.size()) {
+            throw std::invalid_argument("TensorView index map size must match shape rank");
+        }
+    }
 
     pointer data() const noexcept { return data_; }
 
@@ -1340,6 +1408,11 @@ public:
         if (shape_.empty()) { return true; }
         // Vectorizable if last stride is 1 and all others are non-negative
         if (strides_.empty()) { return true; }
+        for (const auto& map : index_maps_) {
+            if (map.has_value()) {
+                return false;
+            }
+        }
         if (strides_.back() != 1) { return false; }
         for (size_t i = 0; i + 1 < strides_.size(); ++i) {
             if (strides_[i] <= 0) { return false; }
@@ -1355,18 +1428,21 @@ private:
         if (shape_.empty()) {
             return 0;
         }
-        difference_type offset = 0;
+        if (shape_.empty()) {
+            return 0;
+        }
+
+        std::vector<size_type> coords(shape_.size(), 0);
         size_type remainder = index;
         for (size_t i = shape_.size(); i-- > 0;) {
             size_type dim = shape_[i];
             if (dim == 0) {
                 return 0;
             }
-            size_type coord = remainder % dim;
+            coords[i] = remainder % dim;
             remainder /= dim;
-            offset += static_cast<difference_type>(coord) * strides_[i];
         }
-        return offset;
+        return offset_from_indices(coords.data(), coords.size());
     }
 
     difference_type offset_from_indices(const size_type* idx, size_t count) const {
@@ -1375,7 +1451,15 @@ private:
             if (idx[i] >= shape_[i]) {
                 throw std::out_of_range("TensorView index out of range");
             }
-            offset += static_cast<difference_type>(idx[i]) * strides_[i];
+            size_type actual_index = idx[i];
+            if (i < index_maps_.size() && index_maps_[i]) {
+                const auto& mapped = index_maps_[i].value();
+                if (actual_index >= mapped.size()) {
+                    throw std::out_of_range("TensorView gather index out of range");
+                }
+                actual_index = mapped[actual_index];
+            }
+            offset += static_cast<difference_type>(actual_index) * strides_[i];
         }
         return offset;
     }
@@ -1383,10 +1467,8 @@ private:
     pointer data_ = nullptr;
     std::vector<size_type> shape_;
     std::vector<difference_type> strides_;
+    std::vector<index_map_type> index_maps_;
 };
-
-template<typename T, size_t Rank>
-using TensorSlice = TensorView<T, Rank>;
 
 } // namespace fem::numeric
 
