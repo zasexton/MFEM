@@ -1,7 +1,7 @@
 # AGENT.md - FEM Foundation Module
 
 ## Mission
-Provide core finite element abstractions and base classes that define the fundamental FEM concepts, independent of specific physics or analysis types, while leveraging the ECS architecture from core/ and mathematical operations from numeric/.
+Provide core finite element abstractions and base classes that define the fundamental FEM concepts, independent of specific physics or analysis types, while leveraging the ECS architecture from core/ and mathematical operations from numeric/. Constitutive material models are provided by the standalone `materials/` library and are not implemented under `fem/`.
 
 ## Architecture Philosophy
 - **Physics-Agnostic**: FEM machinery without specific physics implementation
@@ -28,64 +28,242 @@ fem/
 │   ├── reference_element.hpp       # Reference element mappings
 │   ├── element_registry.hpp        # Element type registry
 │   └── types/                      # Concrete element types
-│       ├── line/
-│       │   ├── line2.hpp           # 2-node line
-│       │   └── line3.hpp           # 3-node line
-│       ├── triangle/
-│       │   ├── tri3.hpp            # 3-node triangle
-│       │   ├── tri6.hpp            # 6-node triangle
-│       │   └── tri10.hpp           # 10-node triangle
-│       ├── quadrilateral/
-│       │   ├── quad4.hpp           # 4-node quad
-│       │   ├── quad8.hpp           # 8-node quad
-│       │   └── quad9.hpp           # 9-node quad
-│       ├── tetrahedron/
-│       │   ├── tet4.hpp            # 4-node tetrahedron
-│       │   └── tet10.hpp           # 10-node tetrahedron
-│       ├── hexahedron/
-│       │   ├── hex8.hpp            # 8-node hexahedron
-│       │   ├── hex20.hpp           # 20-node hexahedron
-│       │   └── hex27.hpp           # 27-node hexahedron
-│       ├── prism/
-│       │   ├── prism6.hpp          # 6-node prism
-│       │   └── prism15.hpp         # 15-node prism
-│       └── special/
+│       ├── line/                   # 1D line elements
+│       │   ├── line2.hpp           # 2-node line (linear)
+│       │   ├── line3.hpp           # 3-node line (quadratic)
+│       │   ├── line4.hpp           # 4-node line (cubic)
+│       │   └── line_p.hpp          # p-refinement line elements
+│       ├── triangle/               # 2D triangular elements
+│       │   ├── tri3.hpp            # 3-node triangle (linear)
+│       │   ├── tri6.hpp            # 6-node triangle (quadratic)
+│       │   ├── tri10.hpp           # 10-node triangle (cubic)
+│       │   ├── tri15.hpp           # 15-node triangle (quartic)
+│       │   └── tri_p.hpp           # p-refinement triangular elements
+│       ├── quadrilateral/          # 2D quadrilateral elements
+│       │   ├── quad4.hpp           # 4-node quad (bilinear)
+│       │   ├── quad8.hpp           # 8-node quad (biquadratic serendipity)
+│       │   ├── quad9.hpp           # 9-node quad (biquadratic Lagrange)
+│       │   ├── quad12.hpp          # 12-node quad (bicubic serendipity)
+│       │   ├── quad16.hpp          # 16-node quad (bicubic Lagrange)
+│       │   └── quad_p.hpp          # p-refinement quadrilateral elements
+│       ├── tetrahedron/            # 3D tetrahedral elements
+│       │   ├── tet4.hpp            # 4-node tetrahedron (linear)
+│       │   ├── tet10.hpp           # 10-node tetrahedron (quadratic)
+│       │   ├── tet20.hpp           # 20-node tetrahedron (cubic)
+│       │   ├── tet35.hpp           # 35-node tetrahedron (quartic)
+│       │   └── tet_p.hpp           # p-refinement tetrahedral elements
+│       ├── pyramid/                # 3D pyramid elements (transition elements)
+│       │   ├── pyr5.hpp            # 5-node pyramid (linear)
+│       │   ├── pyr13.hpp           # 13-node pyramid (quadratic)
+│       │   ├── pyr14.hpp           # 14-node pyramid (quadratic alternative)
+│       │   └── pyr_p.hpp           # p-refinement pyramid elements
+│       ├── hexahedron/             # 3D hexahedral elements
+│       │   ├── hex8.hpp            # 8-node hexahedron (trilinear)
+│       │   ├── hex20.hpp           # 20-node hexahedron (triquadratic serendipity)
+│       │   ├── hex27.hpp           # 27-node hexahedron (triquadratic Lagrange)
+│       │   ├── hex32.hpp           # 32-node hexahedron (tricubic serendipity)
+│       │   ├── hex64.hpp           # 64-node hexahedron (tricubic Lagrange)
+│       │   └── hex_p.hpp           # p-refinement hexahedral elements
+│       ├── prism/                  # 3D prism/wedge elements
+│       │   ├── prism6.hpp          # 6-node prism (linear)
+│       │   ├── prism15.hpp         # 15-node prism (quadratic)
+│       │   ├── prism18.hpp         # 18-node prism (quadratic alternative)
+│       │   ├── prism24.hpp         # 24-node prism (cubic serendipity)
+│       │   └── prism_p.hpp         # p-refinement prism elements
+│       ├── structural/             # Structural elements
+│       │   ├── beam/               # Beam elements
+│       │   │   ├── beam2.hpp       # 2-node Euler-Bernoulli beam
+│       │   │   ├── beam3.hpp       # 3-node beam with mid-node
+│       │   │   ├── timoshenko.hpp  # Timoshenko beam (shear deformation)
+│       │   │   ├── curved_beam.hpp # Curved beam elements
+│       │   │   └── composite_beam.hpp # Composite/layered beams
+│       │   ├── truss/              # Truss elements
+│       │   │   ├── truss2.hpp      # 2-node truss (pin-jointed)
+│       │   │   ├── truss3.hpp      # 3-node nonlinear truss
+│       │   │   ├── cable.hpp       # Cable elements (tension-only)
+│       │   │   └── compression_only.hpp # Compression-only struts
+│       │   ├── shell/              # Shell elements
+│       │   │   ├── shell3.hpp      # 3-node triangular shell
+│       │   │   ├── shell4.hpp      # 4-node quadrilateral shell
+│       │   │   ├── shell6.hpp      # 6-node triangular shell
+│       │   │   ├── shell8.hpp      # 8-node quadrilateral shell
+│       │   │   ├── shell9.hpp      # 9-node quadrilateral shell
+│       │   │   ├── facet_shell.hpp # Facet shell elements
+│       │   │   ├── curved_shell.hpp # Curved shell elements
+│       │   │   └── composite_shell.hpp # Layered/composite shells
+│       │   ├── plate/              # Plate elements
+│       │   │   ├── kirchhoff.hpp   # Kirchhoff (thin) plate
+│       │   │   ├── mindlin.hpp     # Mindlin-Reissner (thick) plate
+│       │   │   ├── dkt.hpp         # Discrete Kirchhoff Triangle
+│       │   │   ├── dkq.hpp         # Discrete Kirchhoff Quadrilateral
+│       │   │   └── argyris.hpp     # Argyris plate element
+│       │   ├── membrane/           # Membrane elements
+│       │   │   ├── membrane3.hpp   # 3-node membrane
+│       │   │   ├── membrane4.hpp   # 4-node membrane
+│       │   │   └── membrane6.hpp   # 6-node membrane
+│       │   └── spring/             # Spring and mass elements
+│       │       ├── spring.hpp      # Spring elements
+│       │       ├── dashpot.hpp     # Damper elements
+│       │       ├── mass_point.hpp  # Point mass elements
+│       │       └── rigid_link.hpp  # Rigid body connections
+│       ├── contact/                # Contact interface elements
+│       │   ├── node_to_node.hpp    # Node-to-node interface
+│       │   ├── node_to_surface.hpp # Node-to-surface interface
+│       │   ├── surface_to_surface.hpp # Surface-to-surface interface
+│       │   ├── mortar.hpp          # Mortar coupling elements
+│       │   ├── penalty.hpp         # Penalty-based interface
+│       │   └── lagrange_multiplier.hpp # Lagrange multiplier interface
+│       ├── mixed/                  # Mixed formulation elements
+│       │   ├── mixed_field.hpp     # General mixed field formulation
+│       │   ├── enhanced_strain.hpp # Enhanced strain elements
+│       │   ├── assumed_strain.hpp  # Assumed strain elements
+│       │   ├── hybrid_stress.hpp   # Hybrid stress elements
+│       │   └── bubble_enriched.hpp # Bubble function enriched elements
+│       ├── enriched/               # Enriched elements
+│       │   ├── xfem/               # Extended FEM
+│       │   │   ├── discontinuous.hpp # Discontinuity enrichment
+│       │   │   ├── singular.hpp    # Singular function enrichment
+│       │   │   ├── interface.hpp   # Interface enrichment
+│       │   │   └── level_set.hpp   # Level set enrichment
+│       │   ├── gfem/               # Generalized FEM
+│       │   │   ├── partition_unity.hpp # Partition of unity method
+│       │   │   ├── cloud_points.hpp    # Point cloud methods
+│       │   │   └── handbook_functions.hpp # Handbook enrichment functions
+│       │   ├── meshfree/           # Meshfree methods
+│       │   │   ├── moving_least_squares.hpp # MLS approximation
+│       │   │   ├── element_free_galerkin.hpp # EFG method
+│       │   │   ├── reproducing_kernel.hpp    # RKPM method
+│       │   │   └── natural_element.hpp       # Natural element method
+│       │   └── multiscale/         # Multiscale elements
+│       │       ├── concurrent.hpp  # Concurrent multiscale
+│       │       ├── hierarchical.hpp # Hierarchical multiscale
+│       │       └── adaptive.hpp    # Adaptive multiscale
+│       └── special/                # Special purpose elements
 │           ├── infinite.hpp        # Infinite elements
 │           ├── interface.hpp       # Interface elements
-│           └── cohesive.hpp        # Cohesive elements
+│           ├── cohesive.hpp        # Cohesive zone elements
+│           ├── absorbing.hpp       # Absorbing boundary elements
+│           ├── perfectly_matched_layer.hpp # PML elements
+│           ├── gap.hpp             # Gap/constraint elements
+│           ├── coupling.hpp        # Coupling elements
+│           ├── transition.hpp      # Mesh transition elements
+│           ├── rve.hpp             # Representative volume elements
+│           ├── periodic.hpp        # Periodic boundary elements
+│           ├── superelement.hpp    # Superelements/substructures
+│           └── adaptive.hpp        # Adaptive elements
 │
 ├── node/                           # Node and DOF management
 │   ├── node_base.hpp               # Base node class
 │   ├── node_entity.hpp             # ECS-based node
-│   ├── dof.hpp                     # Degree of freedom
-│   ├── dof_manager.hpp             # DOF numbering and management
-│   ├── dof_map.hpp                 # Local-global DOF mapping
-│   ├── dof_constraints.hpp         # DOF constraint definitions
-│   ├── dof_ordering.hpp            # DOF ordering/reordering strategies
-│   ├── nodal_coordinates.hpp       # Coordinate systems
-│   └── node_set.hpp                # Node set management
+│   ├── nodal_coordinates.hpp       # Coordinate systems and transformations
+│   ├── node_set.hpp                # Node set management and queries
+│   ├── connectivity/               # Mesh connectivity management
+│   │   ├── mesh_topology.hpp       # Topological mesh representation
+│   │   ├── adjacency.hpp           # Node-element adjacency graphs
+│   │   ├── boundary_detection.hpp  # Automatic boundary node detection
+│   │   └── mesh_partitioning.hpp   # Domain decomposition support
+│   ├── dof/                        # Degree of freedom management
+│   │   ├── dof.hpp                 # Basic DOF definition
+│   │   ├── dof_manager.hpp         # Global DOF numbering and management
+│   │   ├── dof_map.hpp             # Local-global DOF mapping
+│   │   ├── dof_numbering.hpp       # DOF numbering strategies
+│   │   ├── dof_ordering.hpp        # DOF reordering for bandwidth optimization
+│   │   ├── hierarchical_dof.hpp    # Hierarchical p-refinement DOF
+│   │   ├── field_dof.hpp           # Multi-field DOF management
+│   │   └── distributed_dof.hpp     # Parallel/distributed DOF management
+│   ├── constraints/                # Constraint management
+│   │   ├── constraint_base.hpp     # Base constraint interface
+│   │   ├── essential_bc.hpp        # Essential boundary conditions (Dirichlet)
+│   │   ├── multipoint_constraint.hpp # Multi-point constraints (MPC)
+│   │   ├── rigid_body_element.hpp  # Rigid body connections (RBE)
+│   │   ├── periodic_constraint.hpp # Periodic boundary constraints
+│   │   ├── contact_constraint.hpp  # Contact/interface constraints
+│   │   ├── constraint_solver.hpp   # Constraint elimination algorithms
+│   │   └── lagrange_multiplier.hpp # Lagrange multiplier constraints
+│   ├── equation_systems/           # Equation numbering and assembly
+│   │   ├── equation_numbering.hpp  # Global equation numbering
+│   │   ├── sparsity_pattern.hpp    # Matrix sparsity pattern management
+│   │   ├── assembly_interface.hpp  # DOF to equation mapping for assembly
+│   │   └── bandwidth_optimization.hpp # Bandwidth/profile minimization
+│   └── utilities/                  # Node utilities
+│       ├── node_locator.hpp        # Spatial node location/search
+│       ├── node_merge.hpp          # Node merging and tolerance handling
+│       ├── coordinate_transform.hpp # Coordinate system transformations
+│       └── node_validation.hpp     # Mesh quality and node validation
 │
 ├── shape/                           # Shape functions
-│   ├── shape_function_base.hpp     # Base interface
-│   ├── shape_function_cache.hpp    # Caching evaluated shapes
+│   ├── shape_function_base.hpp     # Base interface for all shape functions
+│   ├── shape_function_cache.hpp    # Caching evaluated shapes and derivatives
+│   ├── shape_derivatives.hpp       # Shape function derivative computation
+│   ├── interpolation_base.hpp      # Base interpolation interface
 │   ├── lagrange/                   # Lagrangian shape functions
-│   │   ├── lagrange_1d.hpp
-│   │   ├── lagrange_2d.hpp
-│   │   └── lagrange_3d.hpp
+│   │   ├── lagrange_1d.hpp         # 1D Lagrange polynomials
+│   │   ├── lagrange_2d.hpp         # 2D Lagrange polynomials
+│   │   ├── lagrange_3d.hpp         # 3D Lagrange polynomials
+│   │   ├── complete_lagrange.hpp   # Complete Lagrange families
+│   │   └── tensor_product.hpp      # Tensor product Lagrange
 │   ├── hermite/                    # Hermite shape functions
-│   │   └── hermite.hpp
+│   │   ├── hermite_1d.hpp          # 1D Hermite polynomials
+│   │   ├── hermite_2d.hpp          # 2D Hermite polynomials
+│   │   ├── hermite_3d.hpp          # 3D Hermite polynomials
+│   │   └── cubic_hermite.hpp       # Cubic Hermite interpolation
 │   ├── hierarchical/               # Hierarchical bases
-│   │   ├── legendre.hpp
-│   │   └── lobatto.hpp
+│   │   ├── legendre.hpp            # Legendre polynomial basis
+│   │   ├── lobatto.hpp             # Lobatto polynomial basis
+│   │   ├── chebyshev.hpp           # Chebyshev polynomial basis
+│   │   ├── jacobi.hpp              # Jacobi polynomial basis
+│   │   ├── hierarchical_1d.hpp     # 1D hierarchical functions
+│   │   ├── hierarchical_2d.hpp     # 2D hierarchical functions
+│   │   ├── hierarchical_3d.hpp     # 3D hierarchical functions
+│   │   └── p_refinement.hpp        # p-refinement infrastructure
 │   ├── serendipity/                # Serendipity elements
-│   │   └── serendipity.hpp
+│   │   ├── serendipity_2d.hpp      # 2D serendipity elements
+│   │   ├── serendipity_3d.hpp      # 3D serendipity elements
+│   │   ├── rational_serendipity.hpp # Rational serendipity
+│   │   └── general_serendipity.hpp # General serendipity families
+│   ├── spectral/                   # Spectral elements
+│   │   ├── gauss_lobatto.hpp       # Gauss-Lobatto-Legendre points
+│   │   ├── gauss_radau.hpp         # Gauss-Radau points
+│   │   ├── gauss_legendre.hpp      # Gauss-Legendre points
+│   │   ├── chebyshev_gauss.hpp     # Chebyshev-Gauss points
+│   │   └── spectral_basis.hpp      # High-order spectral basis
+│   ├── rational/                   # Rational basis functions
+│   │   ├── rational_base.hpp       # Base rational function interface
+│   │   ├── bezier.hpp              # Bézier basis functions
+│   │   ├── b_spline.hpp            # B-spline basis functions
+│   │   └── t_spline.hpp            # T-spline basis functions
 │   ├── nurbs/                      # NURBS shape functions
-│   │   ├── nurbs.hpp
-│   │   ├── nurbs_knot_vector.hpp
-│   │   └── nurbs_patch.hpp
-│   └── enriched/                   # XFEM/GFEM enrichment
-│       ├── heaviside.hpp
-│       └── crack_tip.hpp
+│   │   ├── nurbs.hpp               # NURBS basis functions
+│   │   ├── nurbs_knot_vector.hpp   # Knot vector management
+│   │   ├── nurbs_patch.hpp         # NURBS patch operations
+│   │   ├── nurbs_refinement.hpp    # h/p/k-refinement for NURBS
+│   │   └── isogeometric.hpp        # Isogeometric analysis support
+│   ├── vector_valued/              # Vector-valued shape functions
+│   │   ├── vector_lagrange.hpp     # Vector Lagrange functions
+│   │   ├── nedelec.hpp             # Nédélec (edge) elements
+│   │   ├── raviart_thomas.hpp      # Raviart-Thomas (face) elements
+│   │   ├── bdm.hpp                 # Brezzi-Douglas-Marini elements
+│   │   └── hdiv_hcurl.hpp          # H(div) and H(curl) conforming
+│   ├── enriched/                   # XFEM/GFEM enrichment
+│   │   ├── enrichment_base.hpp     # Base enrichment interface
+│   │   ├── heaviside.hpp           # Heaviside step functions
+│   │   ├── singular.hpp            # Singular enrichment functions
+│   │   ├── crack_tip.hpp           # Crack tip enrichment
+│   │   ├── void_enrichment.hpp     # Void/inclusion enrichment
+│   │   ├── ramp_function.hpp       # Ramp enrichment functions
+│   │   ├── ridge_function.hpp      # Ridge enrichment functions
+│   │   └── partition_unity.hpp     # Partition of unity functions
+│   ├── adaptive/                   # Adaptive refinement
+│   │   ├── hp_refinement.hpp       # hp-adaptive refinement
+│   │   ├── anisotropic.hpp         # Anisotropic refinement
+│   │   ├── bubble_functions.hpp    # Bubble function enrichment
+│   │   └── error_indicators.hpp    # Shape function error estimation
+│   └── utilities/                  # Shape function utilities
+│       ├── shape_evaluator.hpp     # Optimized shape function evaluation
+│       ├── derivative_computer.hpp # Automatic differentiation of shapes
+│       ├── interpolation_points.hpp # Standard interpolation point sets
+│       ├── shape_validator.hpp     # Shape function validation/testing
+│       └── basis_transformation.hpp # Basis transformation utilities
 │
 ├── integration/                     # Numerical integration
 │   ├── quadrature_rule.hpp         # Base quadrature rule
@@ -268,6 +446,377 @@ fem/
 │   └── patch/                       # Patch tests
 └── benchmarks/                      # Performance benchmarks
 ```
+
+## Element Classification System
+
+The fem/element/types/ directory provides a comprehensive taxonomy of finite element types organized by topology, mathematical formulation, and computational features. Elements are physics-agnostic building blocks that physics modules compose to create domain-specific formulations:
+
+### Standard Topology Elements
+
+#### **1D Line Elements**
+- **Linear (line2)**: Basic truss, beam backbone
+- **Quadratic (line3)**: Higher-order accuracy, curved geometry
+- **Cubic (line4)**: High-order approximation
+- **p-refinement**: Variable polynomial order for adaptive accuracy
+
+#### **2D Planar Elements**
+- **Triangular Family**: Natural for complex geometry, automatic meshing
+  - `tri3`: Linear, minimal DOF, basic analysis
+  - `tri6`: Quadratic, good balance of accuracy/cost
+  - `tri10`: Cubic, high accuracy applications
+  - `tri15`: Quartic, spectral-level accuracy
+- **Quadrilateral Family**: Structured meshes, better aspect ratio handling
+  - `quad4`: Bilinear, computational efficiency
+  - `quad8/9`: Biquadratic, curved boundaries
+  - `quad12/16`: Bicubic, high-order analysis
+
+#### **3D Volumetric Elements**
+- **Tetrahedral Elements**: Automatic meshing, complex geometries
+  - `tet4`: Linear, poor performance, use sparingly
+  - `tet10`: Quadratic, general purpose 3D analysis
+  - `tet20/35`: High-order for demanding accuracy
+- **Hexahedral Elements**: Best performance, structured meshes
+  - `hex8`: Trilinear, computational workhorse
+  - `hex20/27`: Triquadratic, curved geometry handling
+  - `hex32/64`: Tricubic, high-fidelity analysis
+- **Pyramid Elements**: Critical for hybrid hex-tet meshes
+  - `pyr5/13/14`: Transition between hex and tet regions
+- **Prism/Wedge Elements**: Boundary layer meshing, extrusion
+  - `prism6/15/18/24`: Good for layered domains
+
+### Structural Engineering Elements
+
+#### **Beam Elements**
+- **Euler-Bernoulli**: Classical beam theory, slender members
+- **Timoshenko**: Shear deformation effects, thick beams
+- **Curved**: Non-straight members, arches
+- **Composite**: Multi-material layered construction
+
+#### **Shell Elements**
+- **Triangular/Quadrilateral**: Membrane + bending, thin structures
+- **Facet**: Discrete shell modeling approach
+- **Curved**: Smooth shell surface representation
+- **Composite**: Layered shell construction
+
+#### **Plate Elements**
+- **Kirchhoff**: Thin plate theory, classical approach
+- **Mindlin-Reissner**: Thick plate, shear deformation
+- **DKT/DKQ**: Discrete Kirchhoff formulations
+
+### Interface and Coupling Elements
+
+#### **Contact/Interface Elements**
+- **Node-to-node**: Point coupling and constraint enforcement
+- **Node-to-surface**: Point-to-manifold coupling
+- **Surface-to-surface**: Manifold-to-manifold coupling
+- **Mortar**: Mathematically optimal interface treatment
+- **Penalty**: Penalty-based constraint enforcement
+- **Lagrange multiplier**: Exact constraint enforcement
+
+### Advanced Mathematical Formulations
+
+#### **Mixed Elements**
+- **Mixed field formulation**: General multi-field coupling
+- **Enhanced strain**: Improved element performance
+- **Assumed strain**: Elimination of locking phenomena
+- **Hybrid stress**: Stress-based formulations
+- **Bubble enriched**: Interior enrichment functions
+
+#### **Enriched Elements**
+- **XFEM**: Discontinuity modeling without mesh conformity
+  - Arbitrary discontinuities, singular enrichment, level set interfaces
+- **GFEM**: Partition of unity enrichment
+  - Handbook functions, cloud-based methods, local enrichment
+- **Meshfree**: Non-mesh-based approximation
+  - MLS, EFG, RKPM, natural element methods
+- **Multiscale**: Scale-bridging formulations
+  - Concurrent, hierarchical, adaptive approaches
+
+### Special Purpose Elements
+
+- **Infinite elements**: Far-field boundary conditions
+- **Interface elements**: General interface modeling
+- **Cohesive elements**: Zone-based interface modeling
+- **Absorbing elements**: Wave absorption at boundaries
+- **PML elements**: Perfectly matched layers
+- **Gap elements**: Constraint gap modeling
+- **Coupling elements**: Multi-domain coupling
+- **Transition elements**: Mesh transition handling
+- **Superelement**: Reduced-order substructures
+
+### Element Selection Guidelines
+
+#### **By Geometry Complexity**
+- **Simple regular geometry**: Hexahedral elements preferred
+- **Moderate complexity**: Mixed hex-tet with pyramid transitions
+- **Complex arbitrary geometry**: Tetrahedral elements
+- **Thin structures**: Shell/plate elements
+- **Slender members**: Beam/truss elements
+
+#### **By Mathematical Requirements**
+- **Standard field problems**: Continuum elements (hex, tet, prism)
+- **Incompressible formulations**: Mixed elements with pressure DOF
+- **Multi-field coupling**: Mixed formulation elements
+- **Interface problems**: Contact/mortar elements
+- **Discontinuity modeling**: XFEM enriched elements
+- **High-gradient regions**: Enhanced strain or bubble elements
+
+#### **By Accuracy Requirements**
+- **Engineering accuracy**: Linear/quadratic elements
+- **Research accuracy**: Higher-order elements
+- **Spectral accuracy**: p-refinement elements
+- **Adaptive analysis**: hp-refinement capable elements
+
+#### **By Computational Requirements**
+- **Performance-critical**: Low-order elements (tet4, hex8, quad4)
+- **Accuracy-performance balance**: Mid-order elements (tet10, hex20)
+- **High-fidelity**: High-order elements (tet20, hex27, p-refinement)
+- **Memory-constrained**: Linear elements with adaptive refinement
+
+## Physics-Agnostic Building Block Approach
+
+The fem/ library provides mathematical and topological element abstractions that physics modules compose to create domain-specific formulations. This architecture separates concerns:
+
+### **FEM Library Responsibilities**
+- **Element topology**: Node connectivity and geometric mapping
+- **Shape functions**: Basis function evaluation and derivatives
+- **Numerical integration**: Quadrature rules and point management
+- **DOF management**: Global numbering and constraint handling
+- **Assembly interface**: Matrix/vector assembly from element contributions
+- **Mathematical formulations**: Mixed methods, enrichment, interface coupling
+
+### **Physics Module Responsibilities**
+- **Field definitions**: What variables are solved for (displacement, temperature, etc.)
+- **Constitutive relations**: Material laws and governing equations
+- **Boundary conditions**: Physics-specific boundary conditions
+- **Source terms**: Body forces, heat sources, electromagnetic sources
+- **Coupling terms**: Inter-field coupling in multiphysics problems
+
+### **Composition Examples**
+
+#### **Structural Mechanics**
+```cpp
+// Physics module composes FEM building blocks
+auto element = fem::ElementFactory::create("hex20");
+element->add_field("displacement", 3);  // 3D displacement field
+element->add_material(material_component);
+element->set_formulation(fem::GalerkinFormulation{});
+
+// Physics defines the weak form using variational language
+auto weak_form = inner(sigma(grad(u)), grad(v)) * dx;
+```
+
+#### **Fluid Mechanics**
+```cpp
+// Same element, different physics
+auto element = fem::ElementFactory::create("hex20");
+element->add_field("velocity", 3);
+element->add_field("pressure", 1);
+element->set_formulation(fem::MixedFormulation{});
+
+// Physics defines Stokes/Navier-Stokes equations
+auto weak_form = inner(grad(u), grad(v)) * dx +
+                 inner(grad(p), v) * dx;
+```
+
+#### **Thermal Analysis**
+```cpp
+// Same element, thermal physics
+auto element = fem::ElementFactory::create("hex20");
+element->add_field("temperature", 1);
+element->add_material(thermal_material);
+
+// Physics defines heat equation
+auto weak_form = inner(k * grad(T), grad(v)) * dx +
+                 rho * cp * inner(dT_dt, v) * dx;
+```
+
+### **Benefits of This Approach**
+
+1. **Reusability**: Same element can support multiple physics
+2. **Extensibility**: New physics modules use existing element infrastructure
+3. **Maintainability**: Physics-specific code isolated from mathematical infrastructure
+4. **Performance**: Element evaluation optimized independently of physics
+5. **Consistency**: Common interface across all physics domains
+6. **Modularity**: Physics modules can be developed independently
+
+### **Element-Physics Interface**
+
+Elements provide standardized interfaces that physics modules use:
+
+```cpp
+// Generic element interface
+class Element {
+    // Topology and geometry
+    virtual Matrix shape_functions(Point xi) const = 0;
+    virtual Tensor shape_derivatives(Point xi) const = 0;
+    virtual double jacobian_determinant(Point xi) const = 0;
+
+    // DOF management
+    virtual void add_field(string name, int components) = 0;
+    virtual DOFMap get_dof_map(string field) const = 0;
+
+    // Assembly interface
+    virtual void contribute_to_matrix(string field1, string field2,
+                                    MatrixContribution& contrib) = 0;
+    virtual void contribute_to_vector(string field,
+                                    VectorContribution& contrib) = 0;
+};
+```
+
+This design allows physics modules to focus on their domain expertise while leveraging robust, optimized mathematical infrastructure.
+
+## Node and DOF Management Architecture
+
+The fem/node/ directory provides comprehensive infrastructure for node management, degree of freedom handling, and constraint enforcement - all physics-agnostic building blocks.
+
+### **Node Management Responsibilities**
+
+#### **Basic Node Operations**
+- **Node entities**: ECS-based nodes with coordinate and connectivity information
+- **Coordinate systems**: Support for Cartesian, cylindrical, spherical coordinate systems
+- **Node sets**: Efficient node grouping and query capabilities
+- **Spatial operations**: Node location, merging, and validation
+
+#### **Mesh Connectivity**
+- **Topological representation**: Complete mesh topology with node-element relationships
+- **Adjacency graphs**: Efficient node-element and element-element adjacency
+- **Boundary detection**: Automatic identification of boundary nodes and surfaces
+- **Mesh partitioning**: Support for domain decomposition in parallel computing
+
+#### **DOF Management**
+- **Multi-field DOF**: Support for arbitrary field variables (displacement, temperature, pressure, etc.)
+- **Hierarchical DOF**: p-refinement with hierarchical basis functions
+- **Distributed DOF**: Parallel/distributed memory DOF management
+- **DOF numbering**: Optimized numbering strategies for bandwidth minimization
+
+#### **Constraint Handling**
+- **Essential boundary conditions**: Dirichlet-type constraints
+- **Multi-point constraints (MPC)**: Linear relationships between DOF
+- **Rigid body elements (RBE)**: Rigid connections and interpolation
+- **Periodic constraints**: Periodic boundary condition enforcement
+- **Contact constraints**: Interface constraint management
+
+### **Shape Function Architecture**
+
+The fem/shape/ directory provides a comprehensive taxonomy of shape functions and basis functions for finite element interpolation.
+
+#### **Classical Shape Function Families**
+
+##### **Lagrange Shape Functions**
+- **Complete polynomial spaces**: Full polynomial completeness for accuracy
+- **Tensor product construction**: Efficient construction for hexahedral elements
+- **Arbitrary order**: Linear through very high-order polynomials
+- **Nodal basis**: Point-wise interpolation properties
+
+##### **Hermite Shape Functions**
+- **C¹ continuity**: First derivative continuity across elements
+- **Higher-order continuity**: Support for beam, plate, and shell elements
+- **Mixed interpolation**: Position and derivative degrees of freedom
+
+##### **Serendipity Elements**
+- **Edge-based construction**: Nodes only on element edges
+- **Reduced DOF count**: Fewer nodes than complete Lagrange
+- **Rational variants**: Improved performance for specific geometries
+
+#### **Advanced Shape Function Types**
+
+##### **Hierarchical Bases**
+- **p-refinement ready**: Natural support for adaptive order refinement
+- **Orthogonal construction**: Legendre, Chebyshev, Jacobi polynomial bases
+- **Condition number control**: Better numerical conditioning than Lagrange
+
+##### **Spectral Elements**
+- **High-order accuracy**: Exponential convergence for smooth solutions
+- **Optimal point distributions**: Gauss-Lobatto-Legendre and variants
+- **Numerical integration**: Exact integration of polynomial integrands
+
+##### **Rational Basis Functions**
+- **NURBS**: Non-uniform rational B-splines for CAD integration
+- **Isogeometric analysis**: Exact geometry representation
+- **Bézier functions**: Computer graphics integration
+- **T-splines**: Local refinement capabilities
+
+##### **Vector-Valued Shape Functions**
+- **H(div) conforming**: Raviart-Thomas, BDM elements for fluid mechanics
+- **H(curl) conforming**: Nédélec elements for electromagnetics
+- **Mixed formulations**: Support for incompressible flow, electromagnetics
+
+#### **Enrichment and Adaptive Technologies**
+
+##### **XFEM/GFEM Enrichment**
+- **Discontinuity modeling**: Cracks, voids, material interfaces
+- **Singular enrichment**: Crack tip fields, corner singularities
+- **Partition of unity**: General enrichment framework
+
+##### **Adaptive Refinement (via adaptation/)**
+- Shape functions expose the capabilities needed for p-/hp-adaptivity (e.g., hierarchical bases, modal enrichment), but adaptation orchestration, error estimation, and mesh refinement are owned by the high-level `adaptation/` module.
+- Refer to `src/adaptation/AGENT.md` for refinement strategies (h/p/r/hp), anisotropy, and error estimators. The `fem/shape/` plan avoids duplicating those responsibilities.
+
+### **Physics-Agnostic Design Principles**
+
+#### **Node/DOF Separation of Concerns**
+- **Geometric information**: Node coordinates, connectivity (physics-independent)
+- **DOF management**: Field-agnostic DOF numbering and constraint handling
+- **Physics composition**: Physics modules define field types and coupling
+
+#### **Shape Function Modularity**
+- **Mathematical properties**: Polynomial completeness, continuity, orthogonality
+- **Computational optimization**: Efficient evaluation, caching, vectorization
+- **Physics independence**: Shape functions work with any field variable type
+
+#### **Interface Design**
+```cpp
+// Physics-agnostic node interface
+class Node {
+    // Geometric properties
+    Point coordinates() const;
+    std::vector<ElementId> adjacent_elements() const;
+
+    // DOF management (field-type independent)
+    void add_dof(FieldId field, ComponentId component);
+    DOFId get_dof_id(FieldId field, ComponentId component) const;
+
+    // Constraint handling
+    void add_constraint(std::unique_ptr<Constraint> constraint);
+};
+
+// Physics-agnostic shape function interface
+template<int Dim, int Order>
+class ShapeFunction {
+    // Evaluation at parametric coordinates
+    Vector shape_values(const Point<Dim>& xi) const;
+    Matrix shape_derivatives(const Point<Dim>& xi) const;
+
+    // Properties
+    int polynomial_order() const;
+    ContinuityType continuity() const;
+    bool has_bubble_functions() const;
+};
+```
+
+#### **Composition Examples**
+```cpp
+// Structural mechanics: displacement field
+auto node = NodeFactory::create(coordinates);
+node->add_dof(FieldRegistry::get("displacement"), ComponentId::X);
+node->add_dof(FieldRegistry::get("displacement"), ComponentId::Y);
+node->add_dof(FieldRegistry::get("displacement"), ComponentId::Z);
+
+// Fluid mechanics: velocity + pressure
+auto node = NodeFactory::create(coordinates);
+node->add_dof(FieldRegistry::get("velocity"), ComponentId::X);
+node->add_dof(FieldRegistry::get("velocity"), ComponentId::Y);
+node->add_dof(FieldRegistry::get("velocity"), ComponentId::Z);
+node->add_dof(FieldRegistry::get("pressure"), ComponentId::SCALAR);
+
+// Electromagnetics: electric and magnetic fields
+auto node = NodeFactory::create(coordinates);
+node->add_dof(FieldRegistry::get("electric_field"), ComponentId::X);
+node->add_dof(FieldRegistry::get("magnetic_field"), ComponentId::Y);
+```
+
+This architecture ensures that node and shape function infrastructure can be optimized for mathematical and computational properties while remaining completely independent of physics domains.
 
 ## Key Components
 
@@ -726,10 +1275,13 @@ class FormAnalyzer : public FormVisitor {
 4. **Memory Usage**: < 1KB per element overhead
 5. **Assembly Interface**: Zero-copy where possible
 6. **Extensibility**: New element in < 100 lines
-7. **Form Compilation**: < 10ms for complex variational forms
-8. **Generated Code**: Performance within 5% of hand-optimized assembly
-9. **Mathematical Notation**: 1:1 correspondence with textbook weak forms
-10. **Form Analysis**: Automatic sparsity pattern detection and optimization
+7. **Element Coverage**: 100+ mathematical element types as physics-agnostic building blocks
+8. **Topology Support**: Complete 1D/2D/3D element families with p-refinement
+9. **Advanced Methods**: XFEM, meshfree, multiscale integration
+10. **Form Compilation**: < 10ms for complex variational forms
+11. **Generated Code**: Performance within 5% of hand-optimized assembly
+12. **Mathematical Notation**: 1:1 correspondence with textbook weak forms
+13. **Form Analysis**: Automatic sparsity pattern detection and optimization
 
 ## Key Innovations
 
@@ -737,9 +1289,12 @@ class FormAnalyzer : public FormVisitor {
 2. **Compile-Time Elements**: Template metaprogramming for performance
 3. **Cached Operations**: Pre-compute everything possible
 4. **Physics Agnostic**: Clean separation from physics
-5. **Variational Form Language**: UFL-inspired DSL for mathematical expression
-6. **Automatic Code Generation**: From symbolic forms to optimized assembly
-7. **Dual-Layer Architecture**: High-level mathematical + low-level implementation
-8. **Modern C++**: Concepts, ranges, modules where applicable
+5. **Comprehensive Element Taxonomy**: 150+ element types systematically organized
+6. **Unified Element Interface**: Common API across all element families
+7. **Topology-Physics Separation**: Element topology independent of physics
+8. **Variational Form Language**: UFL-inspired DSL for mathematical expression
+9. **Automatic Code Generation**: From symbolic forms to optimized assembly
+10. **Dual-Layer Architecture**: High-level mathematical + low-level implementation
+11. **Modern C++**: Concepts, ranges, modules where applicable
 
-This architecture provides a solid, performant foundation for finite element computations while maintaining flexibility through the component system and enabling high performance through compile-time optimization and caching strategies. The addition of the variational form language creates a complete solution where users can express their mathematical problems in natural notation, have those expressions automatically analyzed and optimized, and achieve performance comparable to hand-written specialized code.
+This architecture provides a solid, performant foundation for finite element computations while maintaining flexibility through the component system and enabling high performance through compile-time optimization and caching strategies. The physics-agnostic element taxonomy covering 100+ mathematical element types serves as reusable building blocks that physics modules compose to create domain-specific formulations. This separation of concerns ensures that mathematical infrastructure can be optimized independently while physics modules focus on their domain expertise. Combined with the variational form language, this creates a complete solution where users can express their mathematical problems in natural notation, compose appropriate element types for their mathematical requirements, and achieve performance comparable to hand-written specialized code.
