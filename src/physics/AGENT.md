@@ -21,7 +21,7 @@ physics/
 ├── base/                            # Common physics infrastructure
 │   ├── physics_module.hpp          # Base physics interface
 │   ├── weak_form.hpp               # Weak formulation base
-│   ├── constitutive_model.hpp      # Material model interface
+│   ├── material_adapter.hpp        # Adapter to top-level materials library (consumes materials public API)
 │   ├── field_variable.hpp          # Physics field definitions
 │   ├── physics_traits.hpp          # Physics type traits
 │   ├── coupling_interface.hpp      # Interface exposed to coupling module
@@ -438,7 +438,7 @@ physics/
 │
 ├── utilities/                      # Physics utilities
 │   ├── units.hpp                   # Unit systems
-│   ├── material_library.hpp        # Material database (should include all relevant physical properties)
+│   ├── material_catalog.hpp        # (Optional) physics-facing aliases that proxy to materials' property/database utilities
 │   └── dimensionless.hpp           # Dimensionless numbers
 │
 └── tests/                          # Testing infrastructure
@@ -501,7 +501,9 @@ public:
 // Linear elastic solid mechanics
 template<int Dim>
 class LinearElasticity : public PhysicsModule<Dim> {
-    ElasticMaterial material;
+    // Acquire a material from the top-level materials library
+    std::shared_ptr<materials::IMaterial> material =
+        materials::MaterialFactory::instance().create<materials::IsotropicElastic>();
     
 public:
     std::vector<FieldVariable> fields() const override {
@@ -519,8 +521,12 @@ public:
             // Strain
             auto epsilon = B * u.local(elem);
             
-            // Stress (linear elastic)
-            auto sigma = material.C * epsilon;
+            // Stress (linear elastic) via unified materials interface
+            materials::MaterialInputs min;
+            min.eps = epsilon; // small-strain example
+            materials::MaterialOutputs mout;
+            material->evaluate(min, state_, mout);
+            auto sigma = mout.P; // Cauchy stress in small strain
             
             // Internal forces
             R_e += B.transpose() * sigma * qp.weight * elem.J(qp);
@@ -537,7 +543,12 @@ public:
         // Stiffness matrix
         for (auto& qp : elem.quadrature_points()) {
             auto B = compute_B_matrix(elem, qp);
-            auto C = material.elasticity_tensor();
+            // Consistent tangent from materials
+            materials::MaterialInputs min;
+            materials::MaterialOutputs mout;
+            materials::TangentBlocks tb;
+            material->evaluate(min, state_, mout, &tb);
+            auto C = tb.dP_dEps;
             
             K_e += B.transpose() * C * B * qp.weight * elem.J(qp);
         }
