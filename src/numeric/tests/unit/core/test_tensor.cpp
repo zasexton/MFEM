@@ -7,6 +7,7 @@
 #include <sstream>
 #include <complex>
 #include <type_traits>
+#include <vector>
 #include <core/tensor.h>
 
 using namespace fem::numeric;
@@ -224,6 +225,78 @@ TEST_F(TensorTest, NewAxisInsertionView) {
     for (size_t i = 0; i < 2; ++i) {
         for (size_t k = 0; k < 2; ++k) {
             EXPECT_EQ(inserted_tensor(i, 0, k), t(i, k + 1, 0));
+        }
+    }
+}
+
+TEST_F(TensorTest, EllipsisIndexingProducesExpectedView) {
+    Tensor<int, 3> t({2, 3, 4});
+    int value = 0;
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            for (size_t k = 0; k < 4; ++k) {
+                t(i, j, k) = value++;
+            }
+        }
+    }
+
+    auto view = t(idx(ellipsis, 1));
+    Tensor<int, 2> materialized(view);
+
+    ASSERT_EQ(materialized.shape()[0], 2u);
+    ASSERT_EQ(materialized.shape()[1], 3u);
+
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            EXPECT_EQ(materialized(i, j), t(i, j, 1));
+        }
+    }
+}
+
+TEST_F(TensorTest, IntegerArrayFancyIndexingStacksResults) {
+    Tensor<int, 3> t({3, 4, 2});
+    int value = 0;
+    for (size_t i = 0; i < t.size(); ++i) {
+        t[i] = value++;
+    }
+
+    std::vector<std::ptrdiff_t> rows = {2, 0};
+    auto fancy = t(idx(rows, Slice(0, 4, 2), all));
+    Tensor<int, 3> gathered(fancy);
+
+    ASSERT_EQ(gathered.shape()[0], rows.size());
+    ASSERT_EQ(gathered.shape()[1], 2u);  // Slice(0,4,2) -> indices 0 and 2
+    ASSERT_EQ(gathered.shape()[2], 2u);
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+        for (size_t j = 0; j < 2; ++j) {
+            for (size_t k = 0; k < 2; ++k) {
+                EXPECT_EQ(gathered(i, j, k), t(rows[i], j * 2, k));
+            }
+        }
+    }
+}
+
+TEST_F(TensorTest, BooleanMaskIndexingFiltersEntries) {
+    Tensor<int, 3> t({2, 3, 2});
+    int value = 0;
+    for (size_t i = 0; i < t.size(); ++i) {
+        t[i] = value++;
+    }
+
+    std::vector<bool> mask = {true, false, true};
+    auto masked = t(idx(all, mask, 1));
+    Tensor<int, 2> filtered(masked);
+
+    ASSERT_EQ(filtered.shape()[0], 2u);
+    ASSERT_EQ(filtered.shape()[1], 2u);
+
+    for (size_t i = 0; i < 2; ++i) {
+        size_t out_row = 0;
+        for (size_t j = 0; j < mask.size(); ++j) {
+            if (!mask[j]) { continue; }
+            EXPECT_EQ(filtered(i, out_row), t(i, j, 1));
+            ++out_row;
         }
     }
 }
