@@ -676,13 +676,14 @@ fem/
 │   ├── CMakeLists.txt              # Build configuration for Python module
 │   ├── module.cpp                  # Top-level pybind11 module definition
 │   ├── element_bindings.cpp        # Element/topology bindings
-│   ├── mesh_bindings.cpp           # Mesh/node/DOF bindings
+│   ├── node_bindings.cpp           # Node/DOF management bindings
 │   ├── shape_bindings.cpp          # Shape function bindings
 │   ├── field_bindings.cpp          # Field variable bindings
 │   ├── integration_bindings.cpp    # Quadrature/integration bindings
+│   ├── assembly_bindings.cpp       # Assembly helpers (maps lowered forms to element assembly)
 │   ├── formulation_bindings.cpp    # Weak-form assembly wrappers (consume variational outputs)
-│   ├── solver_bindings.cpp         # Delegates to top-level solvers (assembly/solve entry points)
-│   ├── materials_bindings.cpp      # Optional bridge to materials library
+│   ├── solver_bindings.cpp         # Bridges to top-level solvers (assembly/solve entry points)
+│   ├── materials_bindings.cpp      # Optional bridge to top-level materials library
 │   ├── utilities_bindings.cpp      # Diagnostics/profiling/IO helpers
 │   └── __init__.py                 # Python package initializer
 │
