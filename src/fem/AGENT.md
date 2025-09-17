@@ -17,6 +17,11 @@ fem/
 ├── README.md                         # Module overview
 ├── AGENT.md                         # This document
 ├── CMakeLists.txt                   # Build configuration
+├── core/                            # Core FEM infrastructure
+│   ├── fem_traits.hpp               # FEM type traits and concepts
+│   ├── fem_concepts.hpp             # C++20 concepts for FEM
+│   ├── reference_solutions.hpp      # Reference analytical solutions for testing
+│   └── performance_monitoring.hpp   # Performance timing and profiling
 │
 ├── element/                         # Element abstractions
 │   ├── element_base.hpp            # Base element interface
@@ -27,6 +32,8 @@ fem/
 │   ├── element_entity.hpp          # ECS-based element
 │   ├── reference_element.hpp       # Reference element mappings
 │   ├── element_registry.hpp        # Element type registry
+│   ├── element_orientation.hpp     # Edge/Face orientation handling
+│   ├── fem_constants.hpp           # FEM-specific mathematical constants
 │   └── types/                      # Concrete element types
 │       ├── line/                   # 1D line elements
 │       │   ├── line2.hpp           # 2-node line (linear)
@@ -456,14 +463,75 @@ fem/
 │   └── radial_basis.hpp            # RBF interpolation
 │
 ├── formulation/                     # FEM formulations
-│   ├── weak_form.hpp               # Weak form interface
-│   ├── galerkin.hpp                # Standard Galerkin
-│   ├── petrov_galerkin.hpp         # Petrov-Galerkin
-│   ├── least_squares.hpp           # Least-squares FEM
-│   ├── mixed.hpp                   # Mixed formulations
-│   ├── discontinuous_galerkin.hpp  # DG methods
-│   ├── stabilized.hpp              # Stabilized methods
-│   └── variational.hpp             # Variational principles
+│   ├── formulation_base.hpp        # Base formulation interface
+│   ├── weak_form_interface.hpp     # Weak form mathematical interface
+│   ├── assembly_strategy.hpp       # Assembly strategy patterns
+│   ├── galerkin/                   # Galerkin method family
+│   │   ├── standard_galerkin.hpp   # Standard Bubnov-Galerkin
+│   │   ├── petrov_galerkin.hpp     # Petrov-Galerkin method
+│   │   ├── weighted_galerkin.hpp   # Weighted residual methods
+│   │   ├── streamline_upwind.hpp   # SUPG/PSPG stabilization
+│   │   └── galerkin_least_squares.hpp # GLS stabilization
+│   ├── discontinuous/              # Discontinuous Galerkin methods
+│   │   ├── dg_base.hpp             # Base DG formulation
+│   │   ├── interior_penalty.hpp    # Interior penalty DG
+│   │   ├── local_dg.hpp            # Local discontinuous Galerkin
+│   │   ├── hybridizable_dg.hpp     # Hybridizable DG (HDG)
+│   │   ├── embedded_dg.hpp         # Embedded discontinuous Galerkin
+│   │   ├── flux_reconstruction.hpp # Flux reconstruction methods
+│   │   └── dg_stabilization.hpp    # DG stabilization techniques
+│   ├── mixed/                      # Mixed formulations
+│   │   ├── mixed_base.hpp          # Base mixed formulation
+│   │   ├── two_field_mixed.hpp     # Two-field mixed methods
+│   │   ├── three_field_mixed.hpp   # Three-field mixed methods
+│   │   ├── hybrid_mixed.hpp        # Hybrid mixed methods
+│   │   ├── enhanced_strain.hpp     # Enhanced strain formulations
+│   │   ├── assumed_strain.hpp      # Assumed strain methods
+│   │   └── saddle_point.hpp        # Saddle point problem handling
+│   ├── stabilized/                 # Stabilized methods
+│   │   ├── stabilization_base.hpp  # Base stabilization interface
+│   │   ├── supg.hpp                # Streamline upwind Petrov-Galerkin
+│   │   ├── pspg.hpp                # Pressure stabilizing Petrov-Galerkin
+│   │   ├── gls.hpp                 # Galerkin least squares
+│   │   ├── cip.hpp                 # Continuous interior penalty
+│   │   ├── residual_free_bubbles.hpp # Residual-free bubble methods
+│   │   └── variational_multiscale.hpp # Variational multiscale methods
+│   ├── least_squares/              # Least squares methods
+│   │   ├── standard_ls.hpp         # Standard least squares FEM
+│   │   ├── weighted_ls.hpp         # Weighted least squares
+│   │   ├── first_order_ls.hpp      # First-order system least squares
+│   │   ├── div_ls.hpp              # Divergence-based least squares
+│   │   └── constrained_ls.hpp      # Constrained least squares
+│   ├── collocation/                # Collocation methods
+│   │   ├── point_collocation.hpp   # Point collocation methods
+│   │   ├── subdomain_collocation.hpp # Subdomain collocation
+│   │   ├── boundary_collocation.hpp # Boundary collocation
+│   │   └── spectral_collocation.hpp # Spectral collocation
+│   ├── meshfree/                   # Meshfree formulations
+│   │   ├── meshfree_base.hpp       # Base meshfree formulation
+│   │   ├── element_free_galerkin.hpp # Element-free Galerkin
+│   │   ├── moving_least_squares.hpp # Moving least squares
+│   │   ├── reproducing_kernel.hpp  # Reproducing kernel particle method
+│   │   ├── natural_element.hpp     # Natural element method
+│   │   └── partition_unity_fem.hpp # Partition of unity finite element
+│   ├── multiscale/                 # Multiscale formulations
+│   │   ├── multiscale_base.hpp     # Base multiscale interface
+│   │   ├── variational_multiscale.hpp # Variational multiscale method
+│   │   ├── heterogeneous_multiscale.hpp # Heterogeneous multiscale method
+│   │   ├── computational_homogenization.hpp # Computational homogenization
+│   │   └── concurrent_multiscale.hpp # Concurrent multiscale coupling
+│   ├── nonlinear/                  # Nonlinear formulations
+│   │   ├── nonlinear_base.hpp      # Base nonlinear formulation (interfaces residual/Jacobian assembly)
+│   │   └── incremental_form.hpp    # Incremental update patterns (delegates solves to solver library)
+│   ├── time_dependent/             # Time-dependent formulations
+│   │   ├── mixed_form_time.hpp     # Space-time weak forms and residual/Jacobian assembly
+│   │   └── space_time_basis.hpp    # Space-time basis support (delegates time stepping to solvers)
+│   └── utilities/                  # Formulation utilities
+│       ├── formulation_factory.hpp # Formulation creation and selection
+│       ├── convergence_monitor.hpp # Convergence monitoring
+│       ├── residual_computer.hpp   # Residual computation utilities
+│       ├── jacobian_computer.hpp   # Jacobian computation utilities
+│       └── method_validator.hpp    # Formulation validation and testing
 │
 ├── variational/                     # Variational form language (UFL-inspired)
 │   ├── README.md                   # Overview of variational forms system
@@ -512,13 +580,70 @@ fem/
 │       └── form_parser.hpp         # Parse mathematical notation
 │
 ├── spaces/                          # Function spaces
-│   ├── function_space.hpp          # Function space base
-│   ├── h1_space.hpp                # H1 conforming
-│   ├── h_curl_space.hpp            # H(curl) conforming
-│   ├── h_div_space.hpp             # H(div) conforming
-│   ├── l2_space.hpp                # L2 space
-│   ├── composite_space.hpp         # Product spaces
-│   └── enriched_space.hpp          # Enriched spaces
+│   ├── function_space_base.hpp     # Base function space interface
+│   ├── space_properties.hpp        # Mathematical space properties
+│   ├── space_factory.hpp           # Function space creation and management
+│   ├── sobolev/                    # Sobolev spaces
+│   │   ├── h1_space.hpp            # H¹(Ω) conforming spaces
+│   │   ├── h2_space.hpp            # H²(Ω) spaces for C¹ problems
+│   │   ├── h_curl_space.hpp        # H(curl) spaces for electromagnetics
+│   │   ├── h_div_space.hpp         # H(div) spaces for fluid mechanics
+│   │   ├── h_grad_space.hpp        # H(grad) spaces for potential problems
+│   │   └── broken_sobolev.hpp      # Broken Sobolev spaces for DG
+│   ├── lebesgue/                   # Lebesgue spaces
+│   │   ├── l2_space.hpp            # L²(Ω) spaces
+│   │   ├── lp_space.hpp            # Lᵖ(Ω) spaces (p ≠ 2)
+│   │   ├── l_infinity.hpp          # L^∞(Ω) spaces
+│   │   └── weighted_l2.hpp         # Weighted L² spaces
+│   ├── mixed/                      # Mixed and product spaces
+│   │   ├── product_space.hpp       # Cartesian product spaces
+│   │   ├── composite_space.hpp     # Composite field spaces
+│   │   ├── taylor_hood.hpp         # Taylor-Hood elements (velocity-pressure)
+│   │   ├── mini_element.hpp        # MINI elements with bubble enrichment
+│   │   ├── crouzeix_raviart.hpp    # Crouzeix-Raviart nonconforming
+│   │   └── mixed_space_builder.hpp # General mixed space construction
+│   ├── enriched/                   # Enriched and extended spaces
+│   │   ├── xfem_space.hpp          # XFEM enriched spaces
+│   │   ├── gfem_space.hpp          # GFEM enriched spaces
+│   │   ├── partition_unity.hpp     # Partition of unity spaces
+│   │   ├── bubble_enriched.hpp     # Bubble function enrichment
+│   │   ├── singular_enriched.hpp   # Singular function enrichment
+│   │   └── meshfree_space.hpp      # Meshfree approximation spaces
+│   ├── conforming/                 # Conforming spaces
+│   │   ├── c0_continuous.hpp       # C⁰ continuous spaces
+│   │   ├── c1_continuous.hpp       # C¹ continuous spaces
+│   │   ├── global_continuous.hpp   # Globally continuous spaces
+│   │   └── conforming_constraints.hpp # Conformity constraint handling
+│   ├── nonconforming/              # Nonconforming spaces
+│   │   ├── discontinuous.hpp       # Discontinuous Galerkin spaces
+│   │   ├── crouzeix_raviart.hpp    # Crouzeix-Raviart spaces
+│   │   ├── morley.hpp              # Morley elements
+│   │   ├── nonconforming_base.hpp  # Base nonconforming interface
+│   │   └── jump_operators.hpp      # Jump and average operators
+│   ├── spectral/                   # Spectral spaces
+│   │   ├── fourier_space.hpp       # Fourier basis spaces
+│   │   ├── legendre_space.hpp      # Legendre polynomial spaces
+│   │   ├── chebyshev_space.hpp     # Chebyshev polynomial spaces
+│   │   ├── spectral_element.hpp    # High-order spectral elements
+│   │   └── modal_space.hpp         # Modal basis representations
+│   ├── adaptive/                   # Adaptive spaces
+│   │   ├── hp_adaptive.hpp         # hp-adaptive spaces
+│   │   ├── hierarchical_space.hpp  # Hierarchical refinement
+│   │   ├── space_hierarchy.hpp     # Multi-level space hierarchies
+│   │   ├── local_refinement.hpp    # Local space refinement
+│   │   └── anisotropic_space.hpp   # Anisotropic refinement
+│   ├── trace/                      # Trace and boundary spaces
+│   │   ├── trace_space.hpp         # Trace spaces on boundaries
+│   │   ├── boundary_space.hpp      # Boundary element spaces
+│   │   ├── mortar_space.hpp        # Mortar coupling spaces
+│   │   ├── interface_space.hpp     # Interface spaces
+│   │   └── skeleton_space.hpp      # Skeleton spaces for HDG
+│   └── utilities/                  # Space utilities
+│       ├── space_validator.hpp     # Space consistency validation
+│       ├── space_analyzer.hpp      # Space property analysis
+│       ├── dof_extraction.hpp      # DOF extraction from spaces
+│       ├── space_transfer.hpp      # Transfer between spaces
+│       └── space_visualization.hpp # Space visualization support
 │
 ├── error/                           # Error estimation
 │   ├── error_estimator_base.hpp    # Base estimator
@@ -542,13 +667,6 @@ fem/
 │   └── vfem/                       # Virtual FEM
 │       └── virtual_element.hpp
 │
-├── utilities/                       # FEM utilities
-│   ├── fem_constants.hpp           # FEM-specific constants
-│   ├── fem_traits.hpp              # FEM type traits
-│   ├── fem_concepts.hpp            # C++20 concepts
-│   ├── reference_values.hpp        # Reference solutions
-│   ├── orientation.hpp             # Edge/Face orientation handling
-│   └── fem_timers.hpp              # Performance timing
 │
 ├── tests/                           # Testing
 │   ├── unit/                        # Unit tests
@@ -928,6 +1046,39 @@ node->add_dof(FieldRegistry::get("magnetic_field"), ComponentId::Y);
 
 This architecture ensures that node and shape function infrastructure can be optimized for mathematical and computational properties while remaining completely independent of physics domains.
 
+## Utilities Reorganization
+
+The fem/utilities/ folder has been eliminated to prevent it from becoming a dumping ground for miscellaneous code. Instead, utility files have been distributed to their appropriate conceptual homes:
+
+### **Redistributed Files**
+
+#### **Element Infrastructure** (moved to element/)
+- **element_orientation.hpp**: Edge/face orientation handling - logically belongs with element topology
+- **fem_constants.hpp**: FEM-specific mathematical constants - needed primarily for element computations
+
+#### **Core FEM Infrastructure** (moved to core/)
+- **fem_traits.hpp**: Type traits for FEM - fundamental infrastructure used across all FEM components
+- **fem_concepts.hpp**: C++20 concepts - core programming abstractions for type safety
+- **reference_solutions.hpp**: Reference analytical solutions - testing and validation infrastructure
+- **performance_monitoring.hpp**: Performance timing and profiling - development and optimization tools
+
+### **Benefits of Reorganization**
+
+1. **Conceptual Clarity**: Each file is placed with related functionality rather than in a catch-all folder
+2. **Discoverability**: Developers find orientation handling in element/, not hidden in utilities/
+3. **Maintainability**: Clear ownership and responsibility for each component
+4. **Prevents Code Smell**: Eliminates the "junk drawer" anti-pattern that utilities/ folders often become
+5. **Logical Grouping**: Files are grouped by what they do, not by being "miscellaneous"
+
+### **Guidelines for Future Development**
+
+- **No utilities/ folder**: Never create utilities/, misc/, or common/ folders
+- **Context-specific placement**: Always place code with its primary use case
+- **Shared infrastructure**: Truly shared code goes in core/ with clear responsibility
+- **Domain-specific tools**: Tools specific to elements, shapes, integration, etc. go in their respective domain folders
+
+This organization ensures that the fem/ library maintains clean architectural boundaries and prevents the accumulation of poorly organized code.
+
 ## FEM Subfolder Responsibilities and Relationships
 
 The fem/ library is organized into specialized subfolders, each with distinct responsibilities that work together to provide comprehensive finite element capabilities. Understanding these relationships is crucial for effective usage and extension.
@@ -999,11 +1150,11 @@ The fem/ library is organized into specialized subfolders, each with distinct re
 ### **Mathematical Formulation Infrastructure**
 
 #### **formulation/ - Numerical Method Implementation**
-**Responsibility**: Implements specific finite element mathematical approaches
+**Responsibility**: Implements weak-form evaluation and residual/Jacobian assembly for finite element methods; delegates nonlinear/time stepping and solver orchestration to the `solvers/` module.
 - **Method families**: Galerkin, Petrov-Galerkin, discontinuous Galerkin
 - **Advanced methods**: Mixed formulations, stabilized methods, least-squares
-- **Implementation strategies**: How to actually compute element matrices and vectors
-- **Computational patterns**: Assembly algorithms, constraint handling
+- **Implementation strategies**: Element matrix/vector computation, stabilization terms
+- **Computational patterns**: Assembly algorithms, constraint handling (but not Newton/time stepping control)
 
 **Relationship to shape/**: Uses shape functions to implement specific numerical methods
 **Relationship to integration/**: Uses quadrature rules for numerical integration
@@ -1529,19 +1680,41 @@ class FormAnalyzer : public FormVisitor {
 
 ## Success Metrics
 
-1. **Element Evaluation**: < 1μs for 8-node hex
+### **Performance Metrics**
+1. **Element Evaluation**: < 1μs for 8-node hex element matrix computation
 2. **Shape Function Cache**: 10x speedup vs recomputation
-3. **DOF Numbering**: < O(n log n) complexity
+3. **DOF Numbering**: < O(n log n) complexity for bandwidth optimization
 4. **Memory Usage**: < 1KB per element overhead
 5. **Assembly Interface**: Zero-copy where possible
-6. **Extensibility**: New element in < 100 lines
-7. **Element Coverage**: 100+ mathematical element types as physics-agnostic building blocks
+
+### **Architecture Metrics**
+6. **Extensibility**: New element type in < 100 lines of code
+7. **Element Coverage**: 150+ mathematical element types as physics-agnostic building blocks
 8. **Topology Support**: Complete 1D/2D/3D element families with p-refinement
-9. **Advanced Methods**: XFEM, meshfree, multiscale integration
-10. **Form Compilation**: < 10ms for complex variational forms
-11. **Generated Code**: Performance within 5% of hand-optimized assembly
-12. **Mathematical Notation**: 1:1 correspondence with textbook weak forms
-13. **Form Analysis**: Automatic sparsity pattern detection and optimization
+9. **Advanced Methods**: XFEM, meshfree, multiscale, enriched formulations
+
+### **Function Space Metrics**
+10. **Space Coverage**: 50+ function space types covering all major FEM applications
+11. **Sobolev Spaces**: Complete H¹, H², H(curl), H(div) space families
+12. **Mixed Spaces**: Taylor-Hood, MINI, Crouzeix-Raviart, and general mixed constructions
+13. **Adaptive Spaces**: hp-adaptive, hierarchical, and anisotropic refinement support
+
+### **Formulation Metrics**
+14. **Method Coverage**: 60+ formulation types covering all major FEM methods
+15. **Galerkin Family**: Standard, Petrov, stabilized, and least-squares variants
+16. **DG Methods**: Interior penalty, HDG, flux reconstruction, and embedded DG
+17. **Advanced Formulations**: Multiscale, meshfree, collocation, and time-dependent methods
+
+### **Variational Form Metrics**
+18. **Form Compilation**: < 10ms for complex variational forms
+19. **Generated Code**: Performance within 5% of hand-optimized assembly
+20. **Mathematical Notation**: 1:1 correspondence with textbook weak forms
+21. **Form Analysis**: Automatic sparsity pattern detection and optimization
+
+### **Code Quality Metrics**
+22. **No Utilities Dumping**: Zero miscellaneous or utilities folders
+23. **Clear Ownership**: Every file belongs to a specific conceptual domain
+24. **Architectural Boundaries**: Clean separation between mathematical layers
 
 ## Key Innovations
 
