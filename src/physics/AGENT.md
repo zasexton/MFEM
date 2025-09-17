@@ -28,6 +28,36 @@ physics/
 │   ├── conservation_law.hpp        # Conservation principles
 │   └── physics_factory.hpp         # Physics module factory
 │
+#### Material Adapter (base/material_adapter.hpp)
+
+The adapter provides a thin, zero‑copy bridge between physics internals and the top‑level `materials/` API:
+
+- Maps physics field variables and kinematics to `materials::MaterialInputs` (small vs finite strain, temperature, pore pressure, electric/magnetic fields, gradients, dt).
+- Owns a handle to a `materials::IMaterial` instance (via factory/registry); supports configuration and cloning.
+- Invokes `evaluate(inputs, state, outputs, &tangents)` and returns stress/tangent blocks in the measures required by the physics formulation (Cauchy/PK, small/finite strain), performing only measure conversion if needed.
+- Manages per‑integration‑point material state lifecycles (trial → accept/reject) by collaborating with assembly/element storage; no dynamic allocation in hot paths.
+- Provides optional caching of `TangentBlocks` for Jacobian reuse within a time/load step when valid.
+
+Example interface (header sketch):
+```cpp
+class MaterialAdapter {
+public:
+    explicit MaterialAdapter(std::shared_ptr<materials::IMaterial> m);
+
+    // Fill MaterialInputs from physics data
+    void prepare_inputs(const Kinematics& kin,
+                        const Fields& fields,
+                        double dt,
+                        materials::MaterialInputs& min) const;
+
+    // Evaluate and return stress/tangent blocks
+    void evaluate(const materials::MaterialInputs& min,
+                  MaterialPointState& mp_state,
+                  materials::MaterialOutputs& mout,
+                  materials::TangentBlocks* tb = nullptr) const;
+};
+```
+
 ├── mechanics/                       # Solid/structural mechanics
 │   ├── solid/
 │   │   ├── linear/
