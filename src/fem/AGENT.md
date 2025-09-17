@@ -536,37 +536,54 @@ fem/
 ├── variational/                     # Variational form language (UFL-inspired)
 │   ├── README.md                   # Overview of variational forms system
 │   ├── form_language.hpp           # Core DSL for variational forms
-│   ├── form_compiler.hpp           # Form compilation and optimization
+│   ├── form_compiler.hpp           # Orchestrates IR generation and lowering
 │   ├── symbolic/                   # Symbolic expression system
 │   │   ├── expression.hpp          # Base symbolic expression
 │   │   ├── test_function.hpp       # Test functions (v)
 │   │   ├── trial_function.hpp      # Trial functions (u)
 │   │   ├── coefficient.hpp         # Problem coefficients
-│   │   ├── operators.hpp           # Differential operators
+│   │   ├── operators.hpp           # Differential operators (grad, div, curl)
+│   │   ├── facet_operators.hpp     # DG/interface helpers (n(), jump(), avg())
+│   │   ├── time_operators.hpp      # dt(), transient weighting helpers
+│   │   ├── ale_operators.hpp       # Material derivative, pullbacks for ALE
 │   │   ├── functionals.hpp         # Linear/bilinear functionals
 │   │   └── algebra.hpp             # Symbolic algebra operations
-│   ├── forms/                      # Form definitions
+│   ├── forms/                      # Form definitions & reusable terms
 │   │   ├── bilinear_form.hpp       # a(u,v) bilinear forms
 │   │   ├── linear_form.hpp         # L(v) linear forms
 │   │   ├── nonlinear_form.hpp      # Nonlinear forms F(u;v)
 │   │   ├── mixed_form.hpp          # Mixed variational forms
+│   │   ├── block_form.hpp          # Block/multi-field helpers
+│   │   ├── stabilization/          # Stabilization terms (SUPG/PSPG/GLS/grad-div)
+│   │   ├── interface/              # Interface weak enforcement (Nitsche, mortar)
 │   │   └── functional.hpp          # Energy/objective functionals
-│   ├── integration/                # Variational integration
-│   │   ├── variational_integrator.hpp # Integration of forms
+│   ├── integration/                # Variational integration (wrapping fem/integration)
+│   │   ├── variational_integrator.hpp # Bridges to fem/integration quadrature
 │   │   ├── domain_integrator.hpp   # Domain integrals
 │   │   ├── boundary_integrator.hpp # Boundary integrals
-│   │   ├── interface_integrator.hpp # Interface integrals
+│   │   ├── interface_integrator.hpp # Interior/exterior facet integrals
 │   │   └── measure.hpp             # Integration measures (dx, ds, dS)
-│   ├── spaces/                     # Function space definitions
-│   │   ├── function_space_builder.hpp # Build finite element spaces
-│   │   ├── mixed_space_builder.hpp # Mixed function spaces
-│   │   ├── space_hierarchy.hpp     # Hierarchical refinement
-│   │   └── space_restriction.hpp   # Subspace restrictions
-│   ├── assembly/                   # Assembly from variational forms
-│   │   ├── form_assembler.hpp      # Assemble from symbolic forms
+│   ├── spaces/                     # Space adapters (lightweight)
+│   │   ├── space_adapter.hpp       # Bridge fem/spaces types into DSL metadata
+│   │   ├── mixed_space_adapter.hpp # Mixed/product space helpers
+│   │   └── space_hierarchy.hpp     # Metadata for refinement (uses adaptation module for actual AMR)
+│   ├── ir/                         # Intermediate representation & analysis passes
+│   │   ├── form_ir.hpp             # Normalized IR (nodes, annotations)
+│   │   ├── shape_inference.hpp     # Rank/shape checking, conformity analysis
+│   │   ├── analysis_passes.hpp     # CSE, constant folding, strength reduction
+│   │   ├── sparsity_inference.hpp  # Symbolic sparsity pattern inference
+│   │   └── rewrite_rules.hpp       # Algebraic identities/simplifications
+│   ├── lowering/                   # Lowering IR to execution backends
+│   │   ├── lowering_config.hpp     # Backend/optimization flags
+│   │   ├── lower_assembled.hpp     # Emit assembled sparse/block operators
+│   │   ├── lower_matrix_free.hpp   # Emit matrix-free/sum-factorized kernels
+│   │   └── lower_ceed.hpp          # Optional libCEED/libParanumal bridges
+│   ├── assembly/                   # Consumers of lowered artifacts
+│   │   ├── form_assembler.hpp      # Assemble using lowered operators
 │   │   ├── assembly_kernel.hpp     # Generated assembly kernels
-│   │   ├── code_generation.hpp     # C++ code generation
-│   │   └── optimization.hpp        # Assembly optimization
+│   │   ├── code_generation.hpp     # C++/GPU code emission
+│   │   ├── sparsity_pattern.hpp    # Preallocation helper using IR sparsity
+│   │   └── optimization.hpp        # Kernel/block optimization utilities
 │   ├── examples/                   # Example variational forms
 │   │   ├── poisson.hpp             # Poisson equation
 │   │   ├── elasticity.hpp          # Linear elasticity
@@ -576,8 +593,10 @@ fem/
 │   └── utilities/                  # Variational utilities
 │       ├── form_printer.hpp        # Pretty print forms
 │       ├── form_validator.hpp      # Validate form consistency
-│       ├── derivative_computer.hpp # Automatic differentiation
-│       └── form_parser.hpp         # Parse mathematical notation
+│       ├── derivative_computer.hpp # Automatic differentiation / linearization
+│       ├── form_parser.hpp         # Parse mathematical notation
+│       ├── form_profiler.hpp       # FLOP/cost estimation for kernels
+│       └── error_messages.hpp      # Friendly diagnostics (shape/space mismatch)
 │
 ├── spaces/                          # Function spaces
 │   ├── function_space_base.hpp     # Base function space interface
@@ -1160,14 +1179,17 @@ The fem/ library is organized into specialized subfolders, each with distinct re
 **Relationship to integration/**: Uses quadrature rules for numerical integration
 
 #### **variational/ - High-Level Mathematical Expression**
-**Responsibility**: Provides domain-specific language for expressing mathematical problems
-- **Symbolic representation**: Mathematical notation for weak forms
-- **Automatic code generation**: Converts mathematical expressions to optimized assembly code
-- **Form compilation**: Analyzes and optimizes variational forms
-- **Physics interface**: How physics modules express their equations
+**Responsibility**: Provides the domain-specific language for expressing weak forms, builds an intermediate representation, runs symbolic/analytical passes, and lowers to execution backends while delegating solver policy to other modules.
+- **Symbolic representation**: Core DSL with differential, facet, time, and ALE operators so users write forms as in textbook notation.
+- **Reusable form components**: Library of stabilization, interface, and block-form utilities that return `Form` objects composable with user-defined residuals.
+- **IR & analysis**: Normalized form IR plus passes for shape inference, CSE, constant folding, sparsity inference, and algebraic rewrites.
+- **Lowering**: Configurable lowering targets (assembled sparse, matrix-free/sum-factorized, libCEED) producing artifacts consumed by assembly/solvers.
+- **Space/integration adapters**: Light wrappers over `fem/spaces/` and `fem/integration/` so the DSL reuses existing function space and quadrature infrastructure instead of duplicating it.
+- **Physics interface**: Physics modules depend on the DSL to declare problems, then call the lowering/assembly pipeline.
 
-**Relationship to formulation/**: Generates optimized code that uses formulation/ implementations
-**Relationship to integration/**: Automatically selects appropriate quadrature rules
+**Relationship to formulation/**: Compiled forms emit kernels/operators that formulation/ (and downstream assembly) execute.
+**Relationship to integration/**: Uses adapters to select quadrature rules from `fem/integration/` appropriate to the form.
+**Relationship to spaces/**: Uses adapters to reference spaces from `fem/spaces/`; all space construction/refinement logic lives there.
 
 ### **Workflow and Data Flow**
 
@@ -1183,8 +1205,8 @@ The fem/ library is organized into specialized subfolders, each with distinct re
 #### **Physics Module Integration**
 1. **variational/**: Physics expresses problem as mathematical weak form
 2. **field/**: Register physics field types (displacement, pressure, etc.)
-3. **Compilation**: variational/ generates optimized assembly code
-4. **Runtime**: Generated code uses all fem/ infrastructure for efficient computation
+3. **Compilation**: variational/ builds form IR, runs analysis (CSE, sparsity), and lowers to the selected backend (assembled, matrix-free, libCEED)
+4. **Runtime**: Lowered operators are executed via formulation/ and the assembly/solver stack for efficient computation
 
 ### **Separation of Concerns Examples**
 
