@@ -70,14 +70,17 @@ parallel_sort.hpp    // Parallel sorting
 parallel_pipeline.hpp // Pipeline parallelism
 ```
 
+> **Pipeline Ownership**: The `parallel_pipeline` primitives are the foundational building blocks for staged execution. Higher-level orchestration layers—such as `workflow/`—compose these primitives without reimplementing the core pipeline engine.
+
 ### Utilities
 ```cpp
 thread_safe.hpp      // Thread-safe wrapper
 concurrent_hash_map.hpp // Thread-safe hash map
-object_pool_mt.hpp   // Thread-safe object pool
 mpsc_queue.hpp      // Multi-producer single-consumer
 spsc_queue.hpp      // Single-producer single-consumer
 ```
+
+> **Allocator Sharing**: Thread-safe object pools are sourced from the `memory/` module (see `concurrent_pool.hpp`); concurrency utilities wrap or configure them rather than defining new pool types.
 
 ## Detailed Component Specifications
 

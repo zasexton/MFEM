@@ -1,7 +1,7 @@
 # Core Events - AGENT.md
 
 ## Purpose
-The `events/` layer provides a comprehensive event-driven architecture supporting synchronous and asynchronous event handling, publish-subscribe patterns, event queuing, filtering, and priority-based dispatch. It enables loose coupling between components through type-safe event communication with minimal overhead and maximum flexibility.
+The `events/` layer provides the core-wide event-driven architecture supporting synchronous and asynchronous event handling, publish-subscribe patterns, event queuing, filtering, and priority-based dispatch. It is the canonical global event bus for the core library—modules such as `base/`, `plugins/`, and others rely on it rather than implementing their own competing systems—enabling loose coupling through type-safe event communication with minimal overhead and maximum flexibility.
 
 ## Architecture Philosophy
 - **Type safety**: Compile-time event type checking

@@ -78,15 +78,14 @@ template<typename T, typename Key> class Registry
 
 ### Observer Pattern
 ```cpp
-class Event, EventDispatcher, Observer<T>, Subject<T>
+class Observer<T>, Subject<T>
 ```
 **Powers:**
-- Type-safe event handling
-- Global event bus
+- Lightweight, type-safe observation hooks for local object graphs
 - RAII subscription management
-- Thread-safe dispatch
+- Thread-safe dispatch within a component boundary
 
-**When to use:** Cross-module communication without coupling
+**When to use:** Local notifications inside a subsystem. For application-wide event routing, rely on the dedicated `events/` module, which builds on these primitives.
 
 ### Visitor Pattern
 ```cpp
