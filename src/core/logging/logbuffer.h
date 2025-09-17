@@ -7,6 +7,13 @@
 #include <deque>
 #include <mutex>
 #include <atomic>
+#include <optional>
+#include <format>
+#include <unordered_map>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 #include "logmessage.h"
 
@@ -78,7 +85,7 @@ namespace fem::core::logging {
     public:
         explicit FifoBuffer(size_t capacity = 1000)
                 : capacity_(capacity) {
-            messages_.reserve(capacity);
+            // std::deque doesn't have reserve(), but this is fine for FIFO usage
         }
 
         [[nodiscard]] bool push(LogMessage message) override {
@@ -154,12 +161,17 @@ namespace fem::core::logging {
     class CircularBuffer : public LogBuffer {
     public:
         explicit CircularBuffer(size_t capacity = 1000)
-                : capacity_(capacity), buffer_(capacity) {}
+                : capacity_(capacity) {
+            buffer_.reserve(capacity);
+            for (size_t i = 0; i < capacity; ++i) {
+                buffer_.emplace_back(std::nullopt);
+            }
+        }
 
         [[nodiscard]] bool push(LogMessage message) override {
             std::lock_guard lock(mutex_);
 
-            buffer_[write_pos_] = std::move(message);
+            buffer_[write_pos_] = std::make_optional(std::move(message));
             write_pos_ = (write_pos_ + 1) % capacity_;
 
             if (size_ < capacity_) {
@@ -180,7 +192,8 @@ namespace fem::core::logging {
                 return std::nullopt;
             }
 
-            LogMessage msg = std::move(buffer_[read_pos_]);
+            LogMessage msg = std::move(buffer_[read_pos_].value());
+            buffer_[read_pos_] = std::nullopt;
             read_pos_ = (read_pos_ + 1) % capacity_;
             size_--;
 
@@ -195,7 +208,10 @@ namespace fem::core::logging {
 
             size_t pos = read_pos_;
             for (size_t i = 0; i < size_; ++i) {
-                result.push_back(std::move(buffer_[pos]));
+                if (buffer_[pos].has_value()) {
+                    result.push_back(std::move(buffer_[pos].value()));
+                    buffer_[pos] = std::nullopt;
+                }
                 pos = (pos + 1) % capacity_;
             }
 
@@ -238,7 +254,7 @@ namespace fem::core::logging {
 
     private:
         mutable std::mutex mutex_;
-        std::vector<LogMessage> buffer_;
+        std::vector<std::optional<LogMessage>> buffer_;
         size_t capacity_;
         size_t read_pos_{0};
         size_t write_pos_{0};
@@ -268,7 +284,6 @@ namespace fem::core::logging {
             }
 
             // Insert in priority order
-            auto level = message.get_level();
             auto it = std::lower_bound(messages_.begin(), messages_.end(), message,
                                        [](const LogMessage& a, const LogMessage& b) {
                                            return a.get_level() > b.get_level(); // Higher severity first
@@ -480,13 +495,10 @@ namespace fem::core::logging {
             }
 
             // Add new compressed entry
-            CompressedMessage compressed{
-                    .original = std::move(message),
-                    .count = 1,
-                    .last_timestamp = message.get_timestamp()
-            };
-
-            compressed_messages_[hash] = std::move(compressed);
+            auto timestamp = message.get_timestamp();
+            compressed_messages_[hash] = CompressedMessage(
+                std::move(message), 1, timestamp
+            );
             return true;
         }
 
@@ -505,18 +517,15 @@ namespace fem::core::logging {
                 if (compressed.count > 1) {
                     // Modify message to show repetition count
                     auto msg = compressed.original.clone();
-                    std::string new_message = std::format(
-                            "{} [repeated {} times, last at {}]",
-                            msg.get_message(),
-                            compressed.count,
-                            format_timestamp(compressed.last_timestamp)
-                    );
+                    std::ostringstream oss;
+                    oss << msg.get_message() << " [repeated " << compressed.count
+                        << " times, last at " << format_timestamp(compressed.last_timestamp) << "]";
+                    std::string new_message = oss.str();
 
                     LogMessage repeated_msg(
                             msg.get_level(),
                             msg.get_logger_name(),
-                            new_message,
-                            msg.get_location()
+                            new_message
                     );
 
                     result.push_back(std::move(repeated_msg));
@@ -558,6 +567,12 @@ namespace fem::core::logging {
             LogMessage original;
             uint32_t count;
             std::chrono::system_clock::time_point last_timestamp;
+
+            // Add constructor to make it default-constructible
+            CompressedMessage() : original(LogLevel::INFO, "", ""), count(0), last_timestamp{} {}
+
+            CompressedMessage(LogMessage msg, uint32_t cnt, std::chrono::system_clock::time_point ts)
+                : original(std::move(msg)), count(cnt), last_timestamp(ts) {}
         };
 
         size_t compute_hash(const LogMessage& msg) const {
