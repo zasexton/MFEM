@@ -266,44 +266,106 @@ fem/
 │       └── basis_transformation.hpp # Basis transformation utilities
 │
 ├── integration/                     # Numerical integration
-│   ├── quadrature_rule.hpp         # Base quadrature rule
-│   ├── gauss/                      # Gaussian quadrature
-│   │   ├── gauss_1d.hpp
-│   │   ├── gauss_triangle.hpp
-│   │   ├── gauss_quadrilateral.hpp
-│   │   ├── gauss_tetrahedron.hpp   
-│   │   ├── gauss_tensor.hpp        # Tensor product quadrature
-│   │   └── gauss_hexahedron.hpp
+│   ├── quadrature_rule.hpp         # Base quadrature rule interface
+│   ├── quadrature_cache.hpp        # Cache quadrature data and evaluations
+│   ├── integration_point.hpp       # Integration point abstraction
+│   ├── gauss/                      # Gaussian quadrature families
+│   │   ├── gauss_1d.hpp            # 1D Gauss-Legendre rules
+│   │   ├── gauss_triangle.hpp      # Triangular Gaussian quadrature
+│   │   ├── gauss_quadrilateral.hpp # Quadrilateral Gaussian quadrature
+│   │   ├── gauss_tetrahedron.hpp   # Tetrahedral Gaussian quadrature
+│   │   ├── gauss_hexahedron.hpp    # Hexahedral Gaussian quadrature
+│   │   ├── gauss_pyramid.hpp       # Pyramid Gaussian quadrature
+│   │   ├── gauss_prism.hpp         # Prism Gaussian quadrature
+│   │   └── gauss_tensor.hpp        # Tensor product construction
 │   ├── newton_cotes/               # Newton-Cotes rules
-│   │   └── newton_cotes.hpp
+│   │   ├── newton_cotes_1d.hpp     # 1D Newton-Cotes rules
+│   │   ├── simpson.hpp             # Simpson's rule
+│   │   ├── trapezoidal.hpp         # Trapezoidal rule
+│   │   └── composite_rules.hpp     # Composite Newton-Cotes
+│   ├── spectral/                   # Spectral integration
+│   │   ├── gauss_lobatto.hpp       # Gauss-Lobatto-Legendre
+│   │   ├── gauss_radau.hpp         # Gauss-Radau rules
+│   │   ├── chebyshev_gauss.hpp     # Chebyshev-Gauss points
+│   │   ├── clenshaw_curtis.hpp     # Clenshaw-Curtis quadrature
+│   │   └── fejer.hpp               # Fejér quadrature rules
 │   ├── adaptive/                   # Adaptive quadrature
-│   │   └── adaptive_quadrature.hpp
-│   ├── special/                    # Special integration
-│   │   ├── singular.hpp           # Singular integrals
-│   │   └── surface.hpp            # Surface integration
-│   ├── cut_cell.hpp               # Embedded interface quadrature   
-│   └── quadrature_cache.hpp        # Cache quadrature data
+│   │   ├── adaptive_1d.hpp         # 1D adaptive quadrature
+│   │   ├── adaptive_multidim.hpp   # Multi-dimensional adaptive
+│   │   ├── error_estimation.hpp    # Integration error estimation
+│   │   ├── subdivision_strategy.hpp # Domain subdivision strategies
+│   │   └── sparse_grids.hpp        # Sparse grid integration
+│   ├── special/                    # Special integration methods
+│   │   ├── singular.hpp            # Singular integral handling
+│   │   ├── oscillatory.hpp         # Oscillatory integrand methods
+│   │   ├── surface.hpp             # Surface integration
+│   │   ├── line_integral.hpp       # Line integral computation
+│   │   ├── weakly_singular.hpp     # Weakly singular integrals
+│   │   └── boundary_element.hpp    # Boundary element integration
+│   ├── cut_cell/                   # Cut-cell integration
+│   │   ├── cut_cell_base.hpp       # Base cut-cell integration
+│   │   ├── level_set.hpp           # Level set cut-cell
+│   │   ├── moment_fitting.hpp      # Moment fitting methods
+│   │   ├── decomposition.hpp       # Cell decomposition strategies
+│   │   └── stabilization.hpp       # Cut-cell stabilization
+│   ├── isogeometric/               # IGA-specific integration
+│   │   ├── nurbs_quadrature.hpp    # NURBS quadrature rules
+│   │   ├── optimal_rules.hpp       # ML-optimized quadrature
+│   │   ├── reduced_rules.hpp       # Reduced integration schemes
+│   │   └── element_splitting.hpp   # Element splitting for IGA
+│   ├── high_order/                 # High-order integration
+│   │   ├── exactness_rules.hpp     # Polynomial exactness requirements
+│   │   ├── degree_freedom.hpp      # Degree of freedom mapping
+│   │   ├── integration_order.hpp   # Order selection strategies
+│   │   └── curved_elements.hpp     # Curved element integration
+│   └── utilities/                  # Integration utilities
+│       ├── rule_generator.hpp      # Quadrature rule generation
+│       ├── weight_optimizer.hpp    # Weight optimization algorithms
+│       ├── point_optimizer.hpp     # Point location optimization
+│       ├── accuracy_test.hpp       # Integration accuracy testing
+│       └── performance_timer.hpp   # Integration performance profiling
 │
-├── material/                        # Material model interfaces
-│   ├── material_base.hpp           # Base material interface
-│   ├── material_component.hpp      # ECS material component
-│   ├── material_point.hpp          # Material point data
-│   ├── constitutive_base.hpp       # Constitutive model interface
-│   ├── material_tangent.hpp        # Tangent operators
-│   ├── material_state.hpp          # State variables
-│   ├── material_properties.hpp     # Property container
-│   ├── integration_schemes.hpp     # Constitutive update schemes
-│   └── material_factory.hpp        # Material creation factory
-│
-├── field/                           # Field variables
-│   ├── field_base.hpp              # Base field class
-│   ├── scalar_field.hpp            # Scalar fields
-│   ├── vector_field.hpp            # Vector fields
-│   ├── tensor_field.hpp            # Tensor fields
-│   ├── field_interpolation.hpp     # Field interpolation
-│   ├── field_gradient.hpp          # Gradient computation
+├── field/                           # Field variables and operations
+│   ├── field_base.hpp              # Base field interface
+│   ├── field_registry.hpp          # Field type registration and management
+│   ├── field_descriptor.hpp        # Field metadata and properties
 │   ├── field_component.hpp         # ECS field component
-│   └── field_history.hpp           # Time history storage
+│   ├── types/                      # Field type definitions
+│   │   ├── scalar_field.hpp        # Scalar field variables
+│   │   ├── vector_field.hpp        # Vector field variables
+│   │   ├── tensor_field.hpp        # Tensor field variables
+│   │   ├── complex_field.hpp       # Complex-valued fields
+│   │   └── quaternion_field.hpp    # Quaternion fields
+│   ├── operations/                 # Field operations
+│   │   ├── field_arithmetic.hpp    # Field arithmetic operations
+│   │   ├── field_interpolation.hpp # Field interpolation between points
+│   │   ├── field_gradient.hpp      # Gradient computation
+│   │   ├── field_divergence.hpp    # Divergence computation
+│   │   ├── field_curl.hpp          # Curl computation
+│   │   ├── field_laplacian.hpp     # Laplacian computation
+│   │   └── field_projection.hpp    # Field projection operations
+│   ├── storage/                    # Field storage and access
+│   │   ├── field_storage.hpp       # Field value storage strategies
+│   │   ├── field_history.hpp       # Time history storage
+│   │   ├── distributed_field.hpp   # Distributed field storage
+│   │   ├── compressed_field.hpp    # Compressed field storage
+│   │   └── cached_field.hpp        # Cached field computations
+│   ├── transfer/                   # Field transfer operations
+│   │   ├── mesh_transfer.hpp       # Field transfer between meshes
+│   │   ├── interpolation_transfer.hpp # Interpolation-based transfer
+│   │   ├── projection_transfer.hpp # Projection-based transfer
+│   │   ├── conservative_transfer.hpp # Conservative field transfer
+│   │   └── mortar_transfer.hpp     # Mortar-based field transfer
+│   ├── boundaries/                 # Field boundary handling
+│   │   ├── boundary_extraction.hpp # Extract boundary field values
+│   │   ├── boundary_conditions.hpp # Field-specific boundary conditions
+│   │   ├── flux_computation.hpp    # Boundary flux computation
+│   │   └── normal_computation.hpp  # Normal vector computation
+│   └── utilities/                  # Field utilities
+│       ├── field_validator.hpp     # Field validation and consistency
+│       ├── field_analyzer.hpp      # Field analysis and statistics
+│       ├── field_io.hpp            # Field input/output operations
+│       └── field_visualization.hpp # Field visualization support
 │
 ├── boundary/                        # Boundary conditions
 │   ├── boundary_condition_base.hpp # Base BC interface
@@ -319,13 +381,61 @@ fem/
 │   ├── mortar.hpp                  # Mortar coupling
 │   └── essential_bc.hpp            # Essential BCs
 │
-├── basis/                           # Basis functions
-│   ├── basis_base.hpp              # Base basis class
-│   ├── polynomial_basis.hpp        # Polynomial bases
-│   ├── spectral_basis.hpp          # Spectral bases
-│   ├── wavelet_basis.hpp           # Wavelet bases
-│   ├── modal_basis.hpp             # Modal bases
-│   └── nodal_basis.hpp             # Nodal bases
+├── basis/                           # Mathematical basis abstractions
+│   ├── basis_base.hpp              # Base mathematical basis interface
+│   ├── basis_properties.hpp        # Basis mathematical properties
+│   ├── basis_factory.hpp           # Basis creation and management
+│   ├── polynomial/                 # Polynomial basis families
+│   │   ├── monomial.hpp            # Monomial basis (1, x, x², ...)
+│   │   ├── bernstein.hpp           # Bernstein polynomial basis
+│   │   ├── newton.hpp              # Newton polynomial basis
+│   │   ├── lagrange_basis.hpp      # Lagrange interpolating basis
+│   │   └── hermite_basis.hpp       # Hermite polynomial basis
+│   ├── orthogonal/                 # Orthogonal polynomial families
+│   │   ├── legendre.hpp            # Legendre polynomials
+│   │   ├── chebyshev.hpp           # Chebyshev polynomials (1st/2nd kind)
+│   │   ├── jacobi.hpp              # Jacobi polynomials
+│   │   ├── laguerre.hpp            # Laguerre polynomials
+│   │   ├── hermite_orthogonal.hpp  # Orthogonal Hermite polynomials
+│   │   └── zernike.hpp             # Zernike polynomials
+│   ├── spectral/                   # Spectral basis functions
+│   │   ├── fourier.hpp             # Fourier series basis
+│   │   ├── sine_cosine.hpp         # Trigonometric basis functions
+│   │   ├── exponential.hpp         # Complex exponential basis
+│   │   └── spherical_harmonics.hpp # Spherical harmonic basis
+│   ├── wavelets/                   # Wavelet basis families
+│   │   ├── haar.hpp                # Haar wavelets
+│   │   ├── daubechies.hpp          # Daubechies wavelets
+│   │   ├── biorthogonal.hpp        # Biorthogonal wavelets
+│   │   ├── coiflets.hpp            # Coiflet wavelets
+│   │   └── meyer.hpp               # Meyer wavelets
+│   ├── splines/                    # Spline basis functions
+│   │   ├── b_spline_basis.hpp      # B-spline basis functions
+│   │   ├── nurbs_basis.hpp         # NURBS basis functions
+│   │   ├── catmull_rom.hpp         # Catmull-Rom spline basis
+│   │   └── cubic_spline.hpp        # Cubic spline basis
+│   ├── radial/                     # Radial basis functions
+│   │   ├── multiquadric.hpp        # Multiquadric RBF
+│   │   ├── gaussian.hpp            # Gaussian RBF
+│   │   ├── thin_plate_spline.hpp   # Thin plate spline RBF
+│   │   ├── inverse_multiquadric.hpp # Inverse multiquadric RBF
+│   │   └── polyharmonic.hpp        # Polyharmonic RBF
+│   ├── modal/                      # Modal basis representations
+│   │   ├── modal_base.hpp          # Base modal representation
+│   │   ├── eigenmode.hpp           # Eigenmode basis
+│   │   ├── frequency_domain.hpp    # Frequency domain basis
+│   │   └── vibration_mode.hpp      # Structural vibration modes
+│   ├── nodal/                      # Nodal basis representations
+│   │   ├── nodal_base.hpp          # Base nodal representation
+│   │   ├── point_evaluation.hpp    # Point evaluation functionals
+│   │   ├── cardinal_basis.hpp      # Cardinal basis functions
+│   │   └── interpolation_basis.hpp # Interpolation-based basis
+│   └── utilities/                  # Basis utilities
+│       ├── basis_transformation.hpp # Basis change transformations
+│       ├── orthogonalization.hpp  # Gram-Schmidt orthogonalization
+│       ├── normalization.hpp      # Basis normalization methods
+│       ├── conditioning.hpp       # Basis conditioning analysis
+│       └── completeness.hpp       # Basis completeness verification
 │
 ├── mapping/                        # Coordinate mappings
 │   ├── mapping_base.hpp            # Base mapping interface
@@ -817,6 +927,156 @@ node->add_dof(FieldRegistry::get("magnetic_field"), ComponentId::Y);
 ```
 
 This architecture ensures that node and shape function infrastructure can be optimized for mathematical and computational properties while remaining completely independent of physics domains.
+
+## FEM Subfolder Responsibilities and Relationships
+
+The fem/ library is organized into specialized subfolders, each with distinct responsibilities that work together to provide comprehensive finite element capabilities. Understanding these relationships is crucial for effective usage and extension.
+
+### **Core Mathematical Infrastructure**
+
+#### **basis/ - Pure Mathematical Foundations**
+**Responsibility**: Provides abstract mathematical basis functions independent of finite element context
+- **Polynomial families**: Monomial, Bernstein, Lagrange, Hermite bases
+- **Orthogonal systems**: Legendre, Chebyshev, Jacobi polynomials
+- **Spectral bases**: Fourier series, spherical harmonics
+- **Specialized bases**: Wavelets, radial basis functions, splines
+- **Mathematical properties**: Orthogonality, completeness, conditioning
+
+**Physics Independence**: Completely physics-agnostic mathematical abstractions
+
+#### **shape/ - Finite Element Basis Functions**
+**Responsibility**: Adapts mathematical bases for finite element interpolation on specific element topologies
+- **Element-specific adaptation**: Takes basis/ functions and adapts them to triangles, hexahedra, etc.
+- **Finite element properties**: C⁰, C¹ continuity, nodal/modal forms
+- **Computational optimization**: Efficient evaluation, derivative computation, caching
+- **Advanced FEM techniques**: XFEM enrichment, hierarchical p-refinement
+
+**Relationship to basis/**: Uses and extends basis/ mathematical foundations for FEM-specific requirements
+
+### **Geometric and Topological Infrastructure**
+
+#### **element/ - Element Topology and Geometry**
+**Responsibility**: Defines element shapes, connectivity, and geometric properties
+- **Topological definitions**: Node connectivity patterns for all element types
+- **Reference elements**: Standard element definitions in parametric coordinates
+- **Element families**: Complete taxonomy of 1D/2D/3D element types
+- **Geometric mappings**: Coordinate transformations from reference to physical elements
+
+**Relationship to shape/**: Provides the geometric context (element topology) that shape functions are defined on
+
+#### **node/ - Node and Connectivity Management**
+**Responsibility**: Manages discrete points, connectivity, and degree of freedom assignment
+- **Node entities**: Physical points with coordinates and connectivity information
+- **DOF management**: Assignment of field variables to nodes (physics-agnostic)
+- **Constraints**: Boundary conditions, multi-point constraints, rigid connections
+- **Mesh topology**: Adjacency relationships, boundary detection
+
+**Relationship to element/**: Provides the discrete points that elements connect; manages element-node relationships
+
+### **Computational Infrastructure**
+
+#### **integration/ - Numerical Integration**
+**Responsibility**: Provides quadrature rules and integration strategies for finite element computations
+- **Quadrature families**: Gauss, Newton-Cotes, spectral quadrature rules
+- **Element-specific rules**: Optimized integration for each element topology
+- **Advanced techniques**: Adaptive quadrature, cut-cell integration, sparse grids
+- **Performance optimization**: Cached evaluations, ML-optimized rules
+
+**Relationship to element/**: Provides integration rules tailored to each element type
+**Relationship to shape/**: Integration points where shape functions are evaluated
+
+#### **field/ - Field Variable Management**
+**Responsibility**: Manages field variables (solution unknowns) independently of their physics meaning
+- **Field types**: Scalar, vector, tensor, complex field abstractions
+- **Field operations**: Interpolation, gradients, divergence, curl operations
+- **Storage strategies**: Distributed, compressed, cached field storage
+- **Transfer operations**: Field mapping between different meshes
+
+**Physics Independence**: Field operations work regardless of whether fields represent displacement, temperature, pressure, etc.
+**Relationship to node/**: Fields are associated with DOF at nodes
+**Relationship to shape/**: Field interpolation uses shape functions
+
+### **Mathematical Formulation Infrastructure**
+
+#### **formulation/ - Numerical Method Implementation**
+**Responsibility**: Implements specific finite element mathematical approaches
+- **Method families**: Galerkin, Petrov-Galerkin, discontinuous Galerkin
+- **Advanced methods**: Mixed formulations, stabilized methods, least-squares
+- **Implementation strategies**: How to actually compute element matrices and vectors
+- **Computational patterns**: Assembly algorithms, constraint handling
+
+**Relationship to shape/**: Uses shape functions to implement specific numerical methods
+**Relationship to integration/**: Uses quadrature rules for numerical integration
+
+#### **variational/ - High-Level Mathematical Expression**
+**Responsibility**: Provides domain-specific language for expressing mathematical problems
+- **Symbolic representation**: Mathematical notation for weak forms
+- **Automatic code generation**: Converts mathematical expressions to optimized assembly code
+- **Form compilation**: Analyzes and optimizes variational forms
+- **Physics interface**: How physics modules express their equations
+
+**Relationship to formulation/**: Generates optimized code that uses formulation/ implementations
+**Relationship to integration/**: Automatically selects appropriate quadrature rules
+
+### **Workflow and Data Flow**
+
+#### **Element Assembly Workflow**
+1. **element/**: Define element topology and reference geometry
+2. **node/**: Assign DOF and manage constraints
+3. **shape/**: Evaluate shape functions at integration points
+4. **integration/**: Provide quadrature points and weights
+5. **field/**: Interpolate field values and compute gradients
+6. **formulation/**: Apply specific FEM method (Galerkin, mixed, etc.)
+7. **Result**: Element matrix and vector contributions
+
+#### **Physics Module Integration**
+1. **variational/**: Physics expresses problem as mathematical weak form
+2. **field/**: Register physics field types (displacement, pressure, etc.)
+3. **Compilation**: variational/ generates optimized assembly code
+4. **Runtime**: Generated code uses all fem/ infrastructure for efficient computation
+
+### **Separation of Concerns Examples**
+
+#### **Structural Mechanics Example**
+```cpp
+// Physics module defines the problem
+auto weak_form = inner(sigma(grad(u)), grad(v)) * dx;
+
+// fem/ infrastructure handles the mathematics:
+// - element/: Provides hex8 element topology
+// - node/: Manages displacement DOF at nodes
+// - shape/: Evaluates Lagrange shape functions
+// - integration/: Uses 2x2x2 Gauss quadrature
+// - field/: Computes displacement gradients
+// - formulation/: Applies Galerkin method
+```
+
+#### **Fluid Mechanics Example**
+```cpp
+// Same fem/ infrastructure, different physics
+auto weak_form = inner(grad(u), grad(v)) * dx + inner(grad(p), v) * dx;
+
+// fem/ handles:
+// - element/: Same hex8 topology
+// - node/: Velocity + pressure DOF
+// - shape/: Same shape functions, different fields
+// - integration/: Same quadrature rules
+// - formulation/: Mixed formulation for incompressibility
+```
+
+### **Key Design Principles**
+
+1. **Layered Architecture**: Lower layers (basis/, element/) provide foundations for higher layers (formulation/, variational/)
+
+2. **Separation of Mathematical and Physical Concerns**: All fem/ components work with any physics
+
+3. **Composability**: Physics modules compose fem/ building blocks rather than inherit from them
+
+4. **Optimization Independence**: Each layer can be optimized independently while maintaining interfaces
+
+5. **Extensibility**: New element types, shape functions, or methods can be added without affecting other components
+
+This architecture enables physics modules to focus on their domain expertise while leveraging highly optimized, reusable mathematical infrastructure.
 
 ## Key Components
 
