@@ -43,31 +43,29 @@ docs/                        # Documentation
 ### 1. **core/** - Software Infrastructure Layer
 
 ### 2. **numeric/** - Mathematical Engine
-**Purpose**: High-performance mathematical operations with GPU portability
+**Purpose**: High-performance mathematical operations that remain independent of FEM-specific layers. The numeric library exposes containers, storage backends, expression templates, kernels, linear algebra, factorisations, solvers, autodiff types, indexing helpers, backends, and concurrency utilities.
 
-**Sub-modules**:
-- `dense/` - Vector, Matrix, Tensor classes
-- `sparse/` - Sparse matrix formats (CSR, CSC, COO, ELL for GPU)
-- `operations/` - Mathematical operations (CPU + GPU kernels)
-- `linalg/` - Linear algebra routines
-- `expressions/` - Expression templates with compile-time optimization
-- `decompositions/` - LU, QR, SVD, eigenvalue
-- `algorithms/` - Interpolation, optimization, integration
-- `kernels/` - SIMD and GPU kernel implementations
+**Current Sub-modules** (see `numeric/AGENT.md` for detail):
 
-**GPU Strategy**:
-```cpp
-// Unified interface with backend selection
-template<typename Backend = CPUBackend>
-class Matrix {
-    using kernel_t = typename Backend::kernel_type;
-    // Dispatches to CPU or GPU implementation
-};
+| Sub-module | Role |
+|------------|------|
+| `base/`, `traits/` | CRTP scaffolding, traits, view/slice infrastructure |
+| `core/` | User-facing containers (vectors, matrices, tensors, block types) |
+| `storage/`, `allocators/` | Concrete storage backends and memory strategies |
+| `autodiff/` | Forward/reverse AD types and tape infrastructure |
+| `expressions/` | User-facing expression combinators built on the base layer |
+| `operations/` | Element-wise kernels and reductions |
+| `linear_algebra/` | BLAS-like routines for dense and sparse data |
+| `decompositions/` | LU/QR/SVD/eigen factorisations |
+| `solvers/` | Reusable linear/nonlinear solver building blocks (for consumers of the numeric library) |
+| `optimization/` | Optimisation algorithms on top of solvers/autodiff |
+| `sparse/`, `block/`, `constrained/`, `graph/`, `polynomial/` | Specialised utilities supporting FEM assembly patterns |
+| `parallel/`, `matrix_free/` | Numeric-specific threading helpers and matrix-free operators |
+| `backends/` | Optional acceleration adapters (BLAS, MKL, CUDA) |
+| `math/`, `diagnostics/`, `support/` | Scalar helpers, timing instrumentation, error handling |
+| `indexing/`, `io/` | Fancy indexing helpers and numeric I/O formats |
 
-// Compile-time kernel selection
-using GPUMatrix = Matrix<CUDABackend>;
-using CPUMatrix = Matrix<CPUBackend>;
-```
+The numeric library offers CPU-only fallback implementations while allowing backends to override kernels for GPU or vendor-tuned BLAS.
 
 ### 3. **device/** - Hardware Abstraction Layer (NEW)
 **Purpose**: Portable execution on CPU/GPU/accelerators
@@ -186,8 +184,8 @@ class MatrixFreeOperator {
 };
 ```
 
-### 7. **solvers/** - Solution Algorithms
-**Purpose**: Scalable solvers with external library integration
+### 7. **solvers/** - FEM Solution Algorithms
+**Purpose**: FEM-level solvers and orchestration (linear/nonlinear/transient) that combine assemblies, constraints, boundary conditions, and physics models. While the numeric library exposes reusable solver building blocks, this module integrates them with FEM-specific data structures and external library interfaces.
 
 **Enhanced Sub-modules**:
 - `linear/`
@@ -384,6 +382,8 @@ class AdaptivityController {
 - `communication/` - Ghost exchange patterns
 - `load_balancing/` - Dynamic balancing with costs
 - `collective/` - Optimized collectives
+
+> Layering note: this module owns inter-node (MPI) concerns. Intra-node threading lives in `numeric/parallel/`, while accelerator execution policies are handled by `device/`.
 
 **GPU-Aware Communication**:
 ```cpp
@@ -691,3 +691,5 @@ std::visit([&](auto& elem) {
 - **Regression**: Automated nightly builds
 
 This revised architecture addresses all major points from the review while maintaining the ECS design philosophy and adding concrete strategies for GPU support, adaptive capabilities, and multiphysics coupling.
+### 14. **device/** - Hardware Abstraction Layer (NEW)
+**Purpose**: Provide execution-space abstractions (CPU, CUDA, HIP, SYCL) and unified memory management. This layer underpins hardware-specific kernels and complements the numeric `parallel/` (thread-level) and top-level `parallel/` (MPI) modules.
