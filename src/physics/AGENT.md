@@ -78,11 +78,10 @@ physics/
 │   │   └── thermal_contact_law.hpp       # With heat transfer
 │   │
 │   └── dynamics/
-│       ├── explicit_dynamics.hpp        # Central difference
-│       ├── implicit_dynamics.hpp        # Newmark/HHT
-│       ├── modal_dynamics.hpp           # Modal superposition
-│       ├── harmonic_response.hpp        # Frequency domain
-│       └── random_vibration.hpp         # Stochastic dynamics
+│       ├── dynamics_formulation.hpp     # Residuals/mass/damping; time stepping in fem/solvers
+│       ├── modal_dynamics.hpp           # Modal superposition (post-processing)
+│       ├── harmonic_response.hpp        # Frequency-domain formulation (time integrators in fem)
+│       └── random_vibration.hpp         # Stochastic loading formulation (time-stepping in fem)
 │
 ├── thermal/                         # Heat transfer
 │   ├── conduction/
@@ -123,17 +122,13 @@ physics/
 │   │   │   ├── unsteady_ns.hpp          # Transient NS
 │   │   │   ├── boussinesq.hpp           # Buoyancy-driven
 │   │   │   └── non_newtonian.hpp        # Non-Newtonian
-│   │   └── stabilized/
-│   │       ├── supg.hpp                 # SUPG
-│   │       ├── pspg.hpp                 # PSPG
-│   │       ├── gls.hpp                  # GLS
-│   │       └── vms.hpp                  # Variational multiscale
+│   │   └── stabilized/                  # NOTE: stabilization methods live in fem/ (reused across physics)
+│   │       └── (use fem/galerkin/* and fem/stabilized/*; configure from physics)
 │   │
 │   ├── compressible/
 │   │   ├── euler.hpp                    # Euler equations
 │   │   ├── navier_stokes_comp.hpp       # Compressible NS
-│   │   ├── discontinuous_galerkin.hpp   # DG methods
-│   │   └── shock_capturing.hpp          # Shock capturing
+│   │   └── notes.md                     # DG and shock-capturing provided by fem/ (generic across PDEs)
 │   │
 │   ├── turbulence/
 │   │   ├── rans/
@@ -159,9 +154,9 @@ physics/
 │   │   └── euler_euler.hpp              # Two-fluid model
 │   │
 │   ├── free_surface/
-│   │   ├── ale_free_surface.hpp         # ALE methods
-│   │   ├── space_time_free.hpp          # Space-time
-│   │   └── moving_mesh.hpp              # Moving mesh
+│   │   ├── ale_free_surface.hpp         # ALE kinematics
+│   │   ├── space_time_formulation.hpp   # Space-time weak form (time integrators live in fem)
+│   │   └── moving_mesh.hpp              # Moving mesh kinematics
 │   │ 
 │   ├── porous_media/
 │   │   ├── darcy.hpp                    # Darcy's law
@@ -585,7 +580,7 @@ private:
 
 ### 3. Incompressible Navier-Stokes
 ```cpp
-// Incompressible flow with stabilization
+// Incompressible flow; stabilization terms are provided by fem/ (SUPG/PSPG/GLS/VMS)
 template<int Dim>
 class NavierStokes : public PhysicsModule<Dim> {
     double density;
@@ -629,37 +624,11 @@ public:
             // Continuity
             R_p += N * div_v * qp.weight;
             
-            // Stabilization
-            if (stab_type != StabilizationType::None) {
-                add_stabilization(elem, qp, v, p, R_v, R_p);
-            }
+            // Stabilization: integrate fem/stabilized terms here when enabled
+            // (configured via fem/ stabilized APIs; not implemented in physics)
         }
     }
     
-private:
-    void add_stabilization(const Element& elem,
-                          const QuadraturePoint& qp,
-                          const Vector& v, double p,
-                          Vector& R_v, Vector& R_p) {
-        // SUPG/PSPG stabilization
-        double h = elem.characteristic_length();
-        double U = norm(v);
-        double Re_h = density * U * h / (2 * viscosity);
-        
-        // Stabilization parameters
-        double tau_supg = compute_tau_supg(h, U, viscosity);
-        double tau_pspg = compute_tau_pspg(h, U, viscosity);
-        
-        // Residuals
-        auto r_mom = compute_momentum_residual(v, p);
-        auto r_cont = compute_continuity_residual(v);
-        
-        // SUPG contribution
-        R_v += tau_supg * (grad_N * v) * r_mom * qp.weight;
-        
-        // PSPG contribution
-        R_p += tau_pspg * grad_N * r_mom * qp.weight;
-    }
 };
 ```
 
@@ -856,7 +825,7 @@ class MaterialStateCache {
 
 1. **Comprehensive Coverage**: All major physics domains
 2. **Nonlinear Support**: Full geometric and material nonlinearity
-3. **Stabilization**: Built-in stabilization methods
+3. **Stabilization**: Integrates fem/ stabilized and DG methods; not implemented here
 4. **Verification**: MMS and benchmark problems included
 5. **Component-Based**: Mix and match physics via ECS
 6. **Performance**: Optimized for vectorization and caching
