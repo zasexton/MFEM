@@ -5,6 +5,7 @@
 
 #include "result.h"
 #include "exception_base.h"
+#include "logic_error.h"
 #include <exception>
 #include <functional>
 

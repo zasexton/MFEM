@@ -10,6 +10,7 @@
 #include <format>
 #include <sstream>
 #include <optional>
+#include <memory>
 #include "error_code.h"
 
 namespace fem::core::error {
@@ -213,19 +214,6 @@ protected:
 };
 
 /**
- * @brief Logic error - programming errors
- */
-class LogicError : public Exception {
-public:
-    using Exception::Exception;
-
-    explicit LogicError(const std::string& message,
-                       const std::source_location& loc = std::source_location::current())
-        : Exception(message, ErrorCode::InvalidArgument, loc) {
-    }
-};
-
-/**
  * @brief Runtime error - runtime failures
  */
 class RuntimeError : public Exception {
@@ -254,59 +242,6 @@ public:
 
 private:
     int system_error_code_;
-};
-
-/**
- * @brief Invalid argument error
- */
-class InvalidArgumentError : public LogicError {
-public:
-    InvalidArgumentError(const std::string& argument_name,
-                        const std::string& reason,
-                        const std::source_location& loc = std::source_location::current())
-        : LogicError(std::format("Invalid argument '{}': {}",
-                                argument_name, reason), loc)
-        , argument_name_(argument_name) {
-    }
-
-    const std::string& argument_name() const noexcept { return argument_name_; }
-
-private:
-    std::string argument_name_;
-};
-
-/**
- * @brief Out of range error
- */
-class OutOfRangeError : public LogicError {
-public:
-    OutOfRangeError(const std::string& what,
-                    size_t index,
-                    size_t size,
-                    const std::source_location& loc = std::source_location::current())
-        : LogicError(std::format("{}: index {} out of range [0, {})",
-                                what, index, size), loc)
-        , index_(index)
-        , size_(size) {
-    }
-
-    size_t index() const noexcept { return index_; }
-    size_t size() const noexcept { return size_; }
-
-private:
-    size_t index_;
-    size_t size_;
-};
-
-/**
- * @brief Not implemented error
- */
-class NotImplementedError : public LogicError {
-public:
-    explicit NotImplementedError(const std::string& feature,
-                                const std::source_location& loc = std::source_location::current())
-        : LogicError(std::format("Not implemented: {}", feature), loc) {
-    }
 };
 
 } // namespace fem::core::error

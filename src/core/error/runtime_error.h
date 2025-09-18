@@ -10,22 +10,6 @@
 namespace fem::core::error {
 
 /**
- * @brief Base class for runtime errors
- *
- * Runtime errors represent exceptional conditions that occur during
- * program execution but are not programming errors.
- */
-class RuntimeError : public Exception {
-public:
-    using Exception::Exception;
-
-    explicit RuntimeError(const std::string& message,
-                         const std::source_location& loc = std::source_location::current())
-        : Exception(message, ErrorCode::Unknown, loc) {
-    }
-};
-
-/**
  * @brief I/O error
  */
 class IOError : public RuntimeError {
