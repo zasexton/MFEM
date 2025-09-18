@@ -11,7 +11,7 @@
 #include <string_view>
 #include <format>
 
-namespace fem::core {
+namespace fem::core::error {
 
 // Forward declarations
 template<typename T, typename E> class Result;
@@ -218,6 +218,6 @@ template<typename E, typename T = void>
     }
 }
 
-} // namespace fem::core
+} // namespace fem::core::error
 
 #endif // CORE_ERROR_RESULT_H
