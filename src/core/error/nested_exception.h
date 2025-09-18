@@ -351,16 +351,16 @@ template<typename E>
 /**
  * @brief Exception guard for cleanup on exception
  */
-class ExceptionGuard {
+class NestedExceptionGuard {
 public:
     using cleanup_func = std::function<void()>;
 
-    explicit ExceptionGuard(cleanup_func cleanup)
+    explicit NestedExceptionGuard(cleanup_func cleanup)
         : cleanup_(std::move(cleanup))
         , uncaught_on_enter_(std::uncaught_exceptions()) {
     }
 
-    ~ExceptionGuard() noexcept {
+    ~NestedExceptionGuard() noexcept {
         if (cleanup_ && std::uncaught_exceptions() > uncaught_on_enter_) {
             try {
                 cleanup_();
