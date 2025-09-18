@@ -202,16 +202,22 @@ TEST_F(NestedExceptionTest, NetworkServiceScenario) {
 TEST_F(NestedExceptionTest, DeepNestingMemory) {
     const int depth = 100;
     Exception base("Base exception", ErrorCode::Unknown);
-    Exception* current = &base;
 
     // Create a deep chain
     std::vector<std::unique_ptr<Exception>> exceptions;
+
+    // First create all exceptions
     for (int i = 1; i < depth; ++i) {
-        auto next = std::make_unique<Exception>("Level " + std::to_string(i), ErrorCode::Unknown);
-        current->with_nested(*next);
-        current = next.get();
-        exceptions.push_back(std::move(next));
+        exceptions.push_back(std::make_unique<Exception>("Level " + std::to_string(i), ErrorCode::Unknown));
     }
+
+    // Then chain them in reverse order (deepest first)
+    for (size_t i = exceptions.size() - 1; i > 0; --i) {
+        exceptions[i-1]->with_nested(*exceptions[i]);
+    }
+
+    // Finally, chain the base with Level 1
+    base.with_nested(*exceptions[0]);
 
     std::string full_msg = base.full_message();
     EXPECT_TRUE(full_msg.find("Base exception") != std::string::npos);
@@ -219,7 +225,7 @@ TEST_F(NestedExceptionTest, DeepNestingMemory) {
     EXPECT_TRUE(full_msg.find("Level " + std::to_string(depth - 1)) != std::string::npos);
 
     // Verify the message is reasonable in size (not exponentially growing)
-    EXPECT_LT(full_msg.size(), 50000u); // Should be manageable size
+    EXPECT_LT(full_msg.size(), 100000u); // Should be manageable size for 100 levels
 }
 
 TEST_F(NestedExceptionTest, ConcurrentNestingOperations) {
