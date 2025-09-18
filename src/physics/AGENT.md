@@ -21,13 +21,43 @@ physics/
 ├── base/                            # Common physics infrastructure
 │   ├── physics_module.hpp          # Base physics interface
 │   ├── weak_form.hpp               # Weak formulation base
-│   ├── constitutive_model.hpp      # Material model interface
+│   ├── material_adapter.hpp        # Adapter to top-level materials library (consumes materials public API)
 │   ├── field_variable.hpp          # Physics field definitions
 │   ├── physics_traits.hpp          # Physics type traits
 │   ├── coupling_interface.hpp      # Interface exposed to coupling module
 │   ├── conservation_law.hpp        # Conservation principles
 │   └── physics_factory.hpp         # Physics module factory
 │
+#### Material Adapter (base/material_adapter.hpp)
+
+The adapter provides a thin, zero‑copy bridge between physics internals and the top‑level `materials/` API:
+
+- Maps physics field variables and kinematics to `materials::MaterialInputs` (small vs finite strain, temperature, pore pressure, electric/magnetic fields, gradients, dt).
+- Owns a handle to a `materials::IMaterial` instance (via factory/registry); supports configuration and cloning.
+- Invokes `evaluate(inputs, state, outputs, &tangents)` and returns stress/tangent blocks in the measures required by the physics formulation (Cauchy/PK, small/finite strain), performing only measure conversion if needed.
+- Manages per‑integration‑point material state lifecycles (trial → accept/reject) by collaborating with assembly/element storage; no dynamic allocation in hot paths.
+- Provides optional caching of `TangentBlocks` for Jacobian reuse within a time/load step when valid.
+
+Example interface (header sketch):
+```cpp
+class MaterialAdapter {
+public:
+    explicit MaterialAdapter(std::shared_ptr<materials::IMaterial> m);
+
+    // Fill MaterialInputs from physics data
+    void prepare_inputs(const Kinematics& kin,
+                        const Fields& fields,
+                        double dt,
+                        materials::MaterialInputs& min) const;
+
+    // Evaluate and return stress/tangent blocks
+    void evaluate(const materials::MaterialInputs& min,
+                  MaterialPointState& mp_state,
+                  materials::MaterialOutputs& mout,
+                  materials::TangentBlocks* tb = nullptr) const;
+};
+```
+
 ├── mechanics/                       # Solid/structural mechanics
 │   ├── solid/
 │   │   ├── linear/
@@ -438,7 +468,7 @@ physics/
 │
 ├── utilities/                      # Physics utilities
 │   ├── units.hpp                   # Unit systems
-│   ├── material_library.hpp        # Material database (should include all relevant physical properties)
+│   ├── material_catalog.hpp        # (Optional) physics-facing aliases that proxy to materials' property/database utilities
 │   └── dimensionless.hpp           # Dimensionless numbers
 │
 └── tests/                          # Testing infrastructure
@@ -501,7 +531,9 @@ public:
 // Linear elastic solid mechanics
 template<int Dim>
 class LinearElasticity : public PhysicsModule<Dim> {
-    ElasticMaterial material;
+    // Acquire a material from the top-level materials library
+    std::shared_ptr<materials::IMaterial> material =
+        materials::MaterialFactory::instance().create<materials::IsotropicElastic>();
     
 public:
     std::vector<FieldVariable> fields() const override {
@@ -519,8 +551,12 @@ public:
             // Strain
             auto epsilon = B * u.local(elem);
             
-            // Stress (linear elastic)
-            auto sigma = material.C * epsilon;
+            // Stress (linear elastic) via unified materials interface
+            materials::MaterialInputs min;
+            min.eps = epsilon; // small-strain example
+            materials::MaterialOutputs mout;
+            material->evaluate(min, state_, mout);
+            auto sigma = mout.P; // Cauchy stress in small strain
             
             // Internal forces
             R_e += B.transpose() * sigma * qp.weight * elem.J(qp);
@@ -537,7 +573,12 @@ public:
         // Stiffness matrix
         for (auto& qp : elem.quadrature_points()) {
             auto B = compute_B_matrix(elem, qp);
-            auto C = material.elasticity_tensor();
+            // Consistent tangent from materials
+            materials::MaterialInputs min;
+            materials::MaterialOutputs mout;
+            materials::TangentBlocks tb;
+            material->evaluate(min, state_, mout, &tb);
+            auto C = tb.dP_dEps;
             
             K_e += B.transpose() * C * B * qp.weight * elem.J(qp);
         }

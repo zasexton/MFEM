@@ -1,10 +1,10 @@
 # Core I/O - AGENT.md
 
 ## Purpose
-The `io/` layer provides comprehensive input/output abstractions for various data sources and sinks, supporting synchronous and asynchronous operations, multiple formats, buffering strategies, and protocol implementations. It creates a unified interface for file I/O, network communication, inter-process communication, and stream processing while maintaining high performance and type safety.
+The `io/` layer provides comprehensive input/output abstractions for various data sources and sinks, supporting synchronous and asynchronous operations, multiple formats, buffering strategies, and protocol implementations. It creates the unified stream interface that other core subsystems (for example, `filesystem/`) consume for file-backed access, while also covering network communication, inter-process communication, and stream processing with high performance and type safety.
 
 ## Architecture Philosophy
-- **Stream abstraction**: Universal stream interface for all I/O operations
+- **Stream abstraction**: Universal stream interface for all I/O operations that is shared across the core library
 - **Async-first design**: Non-blocking I/O with optional synchronous fallback
 - **Zero-copy where possible**: Minimize data copying with view-based operations
 - **Protocol agnostic**: Support various protocols through common interfaces
@@ -21,6 +21,8 @@ seekable.hpp         // Seekable stream interface
 closeable.hpp        // Resource cleanup interface
 io_error.hpp         // I/O error hierarchy
 ```
+
+> **Shared Scope**: These types form the canonical stream primitives consumed by `filesystem/` and any other module needing byte-oriented access.
 
 ### Stream Implementations
 ```cpp

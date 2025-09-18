@@ -10,19 +10,20 @@
 #include <source_location>
 #include <string_view>
 #include <format>
+#include "error_code.h"
 
-namespace fem::core {
+namespace fem::core::error {
 
 // Forward declarations
-template<typename T, typename E> class Result;
 template<typename E> class Error;
 
-// Concept for error types
+// Concept for error types - either an enum or a class with code() and message()
 template<typename E>
-concept ErrorType = requires(E e) {
-    { e.code() } -> std::convertible_to<int>;
-    { e.message() } -> std::convertible_to<std::string_view>;
-};
+concept ErrorType = std::is_enum_v<E> ||
+    requires(E e) {
+        { e.code() } -> std::convertible_to<int>;
+        { e.message() } -> std::convertible_to<std::string_view>;
+    };
 
 /**
  * @brief Error wrapper for Result types
@@ -43,10 +44,10 @@ private:
 
 /**
  * @brief Result type for error handling without exceptions
- * 
+ *
  * Similar to Rust's Result<T,E> or C++23's std::expected<T,E>
  * Provides monadic operations for error propagation
- * 
+ *
  * @tparam T Value type
  * @tparam E Error type (must satisfy ErrorType concept)
  */
@@ -56,9 +57,25 @@ class Result {
 public:
     using value_type = T;
     using error_type = E;
-    
+
 private:
     std::variant<T, E> data_;
+
+    // Helper to get error message (works for both enum and class types)
+    static std::string get_error_message(const E& e) {
+        if constexpr (std::is_enum_v<E>) {
+            // For enum types like ErrorCode, we can't call .message()
+            // Just return a generic message or use error category if available
+            if constexpr (std::is_same_v<E, ErrorCode>) {
+                return core_error_category().message(static_cast<int>(e));
+            } else {
+                return "Error code: " + std::to_string(static_cast<int>(e));
+            }
+        } else {
+            // For class types with message() method
+            return std::string(e.message());
+        }
+    }
     
 public:
     // Constructors
@@ -88,24 +105,24 @@ public:
     // Value access
     [[nodiscard]] const T& value() const& {
         if (!is_ok()) {
-            throw std::runtime_error(std::format("Result contains error: {}", 
-                                                  error().message()));
+            throw std::runtime_error(std::format("Result contains error: {}",
+                                                  get_error_message(error())));
         }
         return std::get<T>(data_);
     }
-    
+
     [[nodiscard]] T& value() & {
         if (!is_ok()) {
-            throw std::runtime_error(std::format("Result contains error: {}", 
-                                                  error().message()));
+            throw std::runtime_error(std::format("Result contains error: {}",
+                                                  get_error_message(error())));
         }
         return std::get<T>(data_);
     }
-    
+
     [[nodiscard]] T&& value() && {
         if (!is_ok()) {
-            throw std::runtime_error(std::format("Result contains error: {}", 
-                                                  error().message()));
+            throw std::runtime_error(std::format("Result contains error: {}",
+                                                  get_error_message(error())));
         }
         return std::get<T>(std::move(data_));
     }
@@ -218,6 +235,6 @@ template<typename E, typename T = void>
     }
 }
 
-} // namespace fem::core
+} // namespace fem::core::error
 
 #endif // CORE_ERROR_RESULT_H

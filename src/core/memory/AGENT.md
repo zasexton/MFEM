@@ -10,6 +10,8 @@ The `memory/` layer provides advanced memory management facilities including cus
 - **NUMA awareness**: Support for non-uniform memory architectures
 - **Debug support**: Memory tracking and leak detection in debug builds
 
+ 
+
 ## Files Overview
 
 ### Allocators
@@ -34,6 +36,10 @@ concurrent_pool.hpp     // Lock-free memory pool
 growing_pool.hpp        // Dynamically growing pool
 ```
 
+> **Thread Safety Note**: These pool implementations—including the concurrent variants—are the single source of truth for pooled allocation inside the core library. The `concurrency/` module reuses them for task scheduling support instead of maintaining parallel implementations.
+
+> **Responsibilities Boundary**: The `memory/` module provides allocators, pools, and containers. It does not define threading, scheduling, or synchronization semantics. The `concurrency/` module builds on these primitives for inter-thread coordination and execution.
+
 ### Specialized Containers
 ```cpp
 small_vector.hpp        // Small buffer optimization vector
@@ -44,6 +50,7 @@ flat_set.hpp           // Cache-friendly set
 intrusive_list.hpp     // Zero-allocation list
 bump_vector.hpp        // Append-only vector
 ```
+> Use in Concurrency: Bounded SPSC/MPSC queues in `core/concurrency` may wrap or be backed by these containers (e.g., `circular_buffer`) but concurrency owns the thread-safety and backpressure semantics.
 
 ### Memory Management
 ```cpp
@@ -195,6 +202,19 @@ public:
 ```
 **Why necessary**: Fast allocation for temporary data, perfect for frame allocations.
 **Usage**: Temporary computations, per-frame allocations, expression evaluation.
+
+## Module Boundaries with Concurrency
+
+- Single Source of Truth for Pools: All object and memory pool implementations live here. `core/concurrency` must reuse these (e.g., `concurrent_pool.hpp`) and must not introduce new pool types.
+- Reclamation Primitives: Safe memory reclamation strategies tied to lock-free concurrency data structures (e.g., hazard pointers, epoch management) are specified in `core/concurrency` because they integrate with its schedulers and queues. `memory/` exposes low-level barriers (`memory_barrier.hpp`) but does not own concurrency-specific reclamation lifecycles.
+- Queue/Buffer Demarcation: `memory/` provides general-purpose containers (e.g., `circular_buffer`, `ring_buffer`), while `core/concurrency` provides inter-thread communication primitives (e.g., SPSC/MPSC queues) with backpressure policies and cancellation support.
+- Ownership & Affinity: Thread management, affinity, priorities, and scheduling policies are out of scope for `memory/` and belong to `core/concurrency`.
+
+## Non-Goals (avoid duplication)
+
+- No thread pools, task schedulers, or synchronization primitives in `memory/`.
+- No parallel pipeline or task graph here; those are `core/concurrency` concerns.
+- No error handling policies specific to async execution; use `core/error` or call sites.
 
 ### `object_pool.hpp`
 ```cpp
@@ -530,6 +550,7 @@ SmallVector<int, 8> get_neighbors(Node* node) {
 - `base/` - For Object patterns
 - `error/` - For error handling
 - Standard library (C++20)
+- Optional: OS facilities for memory mapping and shared memory
 
 ## Future Enhancements
 - NUMA-aware allocators

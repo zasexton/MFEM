@@ -1,7 +1,7 @@
 # Core Filesystem - AGENT.md
 
 ## Purpose
-The `filesystem/` layer provides platform-independent file system operations, path manipulation, resource management, and file I/O abstractions. It extends the standard filesystem library with additional utilities for monitoring, caching, and virtual file systems.
+The `filesystem/` layer provides platform-independent file system operations, path manipulation, resource management, and integration points that sit on top of the core `io/` stream abstractions. It extends the standard filesystem library with utilities for monitoring, caching, and virtual file systems while delegating byte-level stream implementation to `io/`.
 
 ## Architecture Philosophy
 - **Platform independence**: Abstract OS differences
@@ -57,15 +57,6 @@ resource_handle.hpp   // Resource references
 resource_pack.hpp     // Resource bundling
 ```
 
-### I/O Abstractions
-```cpp
-stream.hpp           // Stream interface
-file_stream.hpp      // File-based streams
-memory_stream.hpp    // Memory-based streams
-buffered_stream.hpp  // Buffered I/O
-compressed_stream.hpp // Compression support
-```
-
 ### Utilities
 ```cpp
 file_monitor.hpp     // File change detection
@@ -74,6 +65,8 @@ file_metadata.hpp    // Extended file metadata
 file_permissions.hpp // Permission management
 disk_usage.hpp       // Disk space monitoring
 ```
+
+> **Stream Usage**: File and archive loading rely on the shared `fem::core::io` stream hierarchy; this module focuses on discovering paths and orchestrating resources, not defining new stream types.
 
 ## Detailed Component Specifications
 
