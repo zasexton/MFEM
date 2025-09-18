@@ -14,52 +14,54 @@ The `error/` layer provides comprehensive error handling infrastructure includin
 
 ### Core Error Types
 ```cpp
-error_code.hpp       // Portable error codes with categories
-error_category.hpp   // Error category system
-result.hpp          // Result<T, E> type (success or error)
-expected.hpp        // Expected<T> with default error type
-outcome.hpp         // Outcome<T> with exception support
-status.hpp          // Lightweight status codes
+error_code.h       // Portable error codes with categories
+error_category.h   // Error category system
+result.h          // Result<T, E> type (success or error)
+expected.h        // Expected<T> with default error type
+outcome.h         // Outcome<T> with exception support
+status.h          // Lightweight status codes
 ```
 
 ### Exception Hierarchy
 ```cpp
-exception_base.hpp   // Base exception with rich context
-system_error.hpp    // System/OS errors
-logic_error.hpp     // Programming errors
-runtime_error.hpp   // Runtime failures
-nested_exception.hpp // Exception chaining
+exception_base.h   // Base exception with rich context
+system_error.h    // System/OS errors
+logic_error.h     // Programming errors
+runtime_error.h   // Runtime failures
+nested_exception.h // Exception chaining
 ```
 
 ### Error Context
 ```cpp
-error_context.hpp   // Contextual error information
-stack_trace.hpp     // Call stack capture
-source_location.hpp // File/line/function info
-error_message.hpp   // Formatted error messages
+error_context.h   // Contextual error information
+stack_trace.h     // Call stack capture
+source_location.h // File/line/function info
+error_message.h   // Formatted error messages
 ```
 
 ### Error Handling
 ```cpp
-error_handler.hpp   // Global error handler registration
-error_guard.hpp     // RAII error handling
-try_catch.hpp      // Exception-to-result conversion
-error_chain.hpp    // Error aggregation and chaining
-panic.hpp          // Unrecoverable error handling
+error_handler.h   // Global error handler registration
+error_guard.h     // RAII error handling
+try_catch.h      // Exception-to-result conversion
+error_chain.h    // Error aggregation and chaining
+panic.h          // Unrecoverable error handling
 ```
 
 ### Utilities
 ```cpp
-assert.hpp         // Enhanced assertions with messages
-precondition.hpp   // Precondition checking macros
-postcondition.hpp  // Postcondition validation
-invariant.hpp      // Class invariant checking
-contract.hpp       // Design by contract support
+// NOTE: Assert functionality is provided by logging/assert.h
+// This subfolder focuses on contract programming and validation
+precondition.h   // Precondition checking macros
+postcondition.h  // Postcondition validation
+invariant.h      // Class invariant checking
+contract.h       // Design by contract support
+validation.h     // Input validation utilities
 ```
 
 ## 🔧 Detailed Component Specifications
 
-### `result.hpp`
+### `result.h`
 ```cpp
 template<typename T, typename E = ErrorCode>
 class Result {
@@ -110,7 +112,7 @@ Result<void, E> err(E error);
 **Why necessary**: Explicit error handling without exceptions, composable error propagation, functional programming style.
 **Usage**: Return values from fallible operations, chain operations with error handling.
 
-### `error_code.hpp`
+### `error_code.h`
 ```cpp
 class ErrorCategory {
 public:
@@ -150,7 +152,7 @@ class ErrorCodeEnum : public ErrorCategory {
 **Why necessary**: Portable error representation, categorized errors, interop with system errors.
 **Usage**: System calls, library boundaries, error categorization.
 
-### `expected.hpp`
+### `expected.h`
 ```cpp
 template<typename T>
 class Expected : public Result<T, std::exception_ptr> {
@@ -177,7 +179,7 @@ public:
 **Why necessary**: Bridge between exception and error-code worlds, exception safety.
 **Usage**: Wrapping exception-throwing code, API boundaries.
 
-### `exception_base.hpp`
+### `exception_base.h`
 ```cpp
 class Exception : public std::exception {
     std::string message_;
@@ -219,7 +221,7 @@ class SystemError : public Exception { };
 **Why necessary**: Rich error information, debugging support, error categorization.
 **Usage**: Exceptional conditions, detailed error reporting, debugging.
 
-### `error_handler.hpp`
+### `error_handler.h`
 ```cpp
 class ErrorHandler {
 public:
@@ -248,42 +250,19 @@ void install_signal_handlers();
 **Why necessary**: Centralized error handling, crash reporting, graceful shutdowns.
 **Usage**: Application-wide error policy, logging integration, crash dumps.
 
-### `assert.hpp`
-```cpp
-// Enhanced assertion with message
-#define ASSERT(condition, message) \
-    do { \
-        if (!(condition)) { \
-            ::fem::core::error::assertion_failed( \
-                #condition, message, \
-                ::fem::core::error::SourceLocation::current() \
-            ); \
-        } \
-    } while(0)
+### Assertion Integration
+Assertion functionality is provided by `logging/assert.h` which includes:
+- `FEM_ASSERT` - Debug-only assertions
+- `FEM_ASSERT_ALWAYS` - Release assertions
+- `FEM_VERIFY` - Non-fatal verification
+- `FEM_ASSERT_FINITE`, `FEM_ASSERT_POSITIVE`, etc. - Numerical assertions
+- `FEM_PRECONDITION`, `FEM_POSTCONDITION`, `FEM_INVARIANT` - Contract assertions
+- `FEM_UNREACHABLE`, `FEM_NOT_IMPLEMENTED` - Special assertions
 
-// Debug-only assertion
-#ifdef NDEBUG
-    #define DEBUG_ASSERT(condition, message) ((void)0)
-#else
-    #define DEBUG_ASSERT(condition, message) ASSERT(condition, message)
-#endif
+The error/ subfolder complements this with contract programming support in `contract.h`
+and validation utilities in `validation.h`.
 
-// Assertion with custom handler
-#define ASSERT_WITH(condition, handler) \
-    do { \
-        if (!(condition)) { \
-            handler(#condition, ::fem::core::error::SourceLocation::current()); \
-        } \
-    } while(0)
-
-// Static assertion with message
-#define STATIC_ASSERT(condition, message) \
-    static_assert(condition, message)
-```
-**Why necessary**: Runtime validation, debugging support, invariant checking.
-**Usage**: Precondition checks, invariant validation, debugging.
-
-### `try_catch.hpp`
+### `try_catch.h`
 ```cpp
 // Convert exception-throwing code to Result
 template<typename F>
@@ -317,7 +296,7 @@ auto try_finally(F&& f, C&& cleanup) {
 **Why necessary**: Exception safety, resource cleanup, error conversion.
 **Usage**: Library boundaries, resource management, error translation.
 
-### `error_chain.hpp`
+### `error_chain.h`
 ```cpp
 class ErrorChain {
     std::vector<std::variant<ErrorCode, Exception>> errors_;
