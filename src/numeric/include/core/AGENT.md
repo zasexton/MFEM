@@ -26,6 +26,7 @@ core/
 ├── vector.h            # Dense vector
 ├── matrix.h            # Dense matrix
 ├── tensor.h            # N-dimensional tensor
+├── block_tensor.h      # Block tensor wrapper (arbitrary rank)
 ├── block_vector.h      # Block vector wrapper
 ├── block_matrix.h      # Block matrix wrapper
 ├── small_matrix.h      # Small compile-time sized matrices

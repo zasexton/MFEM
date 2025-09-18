@@ -108,6 +108,40 @@ auto perm = T.permute({2, 0, 1});         // arbitrary axis permutation
   original tensor.
 - `permute()` for axis reordering (generalised transpose).
 
+## Block Containers
+
+- Block vectors: `block_vector.h`
+- Block matrices: `block_matrix.h`
+- Block tensors: `block_tensor.h`
+
+Example (3D Block Tensor):
+
+```cpp
+#include "block_tensor.h"
+using fem::numeric::BlockTensor;
+
+// Define per-axis block names and sizes
+std::array<std::vector<std::string>, 3> axis_names{{
+    {"u", "v"},          // axis 0
+    {"x", "y", "z"},     // axis 1
+    {"t0", "t1"}         // axis 2
+}};
+std::array<std::vector<size_t>, 3> axis_sizes{{
+    {4, 2},               // sizes for u, v along axis 0
+    {8, 8, 8},            // sizes for x, y, z along axis 1
+    {3, 5}                // sizes for t0, t1 along axis 2
+}};
+
+BlockTensor<double, 3> BT(axis_names, axis_sizes);
+
+// Access/allocate a specific block by names (u, y, t1)
+auto& blk = BT.block_by_names({std::string("u"), std::string("y"), std::string("t1")});
+blk(0, 0, 0) = 1.23;   // operates within that block's local coordinates
+
+// Query full tensor dimensions (sum of per-axis block sizes)
+auto dims = BT.dims(); // {6, 24, 8} in this example
+```
+
 ## Working with Views
 
 - Views are created with `view()`, `submatrix()` (for matrices), or tensor
@@ -117,6 +151,11 @@ auto perm = T.permute({2, 0, 1});         // arbitrary axis permutation
   container.
 - To materialise a copy, construct a new container from the view
   (e.g. `Matrix<double> C(view)` or `Tensor<double, R> copy(view)`).
+
+Headers:
+- Vector views: `vector_view.h`
+- Matrix views: `matrix_view.h`
+- Tensor views: `tensor_view.h`
 
 ## Expression Evaluation
 
