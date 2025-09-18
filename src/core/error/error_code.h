@@ -26,6 +26,7 @@ enum class ErrorCode : int {
     InvalidState = 4,
     OutOfRange = 5,
     TypeMismatch = 6,
+    Multiple = 7,
     
     // Resource errors (100-199)
     OutOfMemory = 100,
@@ -87,7 +88,9 @@ public:
                 return "Out of range";
             case ErrorCode::TypeMismatch:
                 return "Type mismatch";
-            
+            case ErrorCode::Multiple:
+                return "Multiple errors";
+
             // Resource errors
             case ErrorCode::OutOfMemory:
                 return "Out of memory";
