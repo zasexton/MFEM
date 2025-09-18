@@ -7,7 +7,7 @@
 #include <system_error>
 #include <format>
 
-namespace fem::core {
+namespace fem::core::error {
 
 /**
  * @brief Core library error codes
@@ -218,12 +218,12 @@ public:
     return ErrorInfo(code, context, loc);
 }
 
-} // namespace fem::core
+} // namespace fem::core::error
 
 // Enable ErrorCode to be used with std::error_code
 namespace std {
     template<>
-    struct is_error_code_enum<fem::core::ErrorCode> : std::true_type {};
+    struct is_error_code_enum<fem::core::error::ErrorCode> : std::true_type {};
 }
 
 #endif // CORE_ERROR_ERROR_CODE_H
