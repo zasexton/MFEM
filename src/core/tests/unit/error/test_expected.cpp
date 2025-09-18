@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <core/error/expected.h>
+#include <core/error/logic_error.h>
 #include <core/error/error_code.h>
 #include <core/error/exception_base.h>
 #include <string>
