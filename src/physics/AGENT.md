@@ -192,11 +192,10 @@ physics/
 │   │   ├── magnetic_diffusion.hpp       # Magnetic diffusion
 │   │   └── darwin_model.hpp             # Darwin approximation
 │   ├── wave/
-│   │   ├── maxwell_time.hpp             # Time domain
-│   │   ├── maxwell_frequency.hpp        # Frequency domain
+│   │   ├── maxwell_time.hpp             # Time-domain weak form (time integration in fem)
+│   │   ├── maxwell_frequency.hpp        # Frequency-domain formulation
 │   │   ├── helmholtz_em.hpp             # Helmholtz
-│   │   ├── perfectly_matched_layer.hpp  # PML
-│   │   └── fdtd.hpp                     # FDTD method
+│   │   └── perfectly_matched_layer.hpp  # PML (absorbing boundary formulation)
 │   └── coupled_em/
 │       ├── joule_heating.hpp            # Resistive heating
 │       ├── lorentz_force.hpp            # EM forces

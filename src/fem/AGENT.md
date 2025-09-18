@@ -495,7 +495,8 @@ fem/
 │   │   ├── gls.hpp                 # Galerkin least squares
 │   │   ├── cip.hpp                 # Continuous interior penalty
 │   │   ├── residual_free_bubbles.hpp # Residual-free bubble methods
-│   │   └── variational_multiscale.hpp # Variational multiscale methods
+│   │   ├── variational_multiscale.hpp # Variational multiscale methods
+│   │   └── shock_capturing.hpp     # Generic shock-capturing (entropy viscosity, limiters)
 │   ├── least_squares/              # Least squares methods
 │   │   ├── standard_ls.hpp         # Standard least squares FEM
 │   │   ├── weighted_ls.hpp         # Weighted least squares
