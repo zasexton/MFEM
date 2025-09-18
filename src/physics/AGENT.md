@@ -10,6 +10,14 @@ Implement domain-specific physics formulations for finite element analysis, prov
 - **Material-Flexible**: Support for linear and nonlinear constitutive models
 - **Verification-Driven**: Built-in manufactured solutions and benchmarks
 
+## Scope and Non-Goals
+
+To avoid duplication and ensure clean boundaries across libraries:
+- Physics does not implement constitutive material models (hyperelasticity, plasticity, damage, CZM, etc.). These live in `materials/` and are consumed via a thin adapter.
+- Physics does not define FEM element types. Elements, DOFs, spaces, constraints, and contact enforcement live in `fem/`.
+- Physics does not implement multiphysics coupling strategies. Orchestration (monolithic/partitioned), interface handling, and transfer operators live in `coupling/`.
+- Physics does not define unit systems or property catalogs. Use core units and the materials registry directly.
+
 ## Directory Structure
 
 ```
@@ -31,56 +39,20 @@ physics/
 
 ├── mechanics/                       # Solid/structural mechanics
 │   ├── solid/
-│   │   ├── linear/
-│   │   │   ├── linear_elasticity.hpp    # Hooke's law
-│   │   │   ├── anisotropic_elastic.hpp  # Orthotropic/anisotropic
-│   │   │   └── thermal_stress.hpp       # Thermoelastic stress
-│   │   ├── finite_strain/
-│   │   │   ├── total_lagrangian.hpp     # Total Lagrangian
-│   │   │   ├── updated_lagrangian.hpp   # Updated Lagrangian
-│   │   │   └── corotational.hpp         # Corotational formulation
-│   │   ├── hyperelastic/
-│   │   │   ├── neo_hookean.hpp          # Neo-Hookean
-│   │   │   ├── mooney_rivlin.hpp        # Mooney-Rivlin
-│   │   │   ├── ogden.hpp                # Ogden model
-│   │   │   ├── yeoh.hpp                 # Yeoh model
-│   │   │   ├── arruda_boyce.hpp         # Arruda-Boyce
-│   │   │   ├── gent.hpp                 # Gent model
-│   │   │   └── holzapfel_gasser.hpp     # HGO
-│   │   ├── plasticity/
-│   │   │   ├── j2_plasticity.hpp        # Von Mises
-│   │   │   ├── tresca.hpp               # Tresca
-│   │   │   ├── mohr_coulomb.hpp         # Mohr-Coulomb
-│   │   │   ├── drucker_prager.hpp       # Drucker-Prager
-│   │   │   ├── cam_clay.hpp             # Modified Cam-Clay
-│   │   │   ├── crystal_plasticity.hpp   # Crystal plasticity
-│   │   │   ├── johnson_cook.hpp         # Johnson-Cook
-│   │   │   └── gurson_tvergaard.hpp     # Gurson model
-│   │   ├── viscoelastic/
-│   │   │   ├── maxwell.hpp              # Maxwell model
-│   │   │   ├── kelvin_voigt.hpp         # Kelvin-Voigt
-│   │   │   ├── zener.hpp                # Standard linear solid
-│   │   │   ├── generalized_maxwell.hpp  # Prony series
-│   │   │   ├── burgers.hpp              # Burgers model
-│   │   │   └── fractional_derivative.hpp # Fractional viscoelasticity
-│   │   ├── damage/
-│   │   │   ├── lemaitre.hpp             # Lemaitre damage
-│   │   │   ├── mazars.hpp               # Mazars concrete
-│   │   │   ├── gurson_damage.hpp        # Ductile damage
-│   │   │   ├── cohesive_zone.hpp        # CZM
-│   │   │   └── phase_field_fracture.hpp # Phase field
+│   │   ├── formulations/               # Domain-specific weak forms (no element types, no constitutive models)
+│   │   │   ├── small_strain_solid.hpp     # Uses materials/ small-strain models via MaterialAdapter
+│   │   │   ├── finite_strain_solid.hpp    # Uses materials/ finite-strain models via MaterialAdapter
+│   │   │   ├── thermo_mechanical.hpp      # Thermal strain coupling (materials provide tangents)
+│   │   │   └── phase_field_fracture.hpp   # Phase-field PDE; energy/tangents from materials
 │   │   ├── gradient_enhanced/
-│   │   │   ├── strain_gradient.hpp      # Strain gradient elasticity
-│   │   │   ├── micropolar.hpp           # Cosserat continuum
-│   │   │   └── nonlocal.hpp             # Nonlocal models
+│   │   │   ├── strain_gradient.hpp        # Higher-order PDE terms (consumes materials)
+│   │   │   ├── micropolar.hpp             # Cosserat kinematics (materials handle constitutive law)
+│   │   │   └── nonlocal.hpp               # Nonlocal operators (materials provide length-scale effects)
 │   │   ├── enriched_methods/
-│   │   │   ├── xfem.hpp                 # Extended FEM
-│   │   │   ├── gfem.hpp                 # Generalized FEM
-│   │   │   └── phantom_node.hpp         # Phantom node method
-│   │   └── special/
-│   │       ├── shape_memory.hpp         # Shape memory alloys
-│   │       ├── swelling.hpp             # Swelling materials
-│   │       └── growth.hpp               # Biological growth
+│   │   │   ├── xfem.hpp                   # Extended FEM enrichment (consumes fem/)
+│   │   │   ├── gfem.hpp                   # Generalized FEM enrichment (consumes fem/)
+│   │   │   └── phantom_node.hpp           # Phantom node method (consumes fem/)
+│   │   └── notes.md                       # Notes: constitutive models are defined in materials/
 │   │ 
 │   ├── nonlocal/
 │   │   ├── peridynamics/
@@ -92,32 +64,18 @@ physics/
 │   │       └── discrete_lattice.hpp     # Discrete models
 │   │ 
 │   ├── structural/
-│   │   ├── beam/
-│   │   │   ├── euler_bernoulli.hpp      # Euler-Bernoulli
-│   │   │   ├── timoshenko.hpp           # Timoshenko
-│   │   │   ├── geometrically_exact.hpp  # Simo-Reissner
-│   │   │   └── composite_beam.hpp       # Layered beams
-│   │   ├── plate/
-│   │   │   ├── kirchhoff_love.hpp       # Thin plate
-│   │   │   ├── mindlin_reissner.hpp     # Thick plate
-│   │   │   ├── von_karman.hpp           # Large deflection
-│   │   │   └── laminated_plate.hpp      # Composite plates
-│   │   ├── shell/
-│   │   │   ├── kirchhoff_love_shell.hpp # Thin shell
-│   │   │   ├── reissner_mindlin_shell.hpp # Thick shell
-│   │   │   ├── solid_shell.hpp          # Solid-shell element
-│   │   │   └── isogeometric_shell.hpp   # NURBS-based
-│   │   └── cable/
-│   │       ├── cable_element.hpp        # Cable/rope
-│   │       └── catenary.hpp             # Catenary cables
+│   │   ├── formulations/                # Structural formulations (use fem element types; no element definitions here)
+│   │   │   ├── beam_formulation.hpp       # EB/Timoshenko/geometrically exact beams
+│   │   │   ├── plate_formulation.hpp      # KL/Mindlin/Reissner plates
+│   │   │   ├── shell_formulation.hpp      # KL/RM/solid-shell shells
+│   │   │   └── cable_formulation.hpp      # Cable/rope formulations
 │   │ 
-│   ├── contact/
-│   │   ├── frictionless_contact.hpp     # No friction
-│   │   ├── coulomb_friction.hpp         # Coulomb model
-│   │   ├── stick_slip.hpp               # Stick-slip
-│   │   ├── adhesive_contact.hpp         # Adhesion
-│   │   ├── wear.hpp                     # Archard wear
-│   │   └── thermal_contact.hpp          # With heat transfer
+│   ├── contact/                        # Contact laws (constraint/enforcement lives in fem/)
+│   │   ├── frictionless_law.hpp          # No friction
+│   │   ├── coulomb_law.hpp               # Coulomb friction
+│   │   ├── stick_slip_law.hpp            # Stick-slip
+│   │   ├── adhesive_law.hpp              # Adhesion
+│   │   └── thermal_contact_law.hpp       # With heat transfer
 │   │
 │   └── dynamics/
 │       ├── explicit_dynamics.hpp        # Central difference
@@ -438,9 +396,8 @@ physics/
 │       └── benchmark_suite/             # Standard benchmarks
 │
 ├── utilities/                      # Physics utilities
-│   ├── units.hpp                   # Unit systems
-│   ├── material_catalog.hpp        # (Optional) physics-facing aliases that proxy to materials' property/database utilities
-│   └── dimensionless.hpp           # Dimensionless numbers
+│   └── dimensionless.hpp           # Domain-specific dimensionless numbers (Re, Pr, Gr, etc.)
+│                                   # Use core units and materials registry directly; no units/catalog here
 │
 └── tests/                          # Testing infrastructure
     ├── unit/                       # Unit tests per physics
@@ -477,6 +434,13 @@ public:
                   materials::TangentBlocks* tb = nullptr) const;
 };
 ```
+
+Notes:
+- The adapter maps physics kinematics/fields into `materials::MaterialInputs`,
+  calls `evaluate()` to obtain `MaterialOutputs` and optional `TangentBlocks`,
+  and never reimplements material behavior.
+- Choice of constitutive law, regimes (small/finite strain), and coupled tangents
+  is entirely delegated to `materials/`.
 
 ## Key Components
 
