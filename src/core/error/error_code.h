@@ -6,6 +6,7 @@
 #include <string_view>
 #include <system_error>
 #include <format>
+#include <source_location>
 
 namespace fem::core::error {
 

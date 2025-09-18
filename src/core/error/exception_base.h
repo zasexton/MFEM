@@ -11,7 +11,6 @@
 #include <sstream>
 #include <optional>
 #include "error_code.h"
-#include "../base/component.h"
 
 namespace fem::core::error {
 
@@ -47,8 +46,7 @@ private:
  * - Context stack
  * - Optional stack trace
  */
-class Exception : public std::exception,
-                  public base::Component {
+class Exception : public std::exception {
 public:
     /**
      * @brief Construct exception with message
@@ -56,11 +54,39 @@ public:
     explicit Exception(const std::string& message,
                       ErrorCode code = ErrorCode::Unknown,
                       const std::source_location& loc = std::source_location::current())
-        : Component("Exception")
-        , message_(message)
+        : message_(message)
         , code_(code)
         , location_(loc) {
     }
+
+    // Copy constructor - deep copy the nested exception if present
+    Exception(const Exception& other)
+        : message_(other.message_)
+        , code_(other.code_)
+        , location_(other.location_)
+        , context_(other.context_)
+        , stack_trace_(other.stack_trace_)
+        , nested_(other.nested_ ? std::make_unique<Exception>(*other.nested_) : nullptr) {
+    }
+
+    // Move constructor
+    Exception(Exception&&) = default;
+
+    // Copy assignment - deep copy the nested exception if present
+    Exception& operator=(const Exception& other) {
+        if (this != &other) {
+            message_ = other.message_;
+            code_ = other.code_;
+            location_ = other.location_;
+            context_ = other.context_;
+            stack_trace_ = other.stack_trace_;
+            nested_ = other.nested_ ? std::make_unique<Exception>(*other.nested_) : nullptr;
+        }
+        return *this;
+    }
+
+    // Move assignment
+    Exception& operator=(Exception&&) = default;
 
     /**
      * @brief Construct exception with formatted message
@@ -70,8 +96,7 @@ public:
              const std::source_location& loc,
              std::format_string<Args...> fmt,
              Args&&... args)
-        : Component("Exception")
-        , message_(std::format(fmt, std::forward<Args>(args)...))
+        : message_(std::format(fmt, std::forward<Args>(args)...))
         , code_(code)
         , location_(loc) {
     }
@@ -169,8 +194,10 @@ public:
         os << full_message();
     }
 
-    // Component interface
-    std::string describe() const override {
+    /**
+     * @brief Describe the exception
+     */
+    std::string describe() const {
         return std::format("Exception: {} [{}]",
                           message_,
                           core_error_category().message(static_cast<int>(code_)));
