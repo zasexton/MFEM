@@ -10,6 +10,27 @@ The `workflow/` layer provides comprehensive task orchestration including comman
 - **Pipeline composition**: Chain operations with error handling
 - **Scheduling flexibility**: Time-based, dependency-based, and priority-based execution
 
+## Ownership & Dependencies
+
+- Execution engine ownership: The low-level parallel execution engine (including `parallel_pipeline` and `task_graph`) is owned by `core/concurrency`.
+- Composition only: `workflow/` composes primitives from `core/concurrency` and MUST NOT reimplement a separate execution engine.
+- Clear layering: `workflow/` depends on `core/concurrency` and may also use `core/error`, `core/memory`, `core/logging`, and `core/metrics` for orchestration concerns.
+
+### Dependencies
+- Required: `core/concurrency` (execution engine: thread pools, task graph, parallel pipeline)
+- Required: `core/error` (error categories/policies surfaced at orchestration level)
+- Optional: `core/memory` (allocators/containers used for orchestration data)
+- Optional: `core/logging` (structured logs for workflow events)
+- Optional: `core/metrics`, `core/tracing` (observability; consumes low-level metrics from concurrency)
+- Optional: `core/base` (common base patterns reused by orchestration components)
+- Optional: `core/events` (emitting workflow lifecycle events)
+
+### Terminology
+- Execution Engine: The low-level parallel primitives in `core/concurrency` (thread pools, `task_graph`, `parallel_pipeline`).
+- Orchestration Pipeline: High-level workflow composition that applies policies (retries, branching, compensation) over the execution engine.
+- Adapter: A thin wrapper that maps workflow stages to/from `core/concurrency` pipeline stages without changing execution semantics.
+- Stage: A unit of work in a pipeline (pure function preferred) composed by the orchestration pipeline.
+
 ## Files Overview
 
 ### Command Pattern
@@ -32,22 +53,22 @@ state_chart.hpp     // UML statechart implementation
 
 ### Pipeline Processing
 ```cpp
-pipeline.hpp        // Pipeline framework
-stage.hpp           // Pipeline stage interface
+pipeline.hpp         // Orchestration pipeline (composition layer)
+stage.hpp            // Pipeline stage interface
 pipeline_builder.hpp // Fluent pipeline construction
-parallel_pipeline.hpp // Parallel stage execution
-error_handler.hpp   // Pipeline error handling
+parallel_adapters.hpp // Adapters to core/concurrency/parallel_pipeline.hpp
+error_handler.hpp    // Pipeline error handling (retries, fallback)
 ```
 
-> **Built on Concurrency**: These workflow pipelines wrap the low-level `concurrency/parallel_pipeline.hpp` primitives to add orchestration concerns (error handling, branching, undo logic) without maintaining a second execution engine.
+> **Built on Concurrency (Normative)**: Workflow pipelines compose `core/concurrency/parallel_pipeline.hpp` primitives and MUST NOT maintain a separate execution engine. Orchestration concerns (branching, retries, error handling, transactional undo) are layered above the concurrency-owned engine.
 
 ### Task Scheduling
 ```cpp
 scheduler.hpp       // Task scheduler interface
 cron_scheduler.hpp  // Cron-like scheduling
 priority_scheduler.hpp // Priority-based scheduling
-dependency_scheduler.hpp // DAG task scheduling
-task_graph.hpp      // Task dependency graph
+dependency_scheduler.hpp // DAG task scheduling (uses concurrency task_graph)
+task_graph_view.hpp // Views/adapters over core/concurrency/task_graph.hpp
 ```
 
 ### Workflow Management
@@ -84,6 +105,7 @@ workflow_macros.hpp // Convenience macros
 validation.hpp      // Workflow validation
 visualization.hpp   // Workflow visualization
 metrics.hpp         // Workflow metrics
+concurrency_bridge.hpp // Shared types/configs with core/concurrency
 ```
 
 ## Detailed Component Specifications
@@ -230,6 +252,79 @@ public:
         undo_async().wait();
     }
 };
+```
+
+## Engine Composition Model
+
+- Pipeline execution: `workflow/pipeline.hpp` composes `core/concurrency/parallel_pipeline.hpp` and augments it with error handling, branching, and compensation logic.
+- DAG scheduling: `workflow/dependency_scheduler.hpp` uses `core/concurrency/task_graph.hpp` for dependency resolution and augments it with priorities, deadlines, and observability.
+- Cancellation and deadlines: Workflow APIs accept cancellation tokens and deadlines and forward them to the underlying concurrency primitives.
+
+## Error Handling & Transactions
+
+- Errors from concurrency tasks are surfaced as recoverable workflow events; policies decide retry/backoff/compensation.
+- Transactional commands integrate with pipeline stages via compensating actions; no rollback logic is implemented in the concurrency layer.
+
+## Telemetry & Metrics
+
+- Workflow surfaces high-level metrics (workflow duration, retries, compensations) while consuming low-level metrics from concurrency (queue depths, task latency, steals).
+
+## Non-Goals (to avoid duplication)
+
+- No separate thread pool, task graph, or parallel pipeline engine in `workflow/`.
+- No lock-free queue implementations; reuse `core/concurrency` and `core/memory` facilities.
+
+## Examples
+
+// Example 1: Orchestrating a parallel pipeline with retries and backpressure
+```cpp
+using namespace fem::core;
+
+workflow::Pipeline wf = workflow::PipelineBuilder{}
+    .add_stage(
+        workflow::adapt(
+            concurrency::parallel_pipeline<int, int>{}
+                .stage([](int x){ return x * 2; })
+                .stage([](int x){ return x + 1; }),
+            workflow::backpressure::block{ .capacity = 256 }
+        )
+    )
+    .on_error(workflow::policies::retry{ .max_attempts = 3, .backoff = std::chrono::milliseconds{50} })
+    .build();
+
+auto result = wf.run(5, exec::policy{ .pool = &concurrency::global_thread_pool() });
+```
+
+// Example 2: DAG scheduling via task_graph view with priorities and deadlines
+```cpp
+concurrency::TaskGraph g;
+auto a = g.add([]{ return load_config(); });
+auto b = g.add([]{ return prepare(); });
+auto c = g.add([]{ return compute(); });
+g.dep(a, c); // c depends on a
+g.dep(b, c); // c depends on b
+
+workflow::DependencyScheduler sched;
+sched.set_graph(workflow::task_graph_view{g});
+sched.set_policy({ .priority = workflow::priority::high,
+                   .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{500} });
+
+sched.run(exec::policy{ .pool = &concurrency::global_thread_pool() });
+```
+
+// Example 3: Cancellation and deadline propagation
+```cpp
+concurrency::cancellation_source cancel_src;
+auto token = cancel_src.token();
+auto dl = concurrency::deadline{ std::chrono::steady_clock::now() + std::chrono::milliseconds{200} };
+
+auto out = wf.run(input,
+                  exec::policy{ .pool = &concurrency::global_thread_pool() },
+                  token,
+                  dl);
+
+// Cancel if needed
+cancel_src.request_cancel();
 ```
 **Why necessary**: Encapsulate operations, enable undo/redo, command queuing, macro operations.
 **Usage**: User actions, reversible operations, command history, scripting.
@@ -1602,11 +1697,7 @@ scheduler.schedule_recurring([]() {
 - Unbounded task queues
 - Long-running transactions
 
-## Dependencies
-- `base/` - For base patterns
-- `events/` - For workflow events
-- `concurrency/` - For async execution
-- Standard library (C++20)
+ 
 
 ## Future Enhancements
 - Workflow versioning

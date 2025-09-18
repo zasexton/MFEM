@@ -10,6 +10,26 @@ The `concurrency/` layer provides comprehensive threading and parallelism infras
 - **Work stealing**: Efficient load balancing
 - **Composable abstractions**: Build complex patterns from simple primitives
 
+## Planned Infrastructure Changes
+
+To address identified gaps and risks, the following additions and clarifications are planned:
+
+- Cancellation & deadlines: Propagate cooperative cancellation and timeouts across tasks and waits
+- Pool-backed algorithms: `parallel_*` defaults to thread-pool execution with policy-driven chunking
+- Backpressure policies: Bounded queues and overflow behavior for pipelines/queues
+- Platform abstraction: Cross-platform thread affinity/priority with safe no-op fallbacks
+- Telemetry hooks: Lightweight metrics/tracing integration for queue depths, latencies, steals
+- Memory reclamation strategy: Explicit epoch-based option alongside hazard pointers and RCU
+- Error transport: Clear guidance for exception vs. error-code/Result propagation in async paths
+- Ownership boundaries: Concurrency owns the core pipeline engine; `workflow/` composes it
+
+### Terminology
+- Execution Engine: The low-level primitives provided by `core/concurrency` (thread pools, `task_graph`, `parallel_pipeline`).
+- Execution Policy: Configuration for how work runs (pool selection, chunking) defined in `execution.hpp`.
+- Stage: A function node within a pipeline; stages compose into pipelines.
+- Backpressure Policy: Behavior for bounded queues under load (block, drop, fail) from `queue_policies.hpp`.
+- Cancellation Token: Cooperative cancellation primitive (`cancellation.hpp`) passed through tasks/algorithms.
+
 ## Files Overview
 
 ### Thread Management
@@ -19,6 +39,7 @@ work_stealing_pool.hpp // Work-stealing thread pool
 thread_local.hpp       // Thread-local storage utilities
 thread_affinity.hpp    // CPU affinity management
 thread_priority.hpp    // Thread priority control
+thread_native.hpp      // Platform abstraction for native handles
 ```
 
 ### Task System
@@ -28,6 +49,8 @@ task_graph.hpp        // DAG task dependencies
 task_scheduler.hpp    // Task scheduling strategies
 continuation.hpp      // Task continuations
 async.hpp            // Async task execution
+cancellation.hpp     // CancellationToken/Source (wraps std::stop_token)
+deadline.hpp         // Deadlines and timeouts for waits
 ```
 
 ### Synchronization
@@ -49,6 +72,7 @@ atomic_stack.hpp     // Lock-free stack
 hazard_pointer.hpp   // Safe memory reclamation
 rcu.hpp             // Read-copy-update
 seqlock.hpp         // Sequence locks
+epoch.hpp           // Epoch-based reclamation manager
 ```
 
 ### Futures and Promises
@@ -63,14 +87,15 @@ when_any.hpp        // Wait for any future
 
 ### Parallel Algorithms
 ```cpp
-parallel_for.hpp     // Parallel loops
-parallel_reduce.hpp  // Parallel reduction
-parallel_scan.hpp    // Parallel prefix sum
-parallel_sort.hpp    // Parallel sorting
-parallel_pipeline.hpp // Pipeline parallelism
+parallel_for.hpp       // Parallel loops (pool-backed)
+parallel_reduce.hpp    // Parallel reduction (pool-backed)
+parallel_scan.hpp      // Parallel prefix sum (pool-backed)
+parallel_sort.hpp      // Parallel sorting (pool-backed)
+parallel_pipeline.hpp  // Pipeline parallelism (owned by concurrency)
+execution.hpp          // Execution policies (pool selection, chunking)
 ```
 
-> **Pipeline Ownership**: The `parallel_pipeline` primitives are the foundational building blocks for staged execution. Higher-level orchestration layers—such as `workflow/`—compose these primitives without reimplementing the core pipeline engine.
+> **Pipeline Ownership**: The `parallel_pipeline` primitives are the foundational building blocks for staged execution and are owned by `core/concurrency`. Higher-level orchestration layers—such as `workflow/`—compose these primitives (branching, error handling, undo/redo) without reimplementing the execution engine.
 
 ### Utilities
 ```cpp
@@ -78,6 +103,8 @@ thread_safe.hpp      // Thread-safe wrapper
 concurrent_hash_map.hpp // Thread-safe hash map
 mpsc_queue.hpp      // Multi-producer single-consumer
 spsc_queue.hpp      // Single-producer single-consumer
+queue_policies.hpp  // Backpressure/overflow policies for bounded queues
+telemetry.hpp       // Metrics/tracing hooks (optional, zero-cost when disabled)
 ```
 
 > **Allocator Sharing**: Thread-safe object pools are sourced from the `memory/` module (see `concurrent_pool.hpp`); concurrency utilities wrap or configure them rather than defining new pool types.
@@ -98,22 +125,24 @@ public:
     explicit ThreadPool(size_t num_threads = std::thread::hardware_concurrency());
     ~ThreadPool();
     
-    // Submit task
+    // Submit task (bind-free, invoke_result-based)
     template<typename F, typename... Args>
-    auto submit(F&& f, Args&&... args) -> std::future<decltype(f(args...))> {
-        using return_type = decltype(f(args...));
-        
-        auto task = std::make_shared<std::packaged_task<return_type()>>(
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-        );
-        
+    auto submit(F&& f, Args&&... args)
+        -> std::future<std::invoke_result_t<F&, Args...>>
+    {
+        using return_type = std::invoke_result_t<F&, Args...>;
+        auto bound = [fn = std::forward<F>(f),
+                      tup = std::make_tuple(std::forward<Args>(args)...)]() mutable {
+            return std::apply(fn, std::move(tup));
+        };
+
+        auto task = std::make_shared<std::packaged_task<return_type()>>(std::move(bound));
         auto result = task->get_future();
         {
             std::lock_guard lock(queue_mutex_);
             tasks_.emplace([task]() { (*task)(); });
         }
         cv_.notify_one();
-        
         return result;
     }
     
@@ -171,6 +200,7 @@ public:
     // Execution
     void execute();
     void cancel();
+    void cancel_after(std::chrono::nanoseconds timeout);
     
     // Results
     T get() { return future_.get(); }
@@ -186,6 +216,9 @@ public:
     
     template<typename F>
     auto then_on(ThreadPool& pool, F&& f);
+
+    // Cancellation cooperative point
+    void check_cancellation() const; // throws or sets Failed depending on policy
     
     // Composition
     template<typename U>
@@ -205,59 +238,73 @@ auto async_task(F&& f) -> Task<decltype(f())>;
 **Why necessary**: Task abstraction, composable async operations, continuation support.
 **Usage**: Async workflows, task dependencies, parallel pipelines.
 
+### `execution.hpp`
+```cpp
+namespace exec {
+    enum class chunking { auto_, static_, dynamic_, guided_ };
+
+    struct policy {
+        ThreadPool* pool = &global_thread_pool();
+        chunking chunk = chunking::auto_;
+        std::size_t min_grain = 1;
+        std::size_t max_tasks = 0; // 0 = derive from pool size
+    };
+}
+```
+**Why necessary**: Centralizes execution configuration for algorithms and tasks.
+**Usage**: Select pool, chunking style, and granularity consistently.
+
 ### `parallel_for.hpp`
 ```cpp
 template<typename IndexType, typename F>
-void parallel_for(IndexType begin, IndexType end, F&& func) {
-    const auto num_threads = std::thread::hardware_concurrency();
-    const auto chunk_size = (end - begin) / num_threads;
-    
+void parallel_for(IndexType begin, IndexType end, F&& func, exec::policy p = {}) {
+    const IndexType n = (end > begin) ? (end - begin) : 0;
+    if (n == 0) return;
+
+    const std::size_t threads = std::max<std::size_t>(1, p.pool->thread_count());
+    const std::size_t tasks = p.max_tasks ? p.max_tasks : threads;
+    const IndexType chunks = static_cast<IndexType>(std::min<std::size_t>(tasks, static_cast<std::size_t>(n)));
+    const IndexType base = n / chunks;
+    const IndexType rem = n % chunks;
+
     std::vector<std::future<void>> futures;
-    
-    for (size_t t = 0; t < num_threads; ++t) {
-        IndexType chunk_begin = begin + t * chunk_size;
-        IndexType chunk_end = (t == num_threads - 1) ? end : chunk_begin + chunk_size;
-        
-        futures.push_back(
-            std::async(std::launch::async, [=, &func]() {
-                for (IndexType i = chunk_begin; i < chunk_end; ++i) {
-                    func(i);
-                }
-            })
-        );
+    futures.reserve(chunks);
+
+    IndexType cur = begin;
+    for (IndexType c = 0; c < chunks; ++c) {
+        const IndexType take = base + (c < rem ? 1 : 0);
+        const IndexType cb = cur;
+        const IndexType ce = cb + take;
+        cur = ce;
+
+        futures.emplace_back(p.pool->submit([=, &func]() {
+            for (IndexType i = cb; i < ce; ++i) func(i);
+        }));
     }
-    
-    for (auto& f : futures) {
-        f.wait();
-    }
+
+    for (auto& f : futures) f.wait();
 }
 
 // 2D parallel for
 template<typename F>
-void parallel_for_2d(size_t rows, size_t cols, F&& func) {
-    parallel_for(size_t(0), rows, [=, &func](size_t row) {
-        for (size_t col = 0; col < cols; ++col) {
-            func(row, col);
-        }
-    });
+void parallel_for_2d(std::size_t rows, std::size_t cols, F&& func, exec::policy p = {}) {
+    parallel_for<std::size_t>(0, rows, [=, &func](std::size_t row) {
+        for (std::size_t col = 0; col < cols; ++col) func(row, col);
+    }, p);
 }
 
-// Parallel for with reduction
+// Parallel for with reduction (pool-backed)
 template<typename IndexType, typename T, typename F, typename R>
-T parallel_for_reduce(IndexType begin, IndexType end, T init, F&& func, R&& reduce) {
-    const auto num_threads = std::thread::hardware_concurrency();
-    std::vector<std::future<T>> futures;
-    
-    // ... partition work and reduce results
-    
-    return final_result;
+T parallel_for_reduce(IndexType begin, IndexType end, T init, F&& func, R&& reduce, exec::policy p = {}) {
+    // Partition by chunks and reduce partials, then fold
+    // (implementation outline; details depend on F/R associativity)
+    return init; // placeholder in spec
 }
 
-// Chunked parallel for
+// Chunked parallel for_each (pool-backed)
 template<typename Container, typename F>
-void parallel_for_each(Container& container, F&& func) {
-    parallel_for(size_t(0), container.size(), 
-        [&](size_t i) { func(container[i]); });
+void parallel_for_each(Container& container, F&& func, exec::policy p = {}) {
+    parallel_for<std::size_t>(0, container.size(), [&](std::size_t i) { func(container[i]); }, p);
 }
 ```
 **Why necessary**: Simple parallelization of loops, automatic work distribution.
@@ -447,32 +494,31 @@ private:
 ### `barrier.hpp`
 ```cpp
 class Barrier {
-    const size_t threshold_;
-    std::atomic<size_t> count_;
-    std::atomic<size_t> generation_;
-    
+    std::atomic<std::size_t> threshold_;
+    std::atomic<std::size_t> count_;
+    std::atomic<std::size_t> generation_;
+
 public:
-    explicit Barrier(size_t count) 
-        : threshold_(count), count_(count), generation_(0) {}
-    
+    explicit Barrier(std::size_t participants)
+        : threshold_(participants), count_(participants), generation_(0) {}
+
     void arrive_and_wait() {
-        auto gen = generation_.load();
-        
-        if (count_.fetch_sub(1) == 1) {
+        auto gen = generation_.load(std::memory_order_acquire);
+        if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
             // Last thread to arrive
-            count_.store(threshold_);
-            generation_.fetch_add(1);
+            count_.store(threshold_.load(std::memory_order_relaxed), std::memory_order_release);
+            generation_.fetch_add(1, std::memory_order_acq_rel);
         } else {
             // Wait for generation to change
-            while (generation_.load() == gen) {
+            while (generation_.load(std::memory_order_acquire) == gen) {
                 std::this_thread::yield();
             }
         }
     }
-    
+
     void arrive_and_drop() {
-        count_.fetch_sub(1);
-        threshold_.fetch_sub(1);
+        count_.fetch_sub(1, std::memory_order_acq_rel);
+        threshold_.fetch_sub(1, std::memory_order_acq_rel);
     }
 };
 
@@ -543,9 +589,11 @@ auto result = pipeline.process(5);  // "20"
 
 - **False sharing**: Align to cache lines (64 bytes)
 - **Lock contention**: Use lock-free structures where possible
-- **Thread pool size**: Usually hardware_concurrency()
+- **Thread pool size**: Usually hardware_concurrency(); cap to avoid oversubscription
 - **Task granularity**: Balance between overhead and parallelism
 - **Memory ordering**: Use relaxed ordering when safe
+- **Nested parallelism**: Use pool-aware algorithms to avoid thread explosion
+- **Backpressure**: Prefer bounded queues with overflow policies under load
 
 ## Testing Strategy
 
@@ -554,6 +602,7 @@ auto result = pipeline.process(5);  // "20"
 - **Performance**: Scaling tests, contention analysis
 - **Correctness**: Linearizability testing
 - **Edge cases**: Thread exhaustion, memory barriers
+- **Cancellation**: Cooperative cancellation propagation and timeouts
 
 ## Usage Guidelines
 
@@ -562,6 +611,8 @@ auto result = pipeline.process(5);  // "20"
 3. **RAII locks**: Always use lock_guard/unique_lock
 4. **Immutable data**: Prefer immutable structures for concurrent access
 5. **Profile first**: Measure before optimizing parallelism
+6. **Prefer pool-backed loops**: Avoid `std::async` for fine-grained parallel loops
+7. **Propagate cancellation**: Accept and check cancellation tokens in long-running tasks
 
 ## Anti-patterns to Avoid
 
@@ -570,12 +621,14 @@ auto result = pipeline.process(5);  // "20"
 - Fine-grained locking
 - Shared mutable state
 - Ignoring false sharing
+- Using `std::async` for small, many-way parallel loops
 
 ## Dependencies
 - `base/` - For Object patterns
 - `memory/` - For allocators
 - `error/` - For error handling
 - Standard library (C++20)
+- Optional: `metrics/` and `tracing/` for telemetry hooks
 
 ## Future Enhancements
 - Coroutine support
@@ -583,3 +636,30 @@ auto result = pipeline.process(5);  // "20"
 - Distributed computing abstractions
 - Transactional memory
 - Deterministic parallelism
+```
+
+## Error Propagation Policy
+
+- Exceptions thrown in tasks are captured and rethrown on `future::get()` by default
+- Optional integration with `core/error` to propagate `Result<T,E>` across async boundaries
+- Cancellation converts to `Cancelled` status; policy decides whether to throw or return error code
+
+## Platform Abstraction Notes
+
+- `thread_affinity.hpp` and `thread_priority.hpp` route through `thread_native.hpp`
+- Unsupported platforms degrade to safe no-ops with feature detection at runtime
+
+## Telemetry Integration
+
+- `telemetry.hpp` defines optional hooks for queue depths, task latency, steals, wakeups
+- Hooks are no-ops when `metrics/` or `tracing/` is not present or disabled
+
+## Backpressure Policies
+
+- `queue_policies.hpp` provides: block, drop_newest, drop_oldest, fail (try_enqueue)
+- Pipelines expose capacity and backpressure strategy per stage
+
+## Memory Reclamation Strategy
+
+- Lock-free containers support hazard pointers and epoch-based reclamation (`epoch.hpp`)
+- RCU provided for read-dominant structures; document trade-offs and choose per-type
