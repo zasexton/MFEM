@@ -10,6 +10,7 @@
 #include "error_code.h"
 #include "exception_base.h"
 #include "result.h"
+#include "status.h"
 
 namespace fem::core::error {
 

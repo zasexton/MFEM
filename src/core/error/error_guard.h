@@ -8,6 +8,8 @@
 #include <optional>
 #include <memory>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include "exception_base.h"
 #include "result.h"
 #include "nested_exception.h"
@@ -373,7 +375,7 @@ public:
         std::chrono::milliseconds max_delay{5000};
     };
 
-    explicit RetryGuard(Config config = {})
+    explicit RetryGuard(Config config = Config{})
         : config_(config) {
     }
 
