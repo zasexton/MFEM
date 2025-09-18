@@ -23,6 +23,12 @@ namespace fem::core::logging {
  * Provides assertion macros that integrate with the logging system.
  * Failed assertions are logged before terminating or throwing.
  *
+ * NOTE: This is the primary assertion infrastructure for the core library.
+ * The error/ subfolder provides complementary contract programming support
+ * (contract.h) and validation utilities (validation.h) but does NOT define
+ * conflicting ASSERT macros. All assertion macros use the FEM_ prefix to
+ * avoid conflicts with system or third-party macros.
+ *
  * Usage context:
  * - Debug builds: Full assertions with detailed logging
  * - Release builds: Critical assertions only
