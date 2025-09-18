@@ -265,8 +265,8 @@ public:
               size_t position,
               const std::string& expected,
               const std::source_location& loc = std::source_location::current())
-        : RuntimeError(std::format("Parse error at position {}: expected {}",
-                                 position, expected), loc)
+        : RuntimeError(std::format("Parse error in '{}' at position {}: expected {}",
+                                 input, position, expected), loc)
         , input_(input)
         , position_(position)
         , expected_(expected) {
