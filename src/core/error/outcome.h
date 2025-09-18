@@ -33,6 +33,21 @@ private:
     // Three possible states: value, error, or exception
     std::variant<T, E, std::exception_ptr> data_;
 
+    // Helper to get error message (works for both enum and class types)
+    static std::string get_error_message(const E& e) {
+        if constexpr (std::is_enum_v<E>) {
+            // For enum types like ErrorCode
+            if constexpr (std::is_same_v<E, ErrorCode>) {
+                return core_error_category().message(static_cast<int>(e));
+            } else {
+                return "Error code: " + std::to_string(static_cast<int>(e));
+            }
+        } else {
+            // For class types with message() method
+            return std::string(e.message());
+        }
+    }
+
 public:
     // Constructors
     Outcome(T value) : data_(std::move(value)) {}
@@ -102,7 +117,7 @@ public:
         }
         if (has_error()) {
             throw RuntimeError(std::format("Outcome has error: {}",
-                                         std::get<E>(data_).message()));
+                                         get_error_message(std::get<E>(data_))));
         }
         std::rethrow_exception(std::get<std::exception_ptr>(data_));
     }
@@ -113,7 +128,7 @@ public:
         }
         if (has_error()) {
             throw RuntimeError(std::format("Outcome has error: {}",
-                                         std::get<E>(data_).message()));
+                                         get_error_message(std::get<E>(data_))));
         }
         std::rethrow_exception(std::get<std::exception_ptr>(data_));
     }
@@ -124,7 +139,7 @@ public:
         }
         if (has_error()) {
             throw RuntimeError(std::format("Outcome has error: {}",
-                                         std::get<E>(data_).message()));
+                                         get_error_message(std::get<E>(data_))));
         }
         std::rethrow_exception(std::get<std::exception_ptr>(data_));
     }
@@ -173,10 +188,10 @@ public:
      */
     Result<T, E> to_result() const {
         if (has_value()) {
-            return Ok<T, E>(std::get<T>(data_));
+            return Ok<T, E>(T(std::get<T>(data_)));  // Copy the value
         }
         if (has_error()) {
-            return Err<E, T>(std::get<E>(data_));
+            return Err<E, T>(E(std::get<E>(data_)));  // Copy the error
         }
 
         // Try to extract error from exception
@@ -210,7 +225,7 @@ public:
 
         // Convert error to exception
         return Expected<T>(std::make_exception_ptr(
-            RuntimeError(std::format("Error: {}", std::get<E>(data_).message()))
+            RuntimeError(std::format("Error: {}", get_error_message(std::get<E>(data_))))
         ));
     }
 

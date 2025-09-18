@@ -151,20 +151,22 @@ public:
     [[noreturn]] void rethrow() const {
         if (has_error()) {
             std::rethrow_exception(std::get<std::exception_ptr>(data_));
+        } else {
+            throw LogicError("Expected has no error to rethrow");
         }
-        throw LogicError("Expected has no error to rethrow");
     }
 
     // Monadic operations
     template<typename F>
         requires std::invocable<F, T>
     auto map(F&& f) -> Expected<std::invoke_result_t<F, T>> {
+        using U = std::invoke_result_t<F, T>;
         if (has_value()) {
-            return try_invoke([&]() {
+            return Expected<U>::try_invoke([&]() {
                 return std::forward<F>(f)(std::get<T>(data_));
             });
         }
-        return Expected<std::invoke_result_t<F, T>>(
+        return Expected<U>(
             std::get<std::exception_ptr>(data_)
         );
     }
@@ -200,17 +202,29 @@ public:
     template<typename E = ErrorCode>
     Result<T, E> to_result() const {
         if (has_value()) {
-            return Ok<T, E>(std::get<T>(data_));
+            return Ok<T, E>(T(std::get<T>(data_)));  // Copy the value
         }
 
         try {
             std::rethrow_exception(std::get<std::exception_ptr>(data_));
         } catch (const Exception& e) {
-            return Err<E, T>(static_cast<E>(e.code()));
-        } catch (const std::exception& e) {
-            return Err<E, T>(static_cast<E>(ErrorCode::Unknown));
+            if constexpr (std::is_same_v<E, ErrorCode>) {
+                return Err<E, T>(e.code());
+            } else {
+                return Err<E, T>(E{});
+            }
+        } catch (const std::exception&) {
+            if constexpr (std::is_same_v<E, ErrorCode>) {
+                return Err<E, T>(ErrorCode::Unknown);
+            } else {
+                return Err<E, T>(E{});
+            }
         } catch (...) {
-            return Err<E, T>(static_cast<E>(ErrorCode::Unknown));
+            if constexpr (std::is_same_v<E, ErrorCode>) {
+                return Err<E, T>(ErrorCode::Unknown);
+            } else {
+                return Err<E, T>(E{});
+            }
         }
     }
 };
