@@ -504,8 +504,11 @@ TEST_F(LogicErrorTest, TemplateParameterValidation) {
     EXPECT_THROW(validate_positive(negative_double, "learning_rate"), InvalidArgumentError);
 
     // Test with string that requires conversion to proper error message
-    EXPECT_THROW(InvalidArgumentError("log_level", log_level, "must be one of: debug, info, warning, error"),
-                 InvalidArgumentError);
+    InvalidArgumentError string_ex("log_level", log_level, "must be one of: debug, info, warning, error");
+    std::string string_message = string_ex.what();
+    EXPECT_TRUE(string_message.find("log_level") != std::string::npos);
+    EXPECT_TRUE(string_message.find("invalid") != std::string::npos);
+    EXPECT_TRUE(string_message.find("must be one of: debug, info, warning, error") != std::string::npos);
 }
 
 // ========== Numeric limits tests ==========
