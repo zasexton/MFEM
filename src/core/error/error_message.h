@@ -154,7 +154,7 @@ public:
             
             // Header with severity and code
             oss << "[" << severity_to_string(severity_) << "]";
-            if (code_ != ErrorCode::None) {
+            if (code_ != ErrorCode::Success) {
                 oss << " [" << error_code_to_string(code_) << "]";
             }
             
@@ -238,7 +238,7 @@ public:
             return std::format("E{:04d}", static_cast<int>(code));
         }
 
-        ErrorCode code_ = ErrorCode::None;
+        ErrorCode code_ = ErrorCode::Success;
         Severity severity_ = Severity::Error;
         std::string message_;
         std::string details_;
