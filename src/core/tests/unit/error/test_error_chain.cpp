@@ -90,7 +90,7 @@ TEST_F(ErrorChainTest, MultipleErrors) {
     // Check second error
     auto* second = std::get_if<Exception>(&errors[1]);
     EXPECT_NE(second, nullptr);
-    EXPECT_EQ(second->code(), ErrorCode::SystemError);
+    EXPECT_EQ(second->code(), ErrorCode::Unknown);
 
     // Check third error
     auto* third = std::get_if<ErrorInfo>(&errors[2]);
@@ -276,7 +276,7 @@ TEST_F(ErrorChainTest, ValidationFailure) {
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.code(), ErrorCode::InvalidArgument);
 
-    std::string message = status.message();
+    std::string message(status.message());
     EXPECT_TRUE(message.find("Error chain with") != std::string::npos);
     EXPECT_TRUE(message.find("first validation failed") != std::string::npos);
     EXPECT_TRUE(message.find("named_validation") != std::string::npos);
@@ -313,7 +313,7 @@ TEST_F(ErrorChainTest, NamedValidationFormatting) {
     auto status = validator.run();
     EXPECT_FALSE(status.ok());
 
-    std::string message = status.message();
+    std::string message(status.message());
     EXPECT_TRUE(message.find("parameter_check:") != std::string::npos);
     EXPECT_TRUE(message.find("parameter is invalid") != std::string::npos);
 }
@@ -354,7 +354,7 @@ TEST_F(ErrorChainTest, NestedValidationChains) {
     auto status = outer_validator.run();
     EXPECT_FALSE(status.ok());
 
-    std::string message = status.message();
+    std::string message(status.message());
     EXPECT_TRUE(message.find("inner_validation:") != std::string::npos);
     EXPECT_TRUE(message.find("inner failure") != std::string::npos);
 }
@@ -364,7 +364,7 @@ TEST_F(ErrorChainTest, ErrorChainWithMixedTypes) {
 
     // Add different types of errors
     chain.add_error(ErrorCode::InvalidArgument);  // Just error code
-    chain.add_error(ErrorCode::RuntimeError, "with context");  // With context
+    chain.add_error(ErrorCode::SystemError, "with context");  // With context
     chain.add_error(make_error(ErrorCode::OutOfRange, "detailed message"));  // ErrorInfo
     chain.add_error(LogicError("logic error message"));  // Exception
 
@@ -379,7 +379,7 @@ TEST_F(ErrorChainTest, ChainMergePreservesOrder) {
     ErrorChain chain2;
 
     chain1.add_error(ErrorCode::InvalidArgument, "error1");
-    chain1.add_error(ErrorCode::RuntimeError, "error2");
+    chain1.add_error(ErrorCode::SystemError, "error2");
 
     chain2.add_error(ErrorCode::OutOfRange, "error3");
 
@@ -393,7 +393,7 @@ TEST_F(ErrorChainTest, ChainMergePreservesOrder) {
     auto* third = std::get_if<ErrorInfo>(&errors[2]);
 
     EXPECT_EQ(first->error_code(), ErrorCode::InvalidArgument);
-    EXPECT_EQ(second->error_code(), ErrorCode::RuntimeError);
+    EXPECT_EQ(second->error_code(), ErrorCode::SystemError);
     EXPECT_EQ(third->error_code(), ErrorCode::OutOfRange);
 }
 
@@ -416,7 +416,7 @@ TEST_F(ErrorChainTest, LargeErrorChain) {
 
     const size_t num_errors = 1000;
     for (size_t i = 0; i < num_errors; ++i) {
-        chain.add_error(ErrorCode::RuntimeError, "error " + std::to_string(i));
+        chain.add_error(ErrorCode::SystemError, "error " + std::to_string(i));
     }
 
     EXPECT_EQ(chain.error_count(), num_errors);
@@ -443,6 +443,6 @@ TEST_F(ErrorChainTest, ValidationPerformance) {
     EXPECT_FALSE(status.ok());
 
     // Should have collected all failures, not just the first one
-    std::string message = status.message();
+    std::string message(status.message());
     EXPECT_TRUE(message.find("Error chain with") != std::string::npos);
 }

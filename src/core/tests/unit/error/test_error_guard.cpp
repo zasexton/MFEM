@@ -679,16 +679,26 @@ TEST_F(ErrorGuardTest, NestedGuards) {
 
 TEST_F(ErrorGuardTest, GuardExceptionInCleanup) {
     // Test that exceptions in guard cleanup don't propagate
+    // This should not throw because ScopeGuard suppresses exceptions in destructor
     EXPECT_NO_THROW({
         ScopeGuard guard([]() {
             throw std::runtime_error("cleanup error");
         });
     });
 
-    EXPECT_NO_THROW({
+    // Test that ExceptionGuard's cleanup exception doesn't cause termination
+    // when another exception is already active
+    bool original_exception_caught = false;
+    try {
         ExceptionGuard guard([]() {
-            throw std::runtime_error("rollback error");
+            throw std::runtime_error("rollback error");  // This will be suppressed
         });
-        throw std::logic_error("original error");
-    });
+        throw std::logic_error("original error");  // This will propagate
+    } catch (const std::logic_error& e) {
+        original_exception_caught = true;
+        EXPECT_STREQ(e.what(), "original error");
+    } catch (...) {
+        FAIL() << "Unexpected exception type caught";
+    }
+    EXPECT_TRUE(original_exception_caught);
 }

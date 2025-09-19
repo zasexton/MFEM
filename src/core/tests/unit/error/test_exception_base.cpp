@@ -256,8 +256,8 @@ TEST_F(ExceptionBaseTest, OutOfRangeErrorInheritance) {
     LogicError* logic = &ex;
     Exception* base = &ex;
 
-    EXPECT_EQ(logic->code(), ErrorCode::InvalidArgument);
-    EXPECT_EQ(base->code(), ErrorCode::InvalidArgument);
+    EXPECT_EQ(logic->code(), ErrorCode::OutOfRange);
+    EXPECT_EQ(base->code(), ErrorCode::OutOfRange);
 }
 
 // NotImplementedError tests
@@ -274,8 +274,8 @@ TEST_F(ExceptionBaseTest, NotImplementedErrorInheritance) {
     LogicError* logic = &ex;
     Exception* base = &ex;
 
-    EXPECT_EQ(logic->code(), ErrorCode::InvalidArgument);
-    EXPECT_EQ(base->code(), ErrorCode::InvalidArgument);
+    EXPECT_EQ(logic->code(), ErrorCode::NotImplemented);
+    EXPECT_EQ(base->code(), ErrorCode::NotImplemented);
 }
 
 // Exception chaining tests

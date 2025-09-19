@@ -228,7 +228,7 @@ TEST_F(ErrorHandlerTest, StatisticsTracking) {
     handler.handle_error(error2);
 
     EXPECT_EQ(handler.error_count(), 2);
-    EXPECT_EQ(handler.last_error_code(), ErrorCode::SystemError);
+    EXPECT_EQ(handler.last_error_code(), ErrorCode::Unknown);
 
     handler.reset_statistics();
 

@@ -211,8 +211,8 @@ TEST_F(LogicErrorTest, OutOfRangeErrorInheritance) {
     LogicError* logic = &ex;
     Exception* base = &ex;
 
-    EXPECT_EQ(logic->code(), ErrorCode::InvalidArgument);
-    EXPECT_EQ(base->code(), ErrorCode::InvalidArgument);
+    EXPECT_EQ(logic->code(), ErrorCode::OutOfRange);
+    EXPECT_EQ(base->code(), ErrorCode::OutOfRange);
 }
 
 // ========== InvalidStateError tests ==========
@@ -324,8 +324,8 @@ TEST_F(LogicErrorTest, NotImplementedErrorInheritance) {
     LogicError* logic = &ex;
     Exception* base = &ex;
 
-    EXPECT_EQ(logic->code(), ErrorCode::InvalidArgument);
-    EXPECT_EQ(base->code(), ErrorCode::InvalidArgument);
+    EXPECT_EQ(logic->code(), ErrorCode::NotImplemented);
+    EXPECT_EQ(base->code(), ErrorCode::NotImplemented);
 }
 
 // ========== PreconditionError tests ==========
@@ -428,7 +428,7 @@ TEST_F(LogicErrorTest, ThrowAndCatchAsException) {
         throw OutOfRangeError("array", 5, 3);
     } catch (const Exception& e) {
         caught = true;
-        EXPECT_EQ(e.code(), ErrorCode::InvalidArgument);
+        EXPECT_EQ(e.code(), ErrorCode::OutOfRange);
     }
     EXPECT_TRUE(caught);
 }
@@ -441,8 +441,12 @@ TEST_F(LogicErrorTest, PolymorphicBehavior) {
     errors.push_back(std::make_unique<OutOfRangeError>("index", 10, 5));
     errors.push_back(std::make_unique<NotImplementedError>("feature"));
 
+    // Check that each error has appropriate code and non-empty message
+    EXPECT_EQ(errors[0]->code(), ErrorCode::InvalidArgument);  // InvalidArgumentError
+    EXPECT_EQ(errors[1]->code(), ErrorCode::OutOfRange);       // OutOfRangeError
+    EXPECT_EQ(errors[2]->code(), ErrorCode::NotImplemented);   // NotImplementedError
+
     for (const auto& error : errors) {
-        EXPECT_EQ(error->code(), ErrorCode::InvalidArgument);
         EXPECT_FALSE(std::string(error->what()).empty());
     }
 }
