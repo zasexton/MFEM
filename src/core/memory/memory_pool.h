@@ -10,6 +10,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "memory_resource.h"
 
@@ -83,6 +85,18 @@ public:
         return reinterpret_cast<void*>(n);
     }
 
+    [[nodiscard]] fem::core::error::Result<void*, fem::core::error::ErrorCode>
+    try_allocate() {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate();
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     void deallocate(void* p) noexcept {
         if (!p) return;
         auto* n = static_cast<Node*>(p);
@@ -97,6 +111,19 @@ public:
     // Reserve at least n nodes in the free list
     void reserve_nodes(std::size_t n) {
         while (free_count() < n) refill();
+    }
+
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode>
+    try_reserve_nodes(std::size_t n) {
+        using fem::core::error::ErrorCode;
+        try {
+            reserve_nodes(n);
+            return {};
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
     }
 
     void shrink_to_fit() noexcept {
@@ -178,4 +205,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_MEMORY_POOL_H
-

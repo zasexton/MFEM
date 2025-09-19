@@ -12,6 +12,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "aligned_storage.h"
 #include "memory_resource.h"
@@ -85,10 +87,39 @@ public:
         }
     }
 
+    // Result-returning allocation (non-throwing)
+    [[nodiscard]] fem::core::error::Result<void*, fem::core::error::ErrorCode>
+    try_allocate(std::size_t bytes, std::size_t alignment = alignof(std::max_align_t)) {
+        using fem::core::error::ErrorCode;
+        if (!is_power_of_two(alignment) || bytes == 0) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::InvalidArgument);
+        }
+        try {
+            return allocate(bytes, alignment);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     template<typename T, typename... Args>
     T* create(Args&&... args) {
         void* p = allocate(sizeof(T), alignof(T));
         return ::new (p) T(std::forward<Args>(args)...);
+    }
+
+    template<typename T, typename... Args>
+    fem::core::error::Result<T*, fem::core::error::ErrorCode>
+    try_create(Args&&... args) {
+        auto r = try_allocate(sizeof(T), alignof(T));
+        if (!r) return fem::core::error::Err<fem::core::error::ErrorCode>(r.error());
+        T* p = static_cast<T*>(r.value());
+        try {
+            return ::new (p) T(std::forward<Args>(args)...);
+        } catch (...) {
+            return fem::core::error::Err<fem::core::error::ErrorCode>(fem::core::error::ErrorCode::SystemError);
+        }
     }
 
     template<typename T>
@@ -183,4 +214,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_ARENA_H
-

@@ -11,6 +11,8 @@
 
 #include "memory_resource.h"
 #include "memory_pool.h"
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 namespace fem::core::memory {
 
@@ -45,6 +47,18 @@ public:
         if (n == 1) return static_cast<pointer>(pool_->allocate());
         return static_cast<pointer>(default_resource()->allocate(n * sizeof(T), alignof(T))); // bulk fallback
     }
+
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
     void deallocate(pointer p, size_type n) noexcept {
         if (!p) return;
         if (n == 1) pool_->deallocate(p);
@@ -69,4 +83,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_SLAB_ALLOCATOR_H
-

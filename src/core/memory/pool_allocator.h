@@ -10,6 +10,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "memory_resource.h"
 
@@ -60,6 +62,18 @@ public:
         }
         // Fallback for multi-object allocation
         return static_cast<pointer>(upstream_->allocate(n * sizeof(T), alignof(T)));
+    }
+
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
     }
 
     void deallocate(pointer p, size_type n) noexcept {
@@ -127,4 +141,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_POOL_ALLOCATOR_H
-

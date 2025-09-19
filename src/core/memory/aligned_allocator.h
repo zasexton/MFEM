@@ -8,6 +8,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "memory_resource.h"
 
@@ -49,6 +51,18 @@ public:
         return static_cast<pointer>(mr_->allocate(bytes, Alignment));
     }
 
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     void deallocate(pointer p, size_type n) noexcept {
         if (!p) return;
         mr_->deallocate(p, n * sizeof(T), Alignment);
@@ -74,4 +88,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_ALIGNED_ALLOCATOR_H
-

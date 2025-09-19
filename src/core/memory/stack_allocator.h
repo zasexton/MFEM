@@ -10,6 +10,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "aligned_storage.h"
 
@@ -90,6 +92,18 @@ public:
         return static_cast<pointer>(p);
     }
 
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     void deallocate(pointer p, size_type n) noexcept {
         if (!p || !storage_) return;
         storage_->deallocate(p, n * sizeof(T), Alignment);
@@ -115,4 +129,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_STACK_ALLOCATOR_H
-

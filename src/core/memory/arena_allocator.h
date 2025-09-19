@@ -10,6 +10,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "arena.h"
 
@@ -45,6 +47,19 @@ public:
         return static_cast<pointer>(p);
     }
 
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        if (arena_ == nullptr) return fem::core::error::Err<ErrorCode>(ErrorCode::InvalidState);
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     void deallocate(pointer /*p*/, size_type /*n*/) noexcept {
         // No-op. Memory reclaimed when the arena rewinds/resets/destroys.
     }
@@ -71,4 +86,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_ARENA_ALLOCATOR_H
-

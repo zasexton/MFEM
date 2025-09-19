@@ -8,6 +8,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "memory_resource.h"
 #include "memory_pool.h"
@@ -69,8 +71,39 @@ public:
 
     void deallocate(void* p) noexcept { pool_.deallocate(p); }
 
+    [[nodiscard]] fem::core::error::Result<void*, fem::core::error::ErrorCode>
+    try_allocate() {
+        using fem::core::error::ErrorCode;
+        if (pool_.free_count() == 0) {
+            // Attempt a growth refill; map failures
+            try {
+                refill();
+            } catch (const std::bad_alloc&) {
+                return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            } catch (...) {
+                return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            }
+        }
+        auto r = pool_.try_allocate();
+        if (!r) return fem::core::error::Err<ErrorCode>(r.error());
+        return r;
+    }
+
     void reserve_nodes(std::size_t n) {
         while (pool_.free_count() < n) refill();
+    }
+
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode>
+    try_reserve_nodes(std::size_t n) {
+        using fem::core::error::ErrorCode;
+        try {
+            reserve_nodes(n);
+            return {};
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
     }
 
     [[nodiscard]] std::size_t free_count() const noexcept { return pool_.free_count(); }
@@ -120,4 +153,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_GROWING_POOL_H
-

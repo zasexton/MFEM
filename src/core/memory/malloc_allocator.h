@@ -8,6 +8,8 @@
 #include <type_traits>
 
 #include <config/config.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 namespace fem::core::memory {
 
@@ -41,6 +43,18 @@ public:
 #endif
     }
 
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     void deallocate(pointer p, size_type n) noexcept {
 #if defined(__cpp_aligned_new)
         ::operator delete(p, n * sizeof(T), std::align_val_t(alignof(T)));
@@ -63,4 +77,3 @@ public:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_MALLOC_ALLOCATOR_H
-

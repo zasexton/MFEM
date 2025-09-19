@@ -7,6 +7,8 @@
 #include <type_traits>
 
 #include <config/config.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #include "pool_allocator.h"
 
@@ -46,6 +48,18 @@ public:
         else default_resource()->deallocate(p, n * sizeof(T), alignof(T));
     }
 
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
+    }
+
     template<class U, class... Args>
     void construct(U* p, Args&&... args) { ::new ((void*)p) U(std::forward<Args>(args)...); }
     template<class U>
@@ -62,4 +76,3 @@ private:
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_THREAD_POOL_ALLOCATOR_H
-

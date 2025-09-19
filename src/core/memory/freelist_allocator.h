@@ -12,6 +12,8 @@
 
 #include "memory_resource.h"
 #include "memory_pool.h"
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 namespace fem::core::memory {
 
@@ -54,6 +56,18 @@ public:
         // bulk allocation: fall back to upstream through a temporary allocator
         auto* mr = pool_upstream();
         return static_cast<pointer>(mr->allocate(n * sizeof(T), alignof(T)));
+    }
+
+    [[nodiscard]] fem::core::error::Result<pointer, fem::core::error::ErrorCode>
+    try_allocate(size_type n) {
+        using fem::core::error::ErrorCode;
+        try {
+            return allocate(n);
+        } catch (const std::bad_alloc&) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+        } catch (...) {
+            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+        }
     }
 
     void deallocate(pointer p, size_type n) noexcept {
