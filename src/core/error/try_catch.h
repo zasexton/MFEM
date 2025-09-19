@@ -24,23 +24,23 @@ auto try_catch(F&& f, Args&&... args) -> Result<std::invoke_result_t<F, Args...>
     try {
         if constexpr (std::is_void_v<ReturnType>) {
             std::forward<F>(f)(std::forward<Args>(args)...);
-            return Ok<std::monostate, ErrorInfo>(std::monostate{});
+            return Result<void, ErrorInfo>();  // Success for void
         } else {
-            return Ok<ReturnType, ErrorInfo>(
+            return Result<ReturnType, ErrorInfo>(
                 std::forward<F>(f)(std::forward<Args>(args)...)
             );
         }
     } catch (const Exception& e) {
-        return Err<ErrorInfo, ReturnType>(
-            make_error(e.code(), e.what(), e.where())
+        return Result<ReturnType, ErrorInfo>(
+            Error<ErrorInfo>(make_error(e.code(), e.what(), e.where()))
         );
     } catch (const std::exception& e) {
-        return Err<ErrorInfo, ReturnType>(
-            make_error(ErrorCode::Unknown, e.what())
+        return Result<ReturnType, ErrorInfo>(
+            Error<ErrorInfo>(make_error(ErrorCode::Unknown, e.what()))
         );
     } catch (...) {
-        return Err<ErrorInfo, ReturnType>(
-            make_error(ErrorCode::Unknown, "Unknown exception")
+        return Result<ReturnType, ErrorInfo>(
+            Error<ErrorInfo>(make_error(ErrorCode::Unknown, "Unknown exception"))
         );
     }
 }
@@ -96,7 +96,7 @@ template<typename F>
 auto try_with_retry(F&& f,
                    size_t max_attempts = 3,
                    std::chrono::milliseconds initial_delay = std::chrono::milliseconds(100)) {
-    using ReturnType = std::invoke_result_t<F>;
+    // ReturnType is implicitly determined by the function return
 
     std::exception_ptr last_exception;
     auto delay = initial_delay;
@@ -129,15 +129,18 @@ T unwrap_or_throw(Result<T, E>&& result) {
         if constexpr (std::is_base_of_v<std::exception, E>) {
             throw result.error();
         } else if constexpr (std::is_same_v<E, ErrorInfo>) {
-            throw Exception(result.error().message(),
+            throw Exception(std::string(result.error().message()),
                           result.error().error_code(),
                           result.error().location());
         } else {
-            throw RuntimeError(std::format("Operation failed: {}",
-                                         result.error().message()));
+            throw RuntimeError(std::format("Operation failed"));
         }
     }
-    return std::move(result).value();
+    if constexpr (!std::is_void_v<T>) {
+        return std::move(result).value();
+    } else {
+        result.value();  // Just checks for errors
+    }
 }
 
 /**
