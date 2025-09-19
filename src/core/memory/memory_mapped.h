@@ -12,6 +12,8 @@
 
 #include <config/config.h>
 #include <config/debug.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #if defined(CORE_PLATFORM_WINDOWS)
 #  ifndef NOMINMAX
@@ -82,6 +84,21 @@ public:
     void open(const std::filesystem::path& path, Mode mode, std::size_t length) { std::error_code ec; open(path, mode, length, &ec); throw_if(ec); }
     void open(const std::filesystem::path& path, Mode mode, std::size_t length, std::error_code* ec) noexcept;
 
+    // Result-based convenience wrappers using core/error
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode>
+    open_result(const std::filesystem::path& path, Mode mode) noexcept {
+        std::error_code ec; open(path, mode, 0, &ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
+
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode>
+    open_result(const std::filesystem::path& path, Mode mode, std::size_t length) noexcept {
+        std::error_code ec; open(path, mode, length, &ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
+
     void close() noexcept;
 
     [[nodiscard]] void* data() noexcept { return base_; }
@@ -97,11 +114,32 @@ public:
 
     // Flush entire mapping or specified range
     void flush(std::size_t offset = 0, std::size_t length = 0, std::error_code* ec = nullptr) noexcept;
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode>
+    flush_result(std::size_t offset = 0, std::size_t length = 0) const noexcept {
+        std::error_code ec; const_cast<MemoryMappedFile*>(this)->flush(offset, length, &ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
 
     // Advisory hints (best effort)
     void advise_sequential(std::error_code* ec = nullptr) noexcept;
     void advise_random(std::error_code* ec = nullptr) noexcept;
     void lock_in_memory(std::error_code* ec = nullptr) noexcept;
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode> advise_sequential_result() const noexcept {
+        std::error_code ec; const_cast<MemoryMappedFile*>(this)->advise_sequential(&ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode> advise_random_result() const noexcept {
+        std::error_code ec; const_cast<MemoryMappedFile*>(this)->advise_random(&ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode> lock_in_memory_result() const noexcept {
+        std::error_code ec; const_cast<MemoryMappedFile*>(this)->lock_in_memory(&ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
 
     // Create a logical sub-view (no additional OS mapping)
     [[nodiscard]] MemoryMappedView create_view(std::size_t offset, std::size_t length) noexcept {
@@ -319,6 +357,31 @@ inline void MemoryMappedFile::lock_in_memory(std::error_code* ec) noexcept {
     int r = ::mlock(base_, size_);
     if (r != 0 && ec) *ec = std::error_code(errno, std::generic_category());
 #endif
+#endif
+}
+
+// Map std::error_code or platform error to core ErrorCode
+inline fem::core::error::ErrorCode map_ec(const std::error_code& ec) noexcept {
+#if !defined(CORE_PLATFORM_WINDOWS)
+    switch (ec.value()) {
+        case ENOENT: return fem::core::error::ErrorCode::FileNotFound;
+        case EACCES: return fem::core::error::ErrorCode::FileAccessDenied;
+        case EEXIST: return fem::core::error::ErrorCode::FileAlreadyExists;
+        case ENOTDIR: case EINVAL: case EFAULT: case ENAMETOOLONG:
+            return fem::core::error::ErrorCode::InvalidPath;
+        case EIO: return fem::core::error::ErrorCode::IoError;
+        case ENOMEM: return fem::core::error::ErrorCode::OutOfMemory;
+        default: return fem::core::error::ErrorCode::SystemError;
+    }
+#else
+    switch (ec.value()) {
+        case ERROR_FILE_NOT_FOUND: return fem::core::error::ErrorCode::FileNotFound;
+        case ERROR_PATH_NOT_FOUND: return fem::core::error::ErrorCode::InvalidPath;
+        case ERROR_ACCESS_DENIED: return fem::core::error::ErrorCode::FileAccessDenied;
+        case ERROR_ALREADY_EXISTS: case ERROR_FILE_EXISTS: return fem::core::error::ErrorCode::FileAlreadyExists;
+        case ERROR_NOT_ENOUGH_MEMORY: case ERROR_OUTOFMEMORY: return fem::core::error::ErrorCode::OutOfMemory;
+        default: return fem::core::error::ErrorCode::SystemError;
+    }
 #endif
 }
 

@@ -9,6 +9,8 @@
 #include <system_error>
 
 #include <config/config.h>
+#include <core/error/result.h>
+#include <core/error/error_code.h>
 
 #if defined(CORE_PLATFORM_WINDOWS)
 #  ifndef NOMINMAX
@@ -37,8 +39,20 @@ public:
     // Create or open a named shared memory segment. If create=true, ensures
     // at least 'size' bytes (truncate/extend as needed). Returns through ec.
     void open(std::string_view name, std::size_t size, bool create, std::error_code* ec = nullptr) noexcept;
+    [[nodiscard]] fem::core::error::Result<void, fem::core::error::ErrorCode>
+    open_result(std::string_view name, std::size_t size, bool create) noexcept {
+        std::error_code ec; open(name, size, create, &ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec, create))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
     void close() noexcept;
     static void unlink(std::string_view name, std::error_code* ec = nullptr) noexcept;
+    [[nodiscard]] static fem::core::error::Result<void, fem::core::error::ErrorCode>
+    unlink_result(std::string_view name) noexcept {
+        std::error_code ec; unlink(name, &ec);
+        return ec ? fem::core::error::Err<fem::core::error::ErrorCode>(map_ec(ec, /*create*/false))
+                  : fem::core::error::Result<void, fem::core::error::ErrorCode>{};
+    }
 
     [[nodiscard]] void* data() noexcept { return base_; }
     [[nodiscard]] const void* data() const noexcept { return base_; }
@@ -124,7 +138,27 @@ inline void SharedMemory::unlink(std::string_view name, std::error_code* ec) noe
 #endif
 }
 
+// Map std::error_code to core ErrorCode for shared memory ops
+inline fem::core::error::ErrorCode map_ec(const std::error_code& ec, bool create) noexcept {
+#if defined(CORE_PLATFORM_WINDOWS)
+    // Windows named mappings via paging file: treat failures as system or access errors
+    switch (ec.value()) {
+        case ERROR_ACCESS_DENIED: return fem::core::error::ErrorCode::FileAccessDenied;
+        case ERROR_NOT_ENOUGH_MEMORY: case ERROR_OUTOFMEMORY: return fem::core::error::ErrorCode::OutOfMemory;
+        default: return fem::core::error::ErrorCode::SystemError;
+    }
+#else
+    switch (ec.value()) {
+        case ENOENT: return create ? fem::core::error::ErrorCode::IoError
+                                   : fem::core::error::ErrorCode::ResourceNotFound;
+        case EACCES: return fem::core::error::ErrorCode::FileAccessDenied;
+        case EEXIST: return fem::core::error::ErrorCode::FileAlreadyExists;
+        case ENOMEM: return fem::core::error::ErrorCode::OutOfMemory;
+        default: return fem::core::error::ErrorCode::SystemError;
+    }
+#endif
+}
+
 } // namespace fem::core::memory
 
 #endif // CORE_MEMORY_SHARED_MEMORY_H
-
