@@ -237,7 +237,7 @@ TEST_F(TryCatchTest, UnwrapOrThrowErrorInfo) {
 }
 
 TEST_F(TryCatchTest, UnwrapOrThrowGenericError) {
-    auto error_result = Err<std::string, int>("generic error");
+    auto error_result = Err<ErrorCode, int>(ErrorCode::Unknown);
 
     EXPECT_THROW({
         unwrap_or_throw(std::move(error_result));
@@ -246,39 +246,39 @@ TEST_F(TryCatchTest, UnwrapOrThrowGenericError) {
 
 // try_chain tests
 TEST_F(TryCatchTest, TryChainSuccess) {
-    auto add_one = [](int x) -> Result<int, std::string> {
-        return Ok<int, std::string>(x + 1);
+    auto add_one = [](int x) -> Result<int, ErrorCode> {
+        return Ok<int, ErrorCode>(x + 1);
     };
 
-    auto multiply_two = [](int x) -> Result<int, std::string> {
-        return Ok<int, std::string>(x * 2);
+    auto multiply_two = [](int x) -> Result<int, ErrorCode> {
+        return Ok<int, ErrorCode>(x * 2);
     };
 
     auto chain = try_chain(add_one, multiply_two);
-    auto result = chain(Ok<int, std::string>(5));
+    auto result = chain(Ok<int, ErrorCode>(5));
 
     EXPECT_TRUE(result.is_ok());
     EXPECT_EQ(result.value(), 12);  // (5 + 1) * 2
 }
 
 TEST_F(TryCatchTest, TryChainFailure) {
-    auto add_one = [](int x) -> Result<int, std::string> {
-        return Ok<int, std::string>(x + 1);
+    auto add_one = [](int x) -> Result<int, ErrorCode> {
+        return Ok<int, ErrorCode>(x + 1);
     };
 
-    auto fail_op = [](int) -> Result<int, std::string> {
-        return Err<std::string, int>("operation failed");
+    auto fail_op = [](int) -> Result<int, ErrorCode> {
+        return Err<ErrorCode, int>(ErrorCode::InvalidArgument);
     };
 
-    auto multiply_two = [](int x) -> Result<int, std::string> {
-        return Ok<int, std::string>(x * 2);
+    auto multiply_two = [](int x) -> Result<int, ErrorCode> {
+        return Ok<int, ErrorCode>(x * 2);
     };
 
     auto chain = try_chain(add_one, fail_op, multiply_two);
-    auto result = chain(Ok<int, std::string>(5));
+    auto result = chain(Ok<int, ErrorCode>(5));
 
     EXPECT_TRUE(result.is_error());
-    EXPECT_EQ(result.error(), "operation failed");
+    EXPECT_EQ(result.error(), ErrorCode::InvalidArgument);
 }
 
 // try_collect tests

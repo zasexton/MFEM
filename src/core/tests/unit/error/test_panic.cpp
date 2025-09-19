@@ -219,7 +219,6 @@ TEST_F(PanicTest, ThreadSafeHandlerSetting) {
 TEST_F(PanicTest, EmptyMessage) {
     // Test handling of empty panic message
     const char* empty_message = "";
-    auto location = std::source_location::current();
 
     // Test that empty message doesn't cause issues
     EXPECT_STREQ(empty_message, "");
