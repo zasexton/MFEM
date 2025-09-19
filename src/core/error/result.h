@@ -205,6 +205,100 @@ public:
     }
 };
 
+// Specialization for void result type
+template<typename E>
+    requires ErrorType<E>
+class Result<void, E> {
+public:
+    using value_type = void;
+    using error_type = E;
+
+private:
+    std::optional<E> error_;
+
+    // Helper to get error message
+    static std::string get_error_message(const E& e) {
+        if constexpr (std::is_enum_v<E>) {
+            if constexpr (std::is_same_v<E, ErrorCode>) {
+                return core_error_category().message(static_cast<int>(e));
+            } else {
+                return "Error code: " + std::to_string(static_cast<int>(e));
+            }
+        } else {
+            return std::string(e.message());
+        }
+    }
+
+public:
+    // Constructors
+    Result() : error_(std::nullopt) {}  // Success case
+    Result(Error<E> error) : error_(std::move(error.get())) {}
+
+    // State queries
+    [[nodiscard]] bool is_ok() const noexcept {
+        return !error_.has_value();
+    }
+
+    [[nodiscard]] bool is_error() const noexcept {
+        return error_.has_value();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return is_ok();
+    }
+
+    // Error access
+    [[nodiscard]] const E& error() const& {
+        if (!is_error()) {
+            throw std::logic_error("Result is not an error");
+        }
+        return *error_;
+    }
+
+    [[nodiscard]] E& error() & {
+        if (!is_error()) {
+            throw std::logic_error("Result is not an error");
+        }
+        return *error_;
+    }
+
+    [[nodiscard]] E&& error() && {
+        if (!is_error()) {
+            throw std::logic_error("Result is not an error");
+        }
+        return std::move(*error_);
+    }
+
+    // Void value() - just checks for errors
+    void value() const {
+        if (is_error()) {
+            throw std::runtime_error(std::format("Result contains error: {}",
+                                                  get_error_message(error())));
+        }
+    }
+
+    // Monadic operations
+    template<typename F>
+    auto and_then(F&& f) const -> std::invoke_result_t<F> {
+        if (is_error()) {
+            return Result<void, E>(Error<E>(*error_));
+        }
+        return std::forward<F>(f)();
+    }
+
+    template<typename F>
+    auto map_error(F&& f) const {
+        if (is_error()) {
+            return Result<void, std::invoke_result_t<F, E>>(
+                Error<std::invoke_result_t<F, E>>(
+                    std::forward<F>(f)(*error_)
+                )
+            );
+        }
+        return Result<void, std::invoke_result_t<F, E>>();
+    }
+};
+
 // Deduction guides
 template<typename T, typename E>
 Result(Error<E>) -> Result<T, E>;

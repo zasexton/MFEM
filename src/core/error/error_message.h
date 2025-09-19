@@ -11,6 +11,7 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 #include "error_code.h"
 
 namespace fem::core::error {
@@ -40,6 +41,8 @@ public:
      */
     class Template {
     public:
+        Template() = default;  // Default constructor for std::map
+
         explicit Template(const std::string& pattern)
             : pattern_(pattern) {
             parse_placeholders();
@@ -86,16 +89,40 @@ public:
         void parse_placeholders() {
             size_t pos = 0;
             while ((pos = pattern_.find('{', pos)) != std::string::npos) {
-                size_t end = pattern_.find('}', pos);
-                if (end != std::string::npos) {
-                    std::string placeholder = pattern_.substr(pos + 1, end - pos - 1);
-                    if (!placeholder.empty() && 
+                // Skip escaped braces {{
+                if (pos + 1 < pattern_.length() && pattern_[pos + 1] == '{') {
+                    pos += 2;
+                    continue;
+                }
+
+                // Find the closing brace
+                size_t end = pos + 1;
+                int brace_count = 1;
+                bool found_close = false;
+
+                while (end < pattern_.length() && brace_count > 0) {
+                    if (pattern_[end] == '{') {
+                        brace_count++;
+                    } else if (pattern_[end] == '}') {
+                        brace_count--;
+                        if (brace_count == 0) {
+                            found_close = true;
+                        }
+                    }
+                    end++;
+                }
+
+                if (found_close) {
+                    std::string placeholder = pattern_.substr(pos + 1, end - pos - 2);
+                    // Check if placeholder itself contains an opening brace (malformed)
+                    if (placeholder.find('{') == std::string::npos && !placeholder.empty() &&
                         std::find(placeholders_.begin(), placeholders_.end(), placeholder) == placeholders_.end()) {
                         placeholders_.push_back(placeholder);
                     }
-                    pos = end + 1;
+                    pos = end;
                 } else {
-                    break;
+                    // No matching closing brace, skip this opening brace
+                    pos++;
                 }
             }
         }
@@ -359,6 +386,7 @@ public:
         void register_template(const std::string& key,
                               const std::string& pattern,
                               const std::string& language = "en") {
+            std::lock_guard<std::mutex> lock(mutex_);
             templates_[language][key] = Template(pattern);
         }
 
@@ -367,16 +395,17 @@ public:
          */
         std::optional<Template> get_template(const std::string& key,
                                             const std::string& language = "en") const {
+            std::lock_guard<std::mutex> lock(mutex_);
             auto lang_it = templates_.find(language);
             if (lang_it == templates_.end()) {
                 return std::nullopt;
             }
-            
+
             auto template_it = lang_it->second.find(key);
             if (template_it == lang_it->second.end()) {
                 return std::nullopt;
             }
-            
+
             return template_it->second;
         }
 
@@ -391,7 +420,7 @@ public:
                 // Fallback to key if template not found
                 return key;
             }
-            
+
             return tmpl->format(values);
         }
 
@@ -399,14 +428,17 @@ public:
          * @brief Load catalog from configuration
          */
         void load_from_config(const std::map<std::string, std::map<std::string, std::string>>& config) {
+            std::lock_guard<std::mutex> lock(mutex_);
             for (const auto& [key, translations] : config) {
                 for (const auto& [language, pattern] : translations) {
-                    register_template(key, pattern, language);
+                    // Call unlocked version to avoid deadlock
+                    templates_[language][key] = Template(pattern);
                 }
             }
         }
 
     private:
+        mutable std::mutex mutex_;
         std::map<std::string, std::map<std::string, Template>> templates_;
     };
 

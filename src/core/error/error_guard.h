@@ -375,7 +375,9 @@ public:
         std::chrono::milliseconds max_delay{5000};
     };
 
-    explicit RetryGuard(Config config = Config{})
+    RetryGuard() : config_{} {}
+
+    explicit RetryGuard(const Config& config)
         : config_(config) {
     }
 
@@ -398,7 +400,7 @@ public:
                     
                     // Calculate next delay with backoff
                     delay = std::chrono::milliseconds(
-                        static_cast<long>(delay.count() * config_.backoff_multiplier));
+                        static_cast<long>(static_cast<double>(delay.count()) * config_.backoff_multiplier));
                     
                     if (delay > config_.max_delay) {
                         delay = config_.max_delay;
@@ -429,7 +431,7 @@ public:
                 try {
                     std::rethrow_exception(last_exception);
                 } catch (const std::exception& e) {
-                    retry = should_retry(e, attempt);
+                    retry = should_retry(&e, attempt);
                 } catch (...) {
                     retry = should_retry(nullptr, attempt);
                 }
@@ -437,7 +439,7 @@ public:
                 if (retry && attempt < config_.max_attempts) {
                     std::this_thread::sleep_for(delay);
                     delay = std::chrono::milliseconds(
-                        static_cast<long>(delay.count() * config_.backoff_multiplier));
+                        static_cast<long>(static_cast<double>(delay.count()) * config_.backoff_multiplier));
                     
                     if (delay > config_.max_delay) {
                         delay = config_.max_delay;
