@@ -246,7 +246,8 @@ public:
                       const std::string& reason,
                       const std::source_location& loc = std::source_location::current())
         : RuntimeError(std::format("Configuration error for '{}': {}",
-                                 parameter, reason), loc)
+                                 parameter, reason),
+                      ErrorCode::ConfigInvalid, loc)
         , parameter_(parameter) {
     }
 

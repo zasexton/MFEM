@@ -106,7 +106,8 @@ public:
                     size_t size,
                     const std::source_location& loc = std::source_location::current())
         : LogicError(std::format("{}: index {} out of range [0, {})",
-                                what, index, size), loc)
+                                what, index, size),
+                    ErrorCode::OutOfRange, loc)
         , index_(index)
         , size_(size) {
     }
@@ -118,7 +119,8 @@ public:
                     T max,
                     const std::source_location& loc = std::source_location::current())
         : LogicError(std::format("{}: value {} out of range [{}, {}]",
-                                what, value, min, max), loc)
+                                what, value, min, max),
+                    ErrorCode::OutOfRange, loc)
         , index_(0)
         , size_(0) {
     }
@@ -141,7 +143,8 @@ public:
                      const std::string& actual_state,
                      const std::source_location& loc = std::source_location::current())
         : LogicError(std::format("{}: invalid state '{}', expected '{}'",
-                                object_name, actual_state, expected_state), loc)
+                                object_name, actual_state, expected_state),
+                    ErrorCode::InvalidState, loc)
         , object_name_(object_name)
         , expected_state_(expected_state)
         , actual_state_(actual_state) {
@@ -167,7 +170,8 @@ public:
                      const std::type_info& actual,
                      const std::source_location& loc = std::source_location::current())
         : LogicError(std::format("{}: type mismatch - expected '{}', got '{}'",
-                                context, expected.name(), actual.name()), loc)
+                                context, expected.name(), actual.name()),
+                    ErrorCode::TypeMismatch, loc)
         , expected_type_(&expected)
         , actual_type_(&actual) {
     }
@@ -204,7 +208,8 @@ class NotImplementedError : public LogicError {
 public:
     explicit NotImplementedError(const std::string& feature,
                                 const std::source_location& loc = std::source_location::current())
-        : LogicError(std::format("Not implemented: {}", feature), loc)
+        : LogicError(std::format("Not implemented: {}", feature),
+                    ErrorCode::NotImplemented, loc)
         , feature_(feature) {
     }
 
