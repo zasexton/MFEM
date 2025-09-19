@@ -97,17 +97,17 @@ struct StackFrame {
 class StackTrace {
 public:
     /**
-     * @brief Capture current stack trace
-     */
-    explicit StackTrace(size_t skip_frames = 1,
-                       size_t max_frames = 64) {
-        capture(skip_frames + 1, max_frames);
-    }
-
-    /**
      * @brief Default constructor (empty trace)
      */
     StackTrace() = default;
+
+    /**
+     * @brief Capture current stack trace
+     */
+    explicit StackTrace(size_t skip_frames,
+                       size_t max_frames = 64) {
+        capture(skip_frames + 1, max_frames);
+    }
 
     /**
      * @brief Get captured frames
@@ -269,7 +269,7 @@ private:
     void capture_execinfo(size_t skip_frames, size_t max_frames) {
         std::vector<void*> buffer(max_frames + skip_frames);
         
-        int nframes = ::backtrace(buffer.data(), buffer.size());
+        int nframes = ::backtrace(buffer.data(), static_cast<int>(buffer.size()));
         if (nframes <= static_cast<int>(skip_frames)) {
             return;
         }
@@ -281,7 +281,7 @@ private:
         
         frames_.reserve(nframes - skip_frames);
         
-        for (int i = skip_frames; i < nframes; ++i) {
+        for (int i = static_cast<int>(skip_frames); i < nframes; ++i) {
             StackFrame frame;
             frame.index = i - skip_frames;
             frame.address = buffer[i];

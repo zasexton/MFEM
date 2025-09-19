@@ -9,6 +9,10 @@
 #include <vector>
 #include <optional>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <chrono>
+#include <iomanip>
 
 namespace fem::core::error {
 
@@ -34,11 +38,11 @@ public:
      * @brief Construct with explicit values
      */
     SourceLocation(const char* file, int line, const char* function, int column = 0)
-        : file_name_(file)
+        : has_explicit_values_(true)
+        , file_name_(file)
         , function_name_(function)
         , line_(line)
-        , column_(column)
-        , has_explicit_values_(true) {
+        , column_(column) {
     }
 
     // Accessors matching std::source_location interface
@@ -81,6 +85,12 @@ public:
         try {
             std::filesystem::path file_path(file_name());
             std::filesystem::path base_path(base_dir);
+
+            // Check if paths are valid before attempting relative
+            if (!file_path.is_absolute() || !base_path.is_absolute()) {
+                return file_name();
+            }
+
             return std::filesystem::relative(file_path, base_path).string();
         } catch (...) {
             return file_name();
@@ -270,12 +280,12 @@ public:
         std::ostringstream oss;
         oss << "Source: " << location_.to_string() << "\n";
         
-        int start_line = location_.line() - lines_before_.size();
+        int start_line = static_cast<int>(location_.line() - lines_before_.size());
         
         // Lines before
         for (size_t i = 0; i < lines_before_.size(); ++i) {
             if (show_line_numbers) {
-                oss << std::format("{:4d} | ", start_line + i);
+                oss << std::format("{:4d} | ", start_line + static_cast<int>(i));
             }
             oss << lines_before_[i] << "\n";
         }
@@ -303,7 +313,7 @@ public:
         // Lines after
         for (size_t i = 0; i < lines_after_.size(); ++i) {
             if (show_line_numbers) {
-                oss << std::format("{:4d} | ", location_.line() + 1 + i);
+                oss << std::format("{:4d} | ", location_.line() + 1 + static_cast<std::uint_least32_t>(i));
             }
             oss << lines_after_[i] << "\n";
         }
@@ -314,7 +324,11 @@ public:
 private:
     void load_context() {
         // Try to read the source file
-        std::ifstream file(location_.file_name());
+        const char* fname = location_.file_name();
+        if (!fname || fname[0] == '\0') {
+            return;
+        }
+        std::ifstream file(fname);
         if (!file) {
             return;
         }
@@ -346,7 +360,7 @@ private:
         // Get lines after
         int end = std::min(static_cast<int>(all_lines.size()),
                           static_cast<int>(error_index) + context_lines_ + 1);
-        for (int i = error_index + 1; i < end; ++i) {
+        for (int i = static_cast<int>(error_index) + 1; i < end; ++i) {
             lines_after_.push_back(all_lines[i]);
         }
     }
