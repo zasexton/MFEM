@@ -13,6 +13,7 @@
 #include <optional>
 #include <chrono>
 #include <format>
+#include <type_traits>
 #include "source_location.h"
 #include "stack_trace.h"
 
@@ -194,7 +195,13 @@ private:
     template<typename T>
     void set_value(const std::string& key, T&& value) {
         std::lock_guard<std::mutex> lock(mutex_);
-        values_[make_scoped_key(key)] = std::forward<T>(value);
+        // Convert const char* to std::string for storage
+        if constexpr (std::is_same_v<std::decay_t<T>, const char*> ||
+                      std::is_same_v<std::decay_t<T>, char*>) {
+            values_[make_scoped_key(key)] = std::string(value);
+        } else {
+            values_[make_scoped_key(key)] = std::forward<T>(value);
+        }
     }
 
     template<typename T>
@@ -412,7 +419,7 @@ private:
 
     void add_values() {}  // Base case
 
-    void remove_value(const std::string& key) {
+    void remove_value(const std::string& /* key */) {
         // Would need a remove method in ErrorContext
         // For now, values persist until scope ends
     }
