@@ -141,6 +141,13 @@ TEST_F(ErrorCategoryTest, UnregisterCategory) {
     EXPECT_EQ(ErrorCategoryRegistry::instance().get_category("test"), nullptr);
 }
 
+TEST_F(ErrorCategoryTest, UnregisterNonExistentCategoryIsNoOp) {
+    // Ensure calling unregister on a non-existent key is safe and returns false
+    EXPECT_FALSE(ErrorCategoryRegistry::instance().unregister_category("does_not_exist"));
+    // Registry remains empty
+    EXPECT_TRUE(ErrorCategoryRegistry::instance().list_categories().empty());
+}
+
 TEST_F(ErrorCategoryTest, ListCategories) {
     auto cat1 = fem::core::base::make_object<TestErrorCategory>();
     auto cat2 = fem::core::base::make_object<AnotherTestCategory>();

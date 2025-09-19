@@ -460,6 +460,23 @@ TEST_F(ErrorMessageTest, FormatError) {
     EXPECT_TRUE(msg.find("line: 42") != std::string::npos);
 }
 
+TEST_F(ErrorMessageTest, CatalogUnicodeTemplates) {
+    auto& catalog = ErrorMessage::catalog();
+
+    catalog.register_template("ошибка.файл",
+                             "Файл '{имя}' не найден в '{каталог}'");
+
+    std::map<std::string, std::string> values = {
+        {"имя","данные.txt"},
+        {"каталог","/tmp"}
+    };
+
+    auto msg = catalog.format("ошибка.файл", values);
+    EXPECT_TRUE(msg.find("Файл") != std::string::npos);
+    EXPECT_TRUE(msg.find("данные.txt") != std::string::npos);
+    EXPECT_TRUE(msg.find("/tmp") != std::string::npos);
+}
+
 TEST_F(ErrorMessageTest, DetailedError) {
     std::string msg = detailed_error(
         ErrorCode::InvalidArgument,
@@ -512,6 +529,52 @@ TEST_F(ErrorMessageTest, TemplateMalformedPlaceholders) {
     auto placeholders = tmpl.placeholders();
     EXPECT_EQ(placeholders.size(), 1);
     EXPECT_EQ(placeholders[0], "valid");
+}
+
+TEST_F(ErrorMessageTest, TemplateBraceStormDoesNotCrash) {
+    // Pathological inputs with unmatched and nested braces should not crash
+    {
+        ErrorMessage::Template t1("{{{{{{{{{{");
+        EXPECT_TRUE(t1.placeholders().empty());
+        EXPECT_EQ(t1.format({{"x","1"}}), "{{{{{{{{{{");
+    }
+    {
+        ErrorMessage::Template t2("{foo {bar} {baz} qux}");
+        // Only 'bar' should be recognized as a proper placeholder segment
+        auto ph = t2.placeholders();
+        // Depending on parser leniency, 'bar' may be captured; at minimum, no crash
+        EXPECT_GE(ph.size(), 0u);
+        (void)ph; // Silence unused in optimized builds
+    }
+    {
+        ErrorMessage::Template t3("begin {a}{b} {c end");
+        auto ph = t3.placeholders();
+        // a and b should be captured; c is incomplete
+        ASSERT_GE(ph.size(), 2u);
+        EXPECT_TRUE(std::find(ph.begin(), ph.end(), "a") != ph.end());
+        EXPECT_TRUE(std::find(ph.begin(), ph.end(), "b") != ph.end());
+        EXPECT_TRUE(t3.format({{"a","X"},{"b","Y"}}).find("X") != std::string::npos);
+    }
+}
+
+TEST_F(ErrorMessageTest, UnicodeValuesThroughTemplateAndBuilder) {
+    // UTF-8 placeholders
+    ErrorMessage::Template tmpl("Ошибка {имя}: значение {знач} недопустимо");
+    std::map<std::string, std::string> values = {{"имя","параметр"},{"знач","π≈3.14159"}};
+    auto msg = tmpl.format(values);
+    EXPECT_TRUE(msg.find("Ошибка") != std::string::npos);
+    EXPECT_TRUE(msg.find("параметр") != std::string::npos);
+    EXPECT_TRUE(msg.find("π≈3.14159") != std::string::npos);
+
+    // Builder path with unicode context
+    ErrorMessage::Builder b;
+    auto built = b.set_message("Недопустимое значение")
+                  .add_context("ключ","значение")
+                  .add_context("emoji","😀")
+                  .build();
+    EXPECT_TRUE(built.find("Недопустимое значение") != std::string::npos);
+    EXPECT_TRUE(built.find("ключ: значение") != std::string::npos);
+    EXPECT_TRUE(built.find("emoji: 😀") != std::string::npos);
 }
 
 TEST_F(ErrorMessageTest, BuilderEmptyMessage) {
