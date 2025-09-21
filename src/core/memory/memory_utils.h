@@ -40,8 +40,15 @@ template<typename To, typename From>
 inline constexpr bool checked_narrow(From value, To& out) noexcept {
     static_assert(std::is_integral_v<From> && std::is_integral_v<To>, "checked_narrow: integral only");
     if constexpr (std::is_signed_v<From> == std::is_signed_v<To>) {
-        if (value < static_cast<From>(std::numeric_limits<To>::min()) || value > static_cast<From>(std::numeric_limits<To>::max())) return false;
-        out = static_cast<To>(value); return true;
+        // Both signed or both unsigned
+        if constexpr (sizeof(To) >= sizeof(From)) {
+            // Widening or same size - always safe for same signedness
+            out = static_cast<To>(value); return true;
+        } else {
+            // Narrowing - check bounds
+            if (value < static_cast<From>(std::numeric_limits<To>::min()) || value > static_cast<From>(std::numeric_limits<To>::max())) return false;
+            out = static_cast<To>(value); return true;
+        }
     } else if constexpr (std::is_signed_v<From> && !std::is_signed_v<To>) {
         if (value < 0 || static_cast<std::make_unsigned_t<From>>(value) > std::numeric_limits<To>::max()) return false;
         out = static_cast<To>(value); return true;

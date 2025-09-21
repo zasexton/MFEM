@@ -21,11 +21,21 @@ enum class PrefetchLocality : int {
 #if defined(__GNUC__) || defined(__clang__)
 
 inline void prefetch_read(const void* p, PrefetchLocality locality = PrefetchLocality::L1) noexcept {
-    __builtin_prefetch(p, 0, static_cast<int>(locality));
+    switch (locality) {
+        case PrefetchLocality::NTA: __builtin_prefetch(p, 0, 0); break;
+        case PrefetchLocality::L3:  __builtin_prefetch(p, 0, 1); break;
+        case PrefetchLocality::L2:  __builtin_prefetch(p, 0, 2); break;
+        case PrefetchLocality::L1:  __builtin_prefetch(p, 0, 3); break;
+    }
 }
 
 inline void prefetch_write(const void* p, PrefetchLocality locality = PrefetchLocality::L1) noexcept {
-    __builtin_prefetch(p, 1, static_cast<int>(locality));
+    switch (locality) {
+        case PrefetchLocality::NTA: __builtin_prefetch(p, 1, 0); break;
+        case PrefetchLocality::L3:  __builtin_prefetch(p, 1, 1); break;
+        case PrefetchLocality::L2:  __builtin_prefetch(p, 1, 2); break;
+        case PrefetchLocality::L1:  __builtin_prefetch(p, 1, 3); break;
+    }
 }
 
 #elif defined(_MSC_VER)
