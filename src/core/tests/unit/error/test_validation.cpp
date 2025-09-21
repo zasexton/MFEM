@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <core/error/validation.h>
+#include <core/error/logic_error.h>
+#include <core/error/runtime_error.h>
 #include <vector>
 #include <string>
 #include <regex>
@@ -205,7 +207,8 @@ TEST_F(ValidationTest, StringValidator_MaxLength_Invalid) {
 TEST_F(ValidationTest, StringValidator_Matches_Valid) {
     std::regex email_pattern(R"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})");
 
-    auto validator = validate_string("test@example.com", "email");
+    std::string test_email = "test@example.com";
+    auto validator = validate_string(test_email, "email");
     validator.matches(email_pattern, "email pattern");
 
     EXPECT_TRUE(validator.is_valid());
@@ -401,7 +404,7 @@ TEST_F(ValidationTest, BatchValidator_ThrowIfInvalid) {
 
     batch.add(val);
 
-    EXPECT_THROW(batch.throw_if_invalid(), ErrorChainException);
+    EXPECT_THROW(batch.throw_if_invalid(), RuntimeError);
 }
 
 // Integration tests
@@ -413,7 +416,7 @@ TEST_F(ValidationTest, IntegrationExample_FunctionWithValidation) {
 
         auto denom_val = validate(denominator, "denominator");
         denom_val.finite()
-                  .satisfies([](const double& x) { return x != 0; }, "must be non-zero");
+                  .satisfies([](const double& x) { return std::abs(x) > 1e-10; }, "must be non-zero");
 
         BatchValidator batch;
         batch.add(num_val).add(denom_val);
