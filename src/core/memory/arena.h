@@ -39,11 +39,16 @@ public:
         Marker mark_{};
     };
 
-    explicit Arena(memory_resource* upstream = default_resource(),
+    Arena() : Arena(default_resource()) {}
+
+    explicit Arena(std::size_t initial_block_bytes)
+        : Arena(default_resource(), initial_block_bytes) {}
+
+    explicit Arena(memory_resource* upstream,
                    std::size_t initial_block_bytes = fem::config::PAGE_SIZE)
-        : upstream_(upstream), initial_block_bytes_(initial_block_bytes) {
+        : upstream_(upstream),
+          initial_block_bytes_(initial_block_bytes == 0 ? fem::config::PAGE_SIZE : initial_block_bytes) {
         FEM_ASSERT(upstream_ != nullptr);
-        FEM_ASSERT(initial_block_bytes_ > 0);
     }
 
     // Move-only
@@ -63,7 +68,8 @@ public:
 
     // Allocate raw bytes with alignment
     void* allocate(std::size_t bytes, std::size_t alignment = alignof(std::max_align_t)) {
-        FEM_ASSERT(bytes > 0);
+        // Handle zero-size allocations
+        if (bytes == 0) bytes = 1;
         FEM_ASSERT(is_power_of_two(alignment));
 
         if (blocks_.empty()) { add_block(std::max(grow_size(bytes, alignment), initial_block_bytes_)); }
@@ -92,14 +98,14 @@ public:
     try_allocate(std::size_t bytes, std::size_t alignment = alignof(std::max_align_t)) {
         using fem::core::error::ErrorCode;
         if (!is_power_of_two(alignment) || bytes == 0) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::InvalidArgument);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::InvalidArgument};
         }
         try {
             return allocate(bytes, alignment);
         } catch (const std::bad_alloc&) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::OutOfMemory};
         } catch (...) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::SystemError};
         }
     }
 
@@ -113,12 +119,12 @@ public:
     fem::core::error::Result<T*, fem::core::error::ErrorCode>
     try_create(Args&&... args) {
         auto r = try_allocate(sizeof(T), alignof(T));
-        if (!r) return fem::core::error::Err<fem::core::error::ErrorCode>(r.error());
+        if (!r) return fem::core::error::Error<fem::core::error::ErrorCode>{r.error()};
         T* p = static_cast<T*>(r.value());
         try {
             return ::new (p) T(std::forward<Args>(args)...);
         } catch (...) {
-            return fem::core::error::Err<fem::core::error::ErrorCode>(fem::core::error::ErrorCode::SystemError);
+            return fem::core::error::Error<fem::core::error::ErrorCode>{fem::core::error::ErrorCode::SystemError};
         }
     }
 
@@ -165,6 +171,12 @@ public:
     [[nodiscard]] bool empty() const noexcept { return used_bytes() == 0; }
 
     [[nodiscard]] memory_resource* upstream() const noexcept { return upstream_; }
+
+    // Convenience aliases
+    [[nodiscard]] std::size_t used() const noexcept { return used_bytes(); }
+    [[nodiscard]] std::size_t capacity() const noexcept { return capacity_bytes(); }
+    [[nodiscard]] memory_resource* get_memory_resource() const noexcept { return upstream_; }
+    [[nodiscard]] Scope scope() { return Scope(*this); }
 
 private:
     struct Block {
