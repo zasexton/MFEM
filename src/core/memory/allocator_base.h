@@ -100,8 +100,10 @@ public:
     template<class U>
     explicit StdAllocatorAdapter(const StdAllocatorAdapter<Raw, U>& other) noexcept : raw_(other.raw()) {}
 
-    [[nodiscard]] pointer allocate(size_type n) { return raw_->allocate(n); }
-    void deallocate(pointer p, size_type n) { raw_->deallocate(p, n); }
+    [[nodiscard]] pointer allocate(size_type n) {
+        return static_cast<pointer>(raw_->allocate(n * sizeof(T)));
+    }
+    void deallocate(pointer p, size_type n) { raw_->deallocate(p, n * sizeof(T)); }
 
     [[nodiscard]] Raw* raw() const noexcept { return raw_; }
 
