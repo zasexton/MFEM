@@ -43,6 +43,48 @@ public:
         init_block_layout();
     }
 
+    // Copy constructor - allocators should be equal but independent
+    PoolAllocator(const PoolAllocator& other) noexcept
+        : upstream_(other.upstream_) {
+        init_block_layout();
+        // Don't copy blocks or free_list - each allocator manages its own memory
+    }
+
+    // Move constructor - take ownership of blocks
+    PoolAllocator(PoolAllocator&& other) noexcept
+        : upstream_(other.upstream_),
+          free_list_(other.free_list_),
+          blocks_(std::move(other.blocks_)),
+          nodes_per_block_(other.nodes_per_block_),
+          node_size_(other.node_size_) {
+        other.free_list_ = nullptr;
+    }
+
+    // Copy assignment
+    PoolAllocator& operator=(const PoolAllocator& other) noexcept {
+        if (this != &other) {
+            release_all();
+            upstream_ = other.upstream_;
+            init_block_layout();
+            // Don't copy blocks or free_list
+        }
+        return *this;
+    }
+
+    // Move assignment
+    PoolAllocator& operator=(PoolAllocator&& other) noexcept {
+        if (this != &other) {
+            release_all();
+            upstream_ = other.upstream_;
+            free_list_ = other.free_list_;
+            blocks_ = std::move(other.blocks_);
+            nodes_per_block_ = other.nodes_per_block_;
+            node_size_ = other.node_size_;
+            other.free_list_ = nullptr;
+        }
+        return *this;
+    }
+
     template<class U>
     explicit PoolAllocator(const PoolAllocator<U, BlockBytes>& other) noexcept
         : upstream_(other.upstream_) {
@@ -70,9 +112,9 @@ public:
         try {
             return allocate(n);
         } catch (const std::bad_alloc&) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::OutOfMemory};
         } catch (...) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::SystemError};
         }
     }
 
@@ -88,7 +130,7 @@ public:
     }
 
     template<class U, class... Args>
-    void construct(U* p, Args&&... args) { ::new ((void*)p) U(std::forward<Args>(args)...); }
+    void construct(U* p, Args&&... args) { ::new (static_cast<void*>(p)) U(std::forward<Args>(args)...); }
 
     template<class U>
     void destroy(U* p) { if constexpr (!std::is_trivially_destructible_v<U>) p->~U(); }
@@ -97,6 +139,9 @@ public:
     bool operator==(const PoolAllocator<U, BlockBytes>& other) const noexcept { return upstream_ == other.upstream_; }
     template<class U>
     bool operator!=(const PoolAllocator<U, BlockBytes>& other) const noexcept { return !(*this == other); }
+
+    // Accessor for testing
+    [[nodiscard]] memory_resource* get_upstream() const noexcept { return upstream_; }
 
 private:
     struct Node { Node* next; };

@@ -91,9 +91,9 @@ public:
         try {
             return allocate();
         } catch (const std::bad_alloc&) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::OutOfMemory};
         } catch (...) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::SystemError};
         }
     }
 
@@ -120,9 +120,9 @@ public:
             reserve_nodes(n);
             return {};
         } catch (const std::bad_alloc&) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::OutOfMemory};
         } catch (...) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::SystemError};
         }
     }
 

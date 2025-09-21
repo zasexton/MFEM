@@ -77,7 +77,7 @@ public:
     template<class... Args>
     [[nodiscard]] handle acquire(Args&&... args) {
         T* p = alloc_.allocate(1); // raw storage from pool (uninitialized)
-        ::new ((void*)p) T(std::forward<Args>(args)...);
+        ::new (static_cast<void*>(p)) T(std::forward<Args>(args)...);
         ++outstanding_;
 #if CORE_MEMORY_ENABLE_TELEMETRY
         ++telemetry_.acquired;
