@@ -12,30 +12,9 @@
 #include <optional>
 #include <memory>
 #include "error_code.h"
+#include "stack_trace.h"
 
 namespace fem::core::error {
-
-/**
- * @brief Stack trace information
- *
- * Simplified stack trace for now, can be enhanced with platform-specific
- * implementations later
- */
-class StackTrace {
-public:
-    struct Frame {
-        std::string function;
-        std::string file;
-        int line;
-    };
-
-    void capture(int skip_frames = 0);
-    const std::vector<Frame>& frames() const { return frames_; }
-    std::string format() const;
-
-private:
-    std::vector<Frame> frames_;
-};
 
 /**
  * @brief Base exception class with rich context
@@ -133,8 +112,7 @@ public:
      * @brief Capture stack trace
      */
     Exception& with_stack_trace() {
-        stack_trace_ = StackTrace();
-        stack_trace_->capture(2);  // Skip this function and constructor
+        stack_trace_ = StackTrace(2);  // Skip this function and constructor
         return *this;
     }
 
@@ -170,7 +148,7 @@ public:
 
         // Stack trace
         if (stack_trace_) {
-            oss << "  Stack trace:\n" << stack_trace_->format();
+            oss << "  Stack trace:\n" << stack_trace_->to_string();
         }
 
         // Nested exception

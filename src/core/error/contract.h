@@ -7,6 +7,7 @@
 #include <string>
 #include <source_location>
 #include "exception_base.h"
+#include "logic_error.h"
 #include "status.h"
 
 namespace fem::core::error {
@@ -186,7 +187,7 @@ public:
     /**
      * @brief Add a precondition
      */
-    FunctionContract& requires(Precondition pre, const std::string& desc = "") {
+    FunctionContract& require(Precondition pre, const std::string& desc = "") {
         preconditions_.emplace_back(std::move(pre), desc);
         return *this;
     }
@@ -194,7 +195,7 @@ public:
     /**
      * @brief Add a postcondition
      */
-    FunctionContract& ensures(Postcondition post, const std::string& desc = "") {
+    FunctionContract& ensure(Postcondition post, const std::string& desc = "") {
         postconditions_.emplace_back(std::move(post), desc);
         return *this;
     }

@@ -2,6 +2,7 @@
 #include <core/error/contract.h>
 #include <vector>
 #include <string>
+#include <cmath>
 
 using namespace fem::core::error;
 
@@ -211,7 +212,7 @@ TEST_F(ContractTest, FunctionContract_NoPreconditions) {
 
 TEST_F(ContractTest, FunctionContract_PreconditionPass) {
     auto func = make_contracted(std::function<int(int)>([](int x) { return x * 2; }));
-    func.requires([](int x) { return x > 0; }, "x must be positive");
+    func.require([](int x) { return x > 0; }, "x must be positive");
 
     EXPECT_EQ(10, func(5));
     EXPECT_EQ(20, func(10));
@@ -219,7 +220,7 @@ TEST_F(ContractTest, FunctionContract_PreconditionPass) {
 
 TEST_F(ContractTest, FunctionContract_PreconditionFail) {
     auto func = make_contracted(std::function<int(int)>([](int x) { return x * 2; }));
-    func.requires([](int x) { return x > 0; }, "x must be positive");
+    func.require([](int x) { return x > 0; }, "x must be positive");
 
     EXPECT_THROW(func(-5), ContractViolation);
 
@@ -234,7 +235,7 @@ TEST_F(ContractTest, FunctionContract_PreconditionFail) {
 
 TEST_F(ContractTest, FunctionContract_PostconditionPass) {
     auto func = make_contracted(std::function<int(int)>([](int x) { return x * 2; }));
-    func.ensures([](const int& result, int x) { return result == x * 2; }, "result is double");
+    func.ensure([](const int& result, int x) { return result == x * 2; }, "result is double");
 
     EXPECT_EQ(10, func(5));
     EXPECT_EQ(-10, func(-5));
@@ -243,7 +244,7 @@ TEST_F(ContractTest, FunctionContract_PostconditionPass) {
 TEST_F(ContractTest, FunctionContract_PostconditionFail) {
     // Simulate a buggy function that doesn't meet its postcondition
     auto func = make_contracted(std::function<int(int)>([](int x) { return x + 1; }));
-    func.ensures([](const int& result, int x) { return result == x * 2; }, "result is double");
+    func.ensure([](const int& result, int x) { return result == x * 2; }, "result is double");
 
     EXPECT_THROW(func(5), ContractViolation);
 
@@ -261,8 +262,8 @@ TEST_F(ContractTest, FunctionContract_MultiplePreconditions) {
         return x / y;
     }));
 
-    func.requires([](int x, int y) { return y != 0; }, "divisor non-zero")
-        .requires([](int x, int y) { return x >= 0; }, "dividend non-negative");
+    func.require([](int, int y) { return y != 0; }, "divisor non-zero")
+        .require([](int x, int) { return x >= 0; }, "dividend non-negative");
 
     EXPECT_EQ(2, func(10, 5));
 
@@ -275,8 +276,8 @@ TEST_F(ContractTest, FunctionContract_MultiplePostconditions) {
         return x * x;
     }));
 
-    func.ensures([](const int& result, int x) { return result >= 0; }, "result non-negative")
-        .ensures([](const int& result, int x) { return result == x * x; }, "result is square");
+    func.ensure([](const int& result, int) { return result >= 0; }, "result non-negative")
+        .ensure([](const int& result, int x) { return result == x * x; }, "result is square");
 
     EXPECT_EQ(25, func(5));
     EXPECT_EQ(25, func(-5));
@@ -288,9 +289,9 @@ TEST_F(ContractTest, FunctionContract_ChainedContracts) {
     ));
 
     safe_divide
-        .requires([](double x, double y) { return y != 0; }, "divisor must be non-zero")
-        .requires([](double x, double y) { return std::isfinite(x) && std::isfinite(y); }, "inputs must be finite")
-        .ensures([](const double& result, double x, double y) { return std::isfinite(result); }, "result must be finite");
+        .require([](double, double y) { return std::abs(y) > 1e-10; }, "divisor must be non-zero")
+        .require([](double x, double y) { return std::isfinite(x) && std::isfinite(y); }, "inputs must be finite")
+        .ensure([](const double& result, double, double) { return std::isfinite(result); }, "result must be finite");
 
     EXPECT_DOUBLE_EQ(2.5, safe_divide(5.0, 2.0));
 

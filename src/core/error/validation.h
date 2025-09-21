@@ -9,8 +9,10 @@
 #include <optional>
 #include <regex>
 #include <limits>
+#include <cmath>
 #include "status.h"
 #include "error_chain.h"
+#include "logic_error.h"
 
 namespace fem::core::error {
 
@@ -117,7 +119,7 @@ public:
     void throw_if_invalid() const {
         auto s = status();
         if (!s.ok()) {
-            throw InvalidArgumentError(name_, s.message());
+            throw InvalidArgumentError(name_, std::string(s.message()));
         }
     }
 
@@ -191,6 +193,13 @@ public:
 
     bool is_valid() const {
         return errors_.empty();
+    }
+
+    void throw_if_invalid() const {
+        auto s = status();
+        if (!s.ok()) {
+            throw InvalidArgumentError(name_, std::string(s.message()));
+        }
     }
 
 private:
@@ -271,6 +280,13 @@ public:
 
     bool is_valid() const {
         return errors_.empty();
+    }
+
+    void throw_if_invalid() const {
+        auto s = status();
+        if (!s.ok()) {
+            throw InvalidArgumentError(name_, std::string(s.message()));
+        }
     }
 
 private:

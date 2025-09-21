@@ -34,6 +34,8 @@ public:
     using CheckFunction = std::function<bool()>;
     using DiagnosticFunction = std::function<std::string()>;
 
+    virtual ~InvariantChecker() = default;
+
     /**
      * @brief Register an invariant
      */

@@ -124,7 +124,7 @@ TEST_F(InvariantTest, ClassInvariant_MemberInvariant_Valid) {
     ClassInvariant<TestClass> inv(&obj, "TestClass");
 
     inv.require(&TestClass::value,
-                [](const int& v) { return v > 0; },
+                std::function<bool(const int&)>([](const int& v) { return v > 0; }),
                 "value must be positive");
 
     EXPECT_NO_THROW(inv.check_all());
@@ -135,7 +135,7 @@ TEST_F(InvariantTest, ClassInvariant_MemberInvariant_Invalid) {
     ClassInvariant<TestClass> inv(&obj, "TestClass");
 
     inv.require(&TestClass::value,
-                [](const int& v) { return v > 0; },
+                std::function<bool(const int&)>([](const int& v) { return v > 0; }),
                 "value must be positive");
 
     EXPECT_THROW(inv.check_all(), InvariantError);
@@ -168,7 +168,7 @@ TEST_F(InvariantTest, ClassInvariant_Guard) {
     ClassInvariant<TestClass> inv(&obj, "TestClass");
 
     inv.require(&TestClass::value,
-                [](const int& v) { return v > 0; },
+                std::function<bool(const int&)>([](const int& v) { return v > 0; }),
                 "value must be positive");
 
     {
@@ -186,7 +186,7 @@ TEST_F(InvariantTest, ClassInvariant_Guard_ViolationInScope) {
     ClassInvariant<TestClass> inv(&obj, "TestClass");
 
     inv.require(&TestClass::value,
-                [](const int& v) { return v > 0; },
+                std::function<bool(const int&)>([](const int& v) { return v > 0; }),
                 "value must be positive");
 
     {
@@ -200,11 +200,11 @@ TEST_F(InvariantTest, ClassInvariant_Guard_ViolationInScope) {
 }
 
 // LoopInvariant tests
-TEST_F(LoopInvariant, LoopInvariant_BasicLoop) {
+TEST_F(InvariantTest, LoopInvariant_BasicLoop) {
     int counter = 0;
     int sum = 0;
 
-    LoopInvariant loop("test_loop");
+    fem::core::error::LoopInvariant loop("test_loop");
     loop.require([&]() { return counter >= 0; }, "counter non-negative")
         .require([&]() { return sum >= 0; }, "sum non-negative");
 
@@ -223,7 +223,7 @@ TEST_F(LoopInvariant, LoopInvariant_BasicLoop) {
 TEST_F(InvariantTest, LoopInvariant_ViolationDuringIteration) {
     int value = 10;
 
-    LoopInvariant loop("test_loop");
+    fem::core::error::LoopInvariant loop("test_loop");
     loop.require([&]() { return value > 0; }, "value must be positive");
 
     EXPECT_NO_THROW(loop.enter());
@@ -238,7 +238,7 @@ TEST_F(InvariantTest, LoopInvariant_ViolationDuringIteration) {
 TEST_F(InvariantTest, LoopInvariant_ViolationAtExit) {
     bool valid = true;
 
-    LoopInvariant loop("test_loop");
+    fem::core::error::LoopInvariant loop("test_loop");
     loop.require([&]() { return valid; }, "must be valid");
 
     EXPECT_NO_THROW(loop.enter());
@@ -495,7 +495,7 @@ TEST_F(InvariantTest, MakeClassInvariant_Helper) {
     auto inv = make_class_invariant(&obj, "TestClass");
 
     inv.require(&TestClass::value,
-                [](const int& v) { return v > 0; },
+                std::function<bool(const int&)>([](const int& v) { return v > 0; }),
                 "value must be positive");
 
     EXPECT_NO_THROW(inv.check_all());
@@ -548,9 +548,9 @@ TEST_F(InvariantTest, IntegrationExample_ComplexClassInvariants) {
     BankAccount account(1000.0);
 
     ClassInvariant<BankAccount> inv(&account, "BankAccount");
-    inv.require(&BankAccount::balance,
-                [](const double& b) { return b >= 0; },
-                "balance must be non-negative");
+    inv.require_method(
+        [](const BankAccount* acc) { return acc->balance() >= 0; },
+        "balance must be non-negative");
 
     {
         auto guard = inv.guard();

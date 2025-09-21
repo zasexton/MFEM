@@ -9,6 +9,7 @@
 #include <concepts>
 #include <format>
 #include <source_location>
+#include <cmath>
 #include "logic_error.h"
 #include "contract.h"
 #include "validation.h"
