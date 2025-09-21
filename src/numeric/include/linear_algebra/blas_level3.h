@@ -660,28 +660,34 @@ inline void trsm(Layout layout, Side side, Uplo uplo, Trans transA, Diag diag,
     }
   } else { // Right
     if (effUplo == Uplo::Upper) {
-      for (std::size_t j_ = 0; j_ < N; ++j_) {
-        std::size_t j = N - 1 - j_;
-        if (diag == Diag::NonUnit) {
-          auto ajj = opA(j, j);
-          for (std::size_t i = 0; i < M; ++i) idx(B, i, j, ldb) = static_cast<TB>(idx(B, i, j, ldb) / ajj);
-        }
+      // Forward substitution on columns (upper): use known k<j
+      for (std::size_t j = 0; j < N; ++j) {
         for (std::size_t k = 0; k < j; ++k) {
           auto akj = opA(k, j);
           if (akj == decltype(akj){}) continue;
-          for (std::size_t i = 0; i < M; ++i) idx(B, i, k, ldb) = static_cast<TB>(idx(B, i, k, ldb) - idx(B, i, j, ldb) * akj);
+          for (std::size_t i = 0; i < M; ++i) {
+            idx(B, i, j, ldb) = static_cast<TB>(idx(B, i, j, ldb) - idx(B, i, k, ldb) * akj);
+          }
         }
-      }
-    } else {
-      for (std::size_t j = 0; j < N; ++j) {
         if (diag == Diag::NonUnit) {
           auto ajj = opA(j, j);
           for (std::size_t i = 0; i < M; ++i) idx(B, i, j, ldb) = static_cast<TB>(idx(B, i, j, ldb) / ajj);
         }
+      }
+    } else {
+      // Backward substitution on columns (lower): use known k>j
+      for (std::size_t jj = 0; jj < N; ++jj) {
+        std::size_t j = N - 1 - jj;
         for (std::size_t k = j + 1; k < N; ++k) {
           auto akj = opA(k, j);
           if (akj == decltype(akj){}) continue;
-          for (std::size_t i = 0; i < M; ++i) idx(B, i, k, ldb) = static_cast<TB>(idx(B, i, k, ldb) - idx(B, i, j, ldb) * akj);
+          for (std::size_t i = 0; i < M; ++i) {
+            idx(B, i, j, ldb) = static_cast<TB>(idx(B, i, j, ldb) - idx(B, i, k, ldb) * akj);
+          }
+        }
+        if (diag == Diag::NonUnit) {
+          auto ajj = opA(j, j);
+          for (std::size_t i = 0; i < M; ++i) idx(B, i, j, ldb) = static_cast<TB>(idx(B, i, j, ldb) / ajj);
         }
       }
     }
@@ -831,34 +837,34 @@ inline void trsm(Side side, Uplo uplo, Trans transA, Diag diag,
     if (N != An) throw std::invalid_argument("trsm(right): size mismatch");
 
     if (effUplo == Uplo::Upper) {
-      // Backward substitution over columns
-      for (std::size_t j_ = 0; j_ < N; ++j_) {
-        std::size_t j = N - 1 - j_;
-        if (diag == Diag::NonUnit) {
-          auto ajj = opA(j, j);
-          for (std::size_t i = 0; i < M; ++i) B_(i, j) = static_cast<mat_elem_t<B>>(B_(i, j) / ajj);
-        }
+      // Forward substitution over columns (upper): use k<j
+      for (std::size_t j = 0; j < N; ++j) {
         for (std::size_t k = 0; k < j; ++k) {
           auto akj = opA(k, j);
           if (akj == decltype(akj){}) continue;
           for (std::size_t i = 0; i < M; ++i) {
-            B_(i, k) = static_cast<mat_elem_t<B>>(B_(i, k) - B_(i, j) * akj);
+            B_(i, j) = static_cast<mat_elem_t<B>>(B_(i, j) - B_(i, k) * akj);
           }
         }
-      }
-    } else {
-      // Forward substitution over columns (lower)
-      for (std::size_t j = 0; j < N; ++j) {
         if (diag == Diag::NonUnit) {
           auto ajj = opA(j, j);
           for (std::size_t i = 0; i < M; ++i) B_(i, j) = static_cast<mat_elem_t<B>>(B_(i, j) / ajj);
         }
+      }
+    } else {
+      // Backward substitution over columns (lower): use k>j
+      for (std::size_t jj = 0; jj < N; ++jj) {
+        std::size_t j = N - 1 - jj;
         for (std::size_t k = j + 1; k < N; ++k) {
           auto akj = opA(k, j);
           if (akj == decltype(akj){}) continue;
           for (std::size_t i = 0; i < M; ++i) {
-            B_(i, k) = static_cast<mat_elem_t<B>>(B_(i, k) - B_(i, j) * akj);
+            B_(i, j) = static_cast<mat_elem_t<B>>(B_(i, j) - B_(i, k) * akj);
           }
+        }
+        if (diag == Diag::NonUnit) {
+          auto ajj = opA(j, j);
+          for (std::size_t i = 0; i < M; ++i) B_(i, j) = static_cast<mat_elem_t<B>>(B_(i, j) / ajj);
         }
       }
     }

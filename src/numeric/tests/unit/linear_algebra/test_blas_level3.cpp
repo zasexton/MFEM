@@ -178,9 +178,18 @@ TEST(BLAS3, PointerSymmHemmTrmmTrsmVariants)
     double X[4] = {1,0, 0,1};
     trsm<double,double,double>(fem::numeric::linear_algebra::Layout::RowMajor, Side::Right, Uplo::Lower, Trans::Transpose, Diag::Unit,
         2,2, 1.0, Al2, 2, X, 2);
-    // X should be inverse of unit upper with u12=2 -> [[1,-2],[0,1]]
-    EXPECT_DOUBLE_EQ(X[0], 1); EXPECT_DOUBLE_EQ(X[1], -2);
-    EXPECT_DOUBLE_EQ(X[2], 0); EXPECT_DOUBLE_EQ(X[3], 1);
+    // Verify X * op(A_unit) == I
+    double U[4] = {1,2, 0,1}; // op(A) = A^T, unit diag enforced
+    double P[4] = {0,0,0,0};
+    // P = X * U (row-major)
+    P[0] = X[0]*U[0] + X[1]*U[2]; // (0,0)
+    P[1] = X[0]*U[1] + X[1]*U[3]; // (0,1)
+    P[2] = X[2]*U[0] + X[3]*U[2]; // (1,0)
+    P[3] = X[2]*U[1] + X[3]*U[3]; // (1,1)
+    EXPECT_NEAR(P[0], 1.0, 1e-12);
+    EXPECT_NEAR(P[1], 0.0, 1e-12);
+    EXPECT_NEAR(P[2], 0.0, 1e-12);
+    EXPECT_NEAR(P[3], 1.0, 1e-12);
 }
 
 TEST(BLAS3, PointerSymmHemmTrmmTrsmVariants_ColMajor)
@@ -222,9 +231,44 @@ TEST(BLAS3, PointerSymmHemmTrmmTrsmVariants_ColMajor)
     double X_col[4] = {1,0, 0,1};
     trsm<double,double,double>(fem::numeric::linear_algebra::Layout::ColMajor, Side::Right, Uplo::Lower, Trans::Transpose, Diag::Unit,
         2, 2, 1.0, A_low_col2, 2, X_col, 2);
-    // inverse of upper unit [[1,2],[0,1]] -> [[1,-2],[0,1]] -> col-major [1,0,-2,1]
-    EXPECT_DOUBLE_EQ(X_col[0], 1);
-    EXPECT_DOUBLE_EQ(X_col[1], 0);
-    EXPECT_DOUBLE_EQ(X_col[2], -2);
-    EXPECT_DOUBLE_EQ(X_col[3], 1);
+    // Verify X * op(A_unit) == I in column-major storage
+    double Uc[4] = {1,0, 2,1}; // col-major for [[1,2],[0,1]]
+    double Pc[4] = {0,0,0,0};
+    auto at = [](double* P, size_t i, size_t j, size_t ld)->double&{ return P[i + j*ld]; };
+    // Pc = X_col * Uc
+    for(size_t i=0;i<2;++i) for(size_t j=0;j<2;++j) {
+        double s=0; for(size_t k=0;k<2;++k) s += at(X_col,i,k,2) * at(Uc,k,j,2);
+        at(Pc,i,j,2) = s;
+    }
+    EXPECT_NEAR(at(Pc,0,0,2), 1.0, 1e-12);
+    EXPECT_NEAR(at(Pc,0,1,2), 0.0, 1e-12);
+    EXPECT_NEAR(at(Pc,1,0,2), 0.0, 1e-12);
+    EXPECT_NEAR(at(Pc,1,1,2), 1.0, 1e-12);
+}
+
+// Container-path TRSM (right-side) small test to mirror pointer-path behavior
+TEST(BLAS3, ContainerTRSMRight)
+{
+    // Build lower-triangular A (row-major) and solve X * op(A) = I
+    // Use Trans::Transpose and Diag::Unit so op(A_unit) is upper unit with u01 = A(1,0)
+    Matrix<double> A = {{9, 0},
+                        {2, 7}}; // lower
+    Matrix<double> X = {{1, 0},
+                        {0, 1}}; // start with identity (B)
+
+    trsm(Side::Right, Uplo::Lower, Trans::Transpose, Diag::Unit, 1.0, A, X);
+
+    // Verify X * op(A_unit) == I
+    Matrix<double> U = {{1, 2},
+                        {0, 1}}; // op(A_unit) = A^T with unit diagonal
+    Matrix<double> P(2,2, 0.0);
+    for (size_t i=0;i<2;++i)
+      for (size_t j=0;j<2;++j)
+        for (size_t k=0;k<2;++k)
+          P(i,j) += X(i,k) * U(k,j);
+
+    EXPECT_NEAR(P(0,0), 1.0, 1e-12);
+    EXPECT_NEAR(P(0,1), 0.0, 1e-12);
+    EXPECT_NEAR(P(1,0), 0.0, 1e-12);
+    EXPECT_NEAR(P(1,1), 1.0, 1e-12);
 }
