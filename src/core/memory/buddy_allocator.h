@@ -58,14 +58,14 @@ public:
         try {
             return allocate(n);
         } catch (const std::bad_alloc&) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::OutOfMemory};
         } catch (...) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::SystemError};
         }
     }
 
     template<class U, class... Args>
-    void construct(U* p, Args&&... args) { ::new ((void*)p) U(std::forward<Args>(args)...); }
+    void construct(U* p, Args&&... args) { ::new (static_cast<void*>(p)) U(std::forward<Args>(args)...); }
     template<class U>
     void destroy(U* p) { if constexpr (!std::is_trivially_destructible_v<U>) p->~U(); }
 

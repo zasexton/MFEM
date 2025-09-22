@@ -74,21 +74,37 @@ public:
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
 
-    template<class U> struct rebind { using other = StackAllocator<U, CapacityBytes, (Alignment > alignof(U) ? Alignment : alignof(U))>; };
+    template<class U> struct rebind { using other = StackAllocator<U, CapacityBytes, alignof(U)>; };
 
     using propagate_on_container_copy_assignment = std::false_type;
     using propagate_on_container_move_assignment = std::true_type;
     using propagate_on_container_swap = std::true_type;
     using is_always_equal = std::false_type;
 
-    explicit StackAllocator(stack_storage<CapacityBytes, Alignment>* storage = nullptr) noexcept : storage_(storage) {}
+    // Constructor from raw storage pointer - storage must have sufficient alignment
+    explicit StackAllocator(void* storage = nullptr) noexcept : storage_(storage) {}
 
-    template<class U, std::size_t C, std::size_t A>
-    explicit StackAllocator(const StackAllocator<U, C, A>& other) noexcept : storage_(other.storage()) {}
+    // Constructor from typed stack_storage
+    template<std::size_t StorageAlignment>
+    explicit StackAllocator(stack_storage<CapacityBytes, StorageAlignment>* storage) noexcept
+        : storage_(static_cast<void*>(storage)) {
+        static_assert(StorageAlignment >= Alignment,
+                      "Storage alignment must be at least as strict as allocator alignment");
+    }
+
+    // Rebinding constructor - accepts allocators with different alignments
+    template<class U, std::size_t OtherAlignment>
+    explicit StackAllocator(const StackAllocator<U, CapacityBytes, OtherAlignment>& other) noexcept
+        : storage_(other.storage_) {
+        // Can share storage between different alignments
+    }
 
     [[nodiscard]] pointer allocate(size_type n) {
         FEM_ASSERT(storage_ != nullptr);
-        void* p = storage_->allocate(n * sizeof(T), Alignment);
+        // Cast back to the appropriate stack_storage type for allocation
+        // We use the maximum alignment to ensure compatibility
+        auto* typed_storage = static_cast<stack_storage<CapacityBytes, alignof(std::max_align_t)>*>(storage_);
+        void* p = typed_storage->allocate(n * sizeof(T), Alignment);
         return static_cast<pointer>(p);
     }
 
@@ -98,32 +114,38 @@ public:
         try {
             return allocate(n);
         } catch (const std::bad_alloc&) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::OutOfMemory);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::OutOfMemory};
         } catch (...) {
-            return fem::core::error::Err<ErrorCode>(ErrorCode::SystemError);
+            return fem::core::error::Error<ErrorCode>{ErrorCode::SystemError};
         }
     }
 
     void deallocate(pointer p, size_type n) noexcept {
         if (!p || !storage_) return;
-        storage_->deallocate(p, n * sizeof(T), Alignment);
+        // Cast back to the appropriate stack_storage type for deallocation
+        auto* typed_storage = static_cast<stack_storage<CapacityBytes, alignof(std::max_align_t)>*>(storage_);
+        typed_storage->deallocate(p, n * sizeof(T), Alignment);
     }
 
     template<class U, class... Args>
-    void construct(U* p, Args&&... args) { ::new ((void*)p) U(std::forward<Args>(args)...); }
+    void construct(U* p, Args&&... args) { ::new (static_cast<void*>(p)) U(std::forward<Args>(args)...); }
     template<class U>
     void destroy(U* p) { if constexpr (!std::is_trivially_destructible_v<U>) p->~U(); }
 
-    [[nodiscard]] auto storage() const noexcept { return storage_; }
+    [[nodiscard]] void* storage() const noexcept { return storage_; }
 
-    template<class U, std::size_t C, std::size_t A>
-    bool operator==(const StackAllocator<U, C, A>& other) const noexcept { return storage_ == other.storage(); }
-    template<class U, std::size_t C, std::size_t A>
-    bool operator!=(const StackAllocator<U, C, A>& other) const noexcept { return !(*this == other); }
+    template<class U, std::size_t OtherAlignment>
+    bool operator==(const StackAllocator<U, CapacityBytes, OtherAlignment>& other) const noexcept {
+        return storage_ == other.storage_;
+    }
+    template<class U, std::size_t OtherAlignment>
+    bool operator!=(const StackAllocator<U, CapacityBytes, OtherAlignment>& other) const noexcept {
+        return !(*this == other);
+    }
 
 private:
     template<class, std::size_t, std::size_t> friend class StackAllocator;
-    stack_storage<CapacityBytes, Alignment>* storage_{nullptr};
+    void* storage_{nullptr};  // Type-erased storage pointer for cross-alignment sharing
 };
 
 } // namespace fem::core::memory
