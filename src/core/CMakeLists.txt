@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ==============================================================================
+# Prevent in-source builds
+# ==============================================================================
+if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
+    message(FATAL_ERROR "In-source builds are not allowed! "
+            "Please create a separate build directory and run CMake from there. "
+            "You may need to remove CMakeCache.txt and CMakeFiles/ from the source directory first.")
+endif()
+
+# ==============================================================================
 # Detect if this is a standalone build or part of parent project
 # ==============================================================================
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
