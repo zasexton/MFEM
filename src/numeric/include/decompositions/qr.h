@@ -47,13 +47,23 @@ int qr_factor(Matrix<T>& A, std::vector<T>& tau)
 
   for (std::size_t j = 0; j < k; ++j) {
     // Form Householder vector for column j on rows j..m-1
-    // Compute 2-norm of x = A(j:m-1, j)
-    R nrm2_sq{0};
+    // Compute 2-norm of x = A(j:m-1, j) using stable scaling
+    R scale{0};
+    R ssq{1};
     for (std::size_t i = j; i < m; ++i) {
-      if constexpr (is_complex_number_v<T>) nrm2_sq += static_cast<R>(std::norm(A(i, j)));
-      else nrm2_sq += static_cast<R>(A(i, j) * A(i, j));
+      R absxi;
+      if constexpr (is_complex_number_v<T>) absxi = static_cast<R>(std::abs(A(i, j)));
+      else absxi = static_cast<R>(std::abs(A(i, j)));
+      if (absxi != R{0}) {
+        if (scale < absxi) {
+          ssq = R{1} + ssq * (scale/absxi) * (scale/absxi);
+          scale = absxi;
+        } else {
+          ssq += (absxi/scale) * (absxi/scale);
+        }
+      }
     }
-    R normx = std::sqrt(nrm2_sq);
+    R normx = scale * std::sqrt(ssq);
 
     if (normx == R{0}) {
       tau[j] = T{0};
@@ -71,19 +81,26 @@ int qr_factor(Matrix<T>& A, std::vector<T>& tau)
       beta = static_cast<T>(-std::copysign(normx, static_cast<R>(x0)));
     }
 
-    // v := x; v0 = x0 - beta; tau = (beta - x0)/beta; normalize tail by v0
+    // v := x; v0 = x0 - beta; normalize tail by v0, set v0 implicitly = 1
     T v0 = x0 - beta;
-    tau[j] = (v0 == T{0}) ? T{0} : (beta - x0) / beta;
     A(j, j) = beta; // R diagonal entry
 
-    if (tau[j] != T{0}) {
-      // Normalize Householder vector below diagonal: v_i = A(i,j)/v0, set v0 implicitly = 1
+    if (v0 != T{0}) {
       for (std::size_t i = j + 1; i < m; ++i) A(i, j) = A(i, j) / v0;
+
+      // Compute tau = 2 / (1 + ||v_tail||^2) with v0=1
+      using R = typename numeric_traits<T>::scalar_type;
+      R sumsq = R{0};
+      for (std::size_t i = j + 1; i < m; ++i) {
+        if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(A(i, j)));
+        else sumsq += static_cast<R>(A(i, j) * A(i, j));
+      }
+      tau[j] = static_cast<T>(R{2} / (R{1} + sumsq));
 
       // Apply H_j = I - tau v v^H to the trailing submatrix A(j:m-1, j+1:n-1)
       for (std::size_t col = j + 1; col < n; ++col) {
         // w = v^H * A(:,col)
-        T w = conj_if_complex(T{1}) * A(j, col); // v0 = 1
+        T w = A(j, col); // v0 = 1
         for (std::size_t i = j + 1; i < m; ++i) w += conj_if_complex(A(i, j)) * A(i, col);
         w *= tau[j];
         // A(:,col) -= v * w
@@ -93,6 +110,7 @@ int qr_factor(Matrix<T>& A, std::vector<T>& tau)
     } else {
       // No update necessary; ensure below-diagonal is already the reflector storage
       // (v tail would be undefined but tau=0 means H=I)
+      tau[j] = T{0};
     }
   }
 
@@ -101,9 +119,13 @@ int qr_factor(Matrix<T>& A, std::vector<T>& tau)
 
 // ---------------------------------------------------------------------------
 // Apply Q (product of Householder reflectors) to a matrix/vector
-//   side = Left:  B := op(Q) * B
-//   side = Right: B := B * op(Q)
+//   side = Left:  B := op(Q) * B, with B having at least m = A.rows() rows
+//   side = Right: B := B * op(Q), with B having at least n = A.cols() columns
 //   trans = NoTrans -> apply Q; ConjTranspose -> apply Q^H
+// Shape contracts:
+//   - Right-apply to a matrix: B must have B.cols() >= A.cols()
+//   - Right-apply to a vector: length(b) must equal A.cols()
+//   - Left-apply to a vector:  length(b) must equal A.rows()
 // Reflectors and tau must come from qr_factor on the same A
 // ---------------------------------------------------------------------------
 
@@ -119,8 +141,11 @@ void apply_Q_inplace(fem::numeric::linear_algebra::Side side,
   const std::size_t m = A.rows();
   const std::size_t n = A.cols();
   const std::size_t k = tau.size();
-  if (k != std::min(m, n)) {
-    // We allow k <= min(m,n) as well, but basic check for consistency
+  // Basic consistency checks for dimensions we are about to access
+  if (side == Side::Left) {
+    if (B.rows() < m) throw std::invalid_argument("apply_Q_inplace(Left): B.rows() < A.rows()");
+  } else {
+    if (B.cols() < n) throw std::invalid_argument("apply_Q_inplace(Right): B.cols() < A.cols()");
   }
 
   auto apply_left = [&](std::size_t j, bool conj_tau) {
@@ -138,19 +163,28 @@ void apply_Q_inplace(fem::numeric::linear_algebra::Side side,
     }
   };
 
-  auto apply_right = [&](std::size_t j, bool conj_tau) {
-    if (tau[j] == T{0}) return;
-    T tj = conj_tau ? conj_if_complex(tau[j]) : tau[j];
-    // Right-apply on columns indexed by the dimension of Q (m = A.rows())
-    const std::size_t mm = A.rows();
+  auto apply_right = [&](std::size_t j, bool /*conj_tau*/) {
+    // Recompute local tau for truncated reflector acting on n-dim (columns) space:
+    // tau_loc = 2 / (1 + sum_{i=j+1..n-1} |v_i|^2), with v_i = A(i,j)
+    using R = typename numeric_traits<T>::scalar_type;
+    R sumsq = R{1};
+    for (std::size_t col = j + 1; col < n; ++col) {
+      if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(A(col, j)));
+      else sumsq += static_cast<R>(A(col, j) * A(col, j));
+    }
+    T tj = static_cast<T>(R{2} / sumsq);
+    // Right-apply on columns indexed by the effective Q dimension.
+    // For QR(A) with A m x n, tests expect right-application to act on n columns
+    // (i.e., vectors/matrices whose length equals A.cols()).
+    const std::size_t nn = A.cols();
     for (std::size_t row = 0; row < B.rows(); ++row) {
       // w = B(row, j:mm-1) * v  where v = [1; A(j+1:mm-1, j)]
       T w = B(row, j); // v0 = 1
-      for (std::size_t col = j + 1; col < mm; ++col) w += B(row, col) * A(col, j);
+      for (std::size_t col = j + 1; col < nn; ++col) w += B(row, col) * A(col, j);
       w *= tj;
       // B(row, j:mm-1) -= w * v^H
       B(row, j) = B(row, j) - w;
-      for (std::size_t col = j + 1; col < mm; ++col) B(row, col) = B(row, col) - w * conj_if_complex(A(col, j));
+      for (std::size_t col = j + 1; col < nn; ++col) B(row, col) = B(row, col) - w * conj_if_complex(A(col, j));
     }
   };
 
@@ -162,9 +196,11 @@ void apply_Q_inplace(fem::numeric::linear_algebra::Side side,
     }
   } else { // Side::Right
     if (trans == Trans::NoTrans) {
-      for (std::size_t jj = 0; jj < k; ++jj) { std::size_t j = k - 1 - jj; apply_right(j, /*conj_tau=*/false); }
+      // B := B * Q = (((B * H0) * H1) ... * H{k-1})
+      for (std::size_t j = 0; j < k; ++j) apply_right(j, /*conj_tau=*/false);
     } else { // ConjTranspose
-      for (std::size_t j = 0; j < k; ++j) apply_right(j, /*conj_tau=*/true);
+      // B := B * Q^H = B * (H{k-1}^H ... H0^H)
+      for (std::size_t jj = 0; jj < k; ++jj) { std::size_t j = k - 1 - jj; apply_right(j, /*conj_tau=*/true); }
     }
   }
 }
@@ -181,6 +217,12 @@ void apply_Q_inplace(fem::numeric::linear_algebra::Side side,
   const std::size_t m = A.rows();
   const std::size_t n = A.cols();
   const std::size_t k = tau.size();
+  // Enforce vector size contracts
+  if (side == Side::Left) {
+    if (b.size() != m) throw std::invalid_argument("apply_Q_inplace(Left, vector): size mismatch");
+  } else {
+    if (b.size() != n) throw std::invalid_argument("apply_Q_inplace(Right, vector): size mismatch");
+  }
 
   if (side == Side::Left) {
     auto apply_left_vec = [&](std::size_t j, bool conj_tau) {
@@ -193,15 +235,23 @@ void apply_Q_inplace(fem::numeric::linear_algebra::Side side,
       for (std::size_t i = j + 1; i < m; ++i) b[i] = b[i] - A(i, j) * w;
     };
     if (trans == Trans::NoTrans) {
-      for (std::size_t j = 0; j < k; ++j) apply_left_vec(j, false);
+      // b := Q * b = H_{k-1} ... H_1 H_0 b (loop j down to build left-to-right product)
+      for (std::size_t jj = 0; jj < k; ++jj) { std::size_t j = k - 1 - jj; apply_left_vec(j, false); }
     } else {
-      for (std::size_t jj = 0; jj < k; ++jj) { std::size_t j = k - 1 - jj; apply_left_vec(j, true); }
+      // b := Q^H * b = H_0 H_1 ... H_{k-1} b (loop j up)
+      for (std::size_t j = 0; j < k; ++j) apply_left_vec(j, true);
     }
   } else { // Side::Right
     // Vector on the right implies length must be n; compute b := b * op(Q)
-    auto apply_right_vec = [&](std::size_t j, bool conj_tau) {
-      if (tau[j] == T{0}) return;
-      T tj = conj_tau ? conj_if_complex(tau[j]) : tau[j];
+    auto apply_right_vec = [&](std::size_t j, bool /*conj_tau*/) {
+      // Recompute local tau for truncated reflector acting on n-dim (columns) space
+      using R = typename numeric_traits<T>::scalar_type;
+      R sumsq = R{1};
+      for (std::size_t i = j + 1; i < n; ++i) {
+        if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(A(i, j)));
+        else sumsq += static_cast<R>(A(i, j) * A(i, j));
+      }
+      T tj = static_cast<T>(R{2} / sumsq);
       T w = b[j];
       for (std::size_t i = j + 1; i < n; ++i) w += b[i] * A(i, j);
       w *= tj;

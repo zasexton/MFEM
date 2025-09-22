@@ -22,44 +22,76 @@ namespace fem::core::memory {
 template<std::size_t CapacityBytes, std::size_t Alignment = alignof(std::max_align_t)>
 class stack_storage {
 public:
-    stack_storage() noexcept : begin_(buffer_.data), cur_(buffer_.data), end_(buffer_.data + CapacityBytes) {}
+    stack_storage() noexcept : begin_(buffer_.data), cur_(buffer_.data), end_(buffer_.data + CapacityBytes), last_alloc_ptr_(nullptr), last_alloc_size_(0) {}
 
     stack_storage(const stack_storage&) = delete;
     stack_storage& operator=(const stack_storage&) = delete;
 
     [[nodiscard]] void* allocate(std::size_t bytes, std::size_t alignment = Alignment) {
-        FEM_ASSERT(bytes > 0);
         FEM_ASSERT(is_power_of_two(alignment));
+
+        // Handle zero-size allocation - return unique non-null pointer
+        if (bytes == 0) {
+            bytes = 1;
+        }
+
         std::byte* aligned = static_cast<std::byte*>(align_up(cur_, alignment));
         if (aligned + bytes > end_) {
             // out of local storage
             throw std::bad_alloc{};
         }
+        last_alloc_ptr_ = aligned;
+        last_alloc_size_ = bytes;
         cur_ = aligned + bytes;
         return aligned;
     }
 
     // Optional LIFO deallocate; only frees if p is the top-most allocation.
     void deallocate(void* p, std::size_t bytes, std::size_t alignment = Alignment) noexcept {
+        CORE_UNUSED(alignment);  // Alignment not used in this simple implementation
+        if (!p) return;
+
+        // Handle zero-size allocation case
+        if (bytes == 0) {
+            bytes = 1;
+        }
+
         auto* ptr = static_cast<std::byte*>(p);
-        std::byte* aligned_end = static_cast<std::byte*>(align_up(ptr, alignment)) + bytes;
-        if (aligned_end == cur_) cur_ = static_cast<std::byte*>(p);
+        // For LIFO deallocation, check if this is the most recent allocation
+        if (ptr == last_alloc_ptr_ && bytes == last_alloc_size_) {
+            cur_ = ptr;
+            last_alloc_ptr_ = nullptr;
+            last_alloc_size_ = 0;
+        }
     }
 
-    void reset() noexcept { cur_ = begin_; }
+    void reset() noexcept {
+        cur_ = begin_;
+        last_alloc_ptr_ = nullptr;
+        last_alloc_size_ = 0;
+    }
 
     [[nodiscard]] std::size_t used() const noexcept { return static_cast<std::size_t>(cur_ - begin_); }
     [[nodiscard]] std::size_t capacity() const noexcept { return CapacityBytes; }
 
     struct Marker { std::byte* cur; };
     [[nodiscard]] Marker mark() const noexcept { return Marker{cur_}; }
-    void rewind(Marker m) noexcept { if (m.cur >= begin_ && m.cur <= end_) cur_ = m.cur; }
+    void rewind(Marker m) noexcept {
+        if (m.cur >= begin_ && m.cur <= end_) {
+            cur_ = m.cur;
+            // Clear last allocation tracking after rewind
+            last_alloc_ptr_ = nullptr;
+            last_alloc_size_ = 0;
+        }
+    }
 
 private:
     AlignedBuffer<CapacityBytes, Alignment> buffer_{};
     std::byte* begin_{nullptr};
     std::byte* cur_{nullptr};
     std::byte* end_{nullptr};
+    std::byte* last_alloc_ptr_{nullptr};
+    std::size_t last_alloc_size_{0};
 };
 
 // StackAllocator: std::allocator-compatible adapter over stack_storage.

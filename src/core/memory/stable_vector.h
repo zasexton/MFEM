@@ -140,7 +140,7 @@ public:
     reference emplace_back(Args&&... args) {
         if (size_ == capacity()) allocate_block();
         T* p = ptr_at(size_);
-        ::new ((void*)p) T(std::forward<Args>(args)...);
+        ::new (static_cast<void*>(p)) T(std::forward<Args>(args)...);
         ++size_;
 #if CORE_MEMORY_ENABLE_TELEMETRY
         ++telemetry_.constructed_elements;

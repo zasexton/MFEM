@@ -147,7 +147,7 @@ public:
     reference emplace_back(Args&&... args) {
         if (size_ == capacity()) reallocate(grow_to(size_ + 1));
         T* p = data() + size_;
-        ::new ((void*)p) T(std::forward<Args>(args)...);
+        ::new (static_cast<void*>(p)) T(std::forward<Args>(args)...);
         ++size_;
 #if CORE_MEMORY_ENABLE_TELEMETRY
         ++telemetry_.constructed_elements;
@@ -252,7 +252,7 @@ private:
         } else {
             // move inline elements
             for (size_type i = 0; i < other.size_; ++i) {
-                ::new ((void*)(inline_ptr() + i)) T(std::move(other[i]));
+                ::new (static_cast<void*>(inline_ptr() + i)) T(std::move(other[i]));
             }
             size_ = other.size_;
             other.clear();
@@ -265,11 +265,11 @@ private:
     void move_range(T* src, T* dst, size_type count) {
         if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
             for (size_type i = 0; i < count; ++i) {
-                ::new ((void*)(dst + i)) T(std::move(src[i]));
+                ::new (static_cast<void*>(dst + i)) T(std::move(src[i]));
             }
         } else {
             for (size_type i = 0; i < count; ++i) {
-                ::new ((void*)(dst + i)) T(src[i]);
+                ::new (static_cast<void*>(dst + i)) T(src[i]);
             }
         }
 #if CORE_MEMORY_ENABLE_TELEMETRY

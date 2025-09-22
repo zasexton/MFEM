@@ -315,6 +315,28 @@ TEST(Decompositions, QR_ApplyQ_RightOnMatrix_RoundTrip)
     for (size_t i=0;i<p;++i) for (size_t j=0;j<n;++j) EXPECT_NEAR(B(i,j), B0(i,j), 1e-12);
 }
 
+TEST(Decompositions, QR_ApplyQ_RightOnMatrix_DimensionMismatchThrows)
+{
+    // Ensure right-apply checks B has at least n = A.cols() columns
+    const size_t m=5, n=3, p=4;
+    Matrix<double> A0(m,n, 0.0); fill_random(A0, 171u);
+    Matrix<double> Af = A0; std::vector<double> tau; ASSERT_EQ(qr_factor(Af, tau), 0);
+    Matrix<double> B_bad(p, n-1, 0.0); // too few columns
+    EXPECT_THROW({ apply_Q_inplace(Side::Right, Trans::NoTrans, Af, tau, B_bad); }, std::invalid_argument);
+    EXPECT_THROW({ apply_Q_inplace(Side::Right, Trans::ConjTranspose, Af, tau, B_bad); }, std::invalid_argument);
+}
+
+TEST(Decompositions, QR_ApplyQ_RightOnVector_DimensionMismatchThrows)
+{
+    // Ensure right-apply to vector checks length equals n = A.cols()
+    const size_t m=4, n=3;
+    Matrix<double> A0(m,n, 0.0); fill_random(A0, 183u);
+    Matrix<double> Af = A0; std::vector<double> tau; ASSERT_EQ(qr_factor(Af, tau), 0);
+    Vector<double> v_bad(n-1, 0.0);
+    EXPECT_THROW({ apply_Q_inplace(Side::Right, Trans::NoTrans, Af, tau, v_bad); }, std::invalid_argument);
+    EXPECT_THROW({ apply_Q_inplace(Side::Right, Trans::ConjTranspose, Af, tau, v_bad); }, std::invalid_argument);
+}
+
 TEST(Decompositions, QR_ZeroMatrix_EdgeCases)
 {
     const size_t m=4, n=3;

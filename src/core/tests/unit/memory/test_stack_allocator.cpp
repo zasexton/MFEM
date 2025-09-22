@@ -308,7 +308,7 @@ TEST_F(StackAllocatorTest, NestedScopes) {
     }
 
     storage.rewind(marker1);
-    EXPECT_LT(storage.used(), 20);
+    EXPECT_EQ(storage.used(), 10 * sizeof(int));
 
     alloc.deallocate(outer, 10);
 }
