@@ -85,7 +85,7 @@ public:
             }
         }
         auto r = pool_.try_allocate();
-        if (!r) return fem::core::error::Err<ErrorCode>(r.error());
+        if (!r) return fem::core::error::Err(r.error());
         return r;
     }
 
@@ -127,7 +127,7 @@ private:
 
     void refill() {
         // Create a temp MemoryPool with the new block size and move-merge its free list into ours
-        std::size_t next_np = static_cast<std::size_t>(current_nodes_per_block_ * cfg_.growth_factor);
+        std::size_t next_np = static_cast<std::size_t>(static_cast<double>(current_nodes_per_block_) * cfg_.growth_factor);
         if (next_np < current_nodes_per_block_) next_np = current_nodes_per_block_; // guard overflow
         if (next_np > cfg_.max_nodes_per_block) next_np = cfg_.max_nodes_per_block;
 
