@@ -41,7 +41,22 @@ public:
         : pool_(std::make_shared<MemoryPool>(MemoryPool::Config{sizeof(T), alignof(T), nodes_per_slab}, upstream)) {}
 
     template<class U>
-    SlabAllocator(const SlabAllocator<U>& other) noexcept : pool_(other.pool_) {}
+    SlabAllocator(const SlabAllocator<U>& other) : pool_() {
+        // When rebinding to a different type, we cannot share the pool
+        // because the pool is configured for a specific object size.
+        // Create a new pool for the rebound type.
+        if (other.pool_) {
+            if constexpr (sizeof(T) != sizeof(U) || alignof(T) != alignof(U)) {
+                // Different size/alignment - need a new pool
+                pool_ = std::make_shared<MemoryPool>(
+                    MemoryPool::Config{sizeof(T), alignof(T), 256},
+                    other.pool_->get_upstream());
+            } else {
+                // Same size/alignment - can share the pool
+                pool_ = other.pool_;
+            }
+        }
+    }
 
     [[nodiscard]] pointer allocate(size_type n) {
         if (n == 1) return static_cast<pointer>(pool_->allocate());

@@ -151,6 +151,8 @@ public:
 
     [[nodiscard]] std::size_t block_count() const noexcept { return blocks_.size(); }
 
+    [[nodiscard]] memory_resource* get_upstream() const noexcept { return upstream_; }
+
 #if CORE_MEMORY_ENABLE_TELEMETRY
     [[nodiscard]] const telemetry_t& telemetry() const noexcept { return telemetry_; }
     void set_telemetry_callback(telemetry_callback_t cb) { telemetry_cb_ = std::move(cb); }

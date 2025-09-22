@@ -240,8 +240,8 @@ TEST_F(SlabAllocatorTest, Rebinding) {
     fcm::SlabAllocator<int> int_alloc(pool);
     fcm::SlabAllocator<double> double_alloc(int_alloc);
 
-    // They should share the same pool pointer
-    EXPECT_EQ(int_alloc, double_alloc);
+    // They should NOT share the same pool since sizes differ
+    EXPECT_NE(int_alloc, double_alloc);
 
     double* p = double_alloc.allocate(1);
     ASSERT_NE(p, nullptr);
@@ -249,6 +249,30 @@ TEST_F(SlabAllocatorTest, Rebinding) {
     EXPECT_DOUBLE_EQ(*p, 2.718);
 
     double_alloc.deallocate(p, 1);
+}
+
+TEST_F(SlabAllocatorTest, RebindingSameSize) {
+    // Test rebinding between types of the same size/alignment
+    auto pool = std::make_shared<fcm::MemoryPool>(
+        fcm::MemoryPool::Config{sizeof(int), alignof(int), 256}, resource_);
+
+    fcm::SlabAllocator<int> int_alloc(pool);
+    fcm::SlabAllocator<float> float_alloc(int_alloc);  // Same size as int on most platforms
+
+    if (sizeof(int) == sizeof(float) && alignof(int) == alignof(float)) {
+        // They should share the same pool since size/alignment match
+        EXPECT_EQ(int_alloc, float_alloc);
+    } else {
+        // Different size/alignment - different pools
+        EXPECT_NE(int_alloc, float_alloc);
+    }
+
+    float* p = float_alloc.allocate(1);
+    ASSERT_NE(p, nullptr);
+    *p = 3.14f;
+    EXPECT_FLOAT_EQ(*p, 3.14f);
+
+    float_alloc.deallocate(p, 1);
 }
 
 // Allocator traits tests

@@ -357,7 +357,8 @@ TEST_F(BuddyAllocatorTest, StressVariedSizes) {
         for (int j = 0; j < 5; ++j) {  // Multiple allocations of each size
             char* p = alloc.allocate(size);
             ASSERT_NE(p, nullptr);
-            std::memset(p, static_cast<char>((size + j) % 256), size);
+            // Use % 255 + 1 to avoid null bytes (range 1-255)
+            std::memset(p, static_cast<char>((size + j) % 255 + 1), size);
             allocations.push_back({p, size});
         }
     }
