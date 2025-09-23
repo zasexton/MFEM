@@ -433,10 +433,20 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   };
 
   auto apply_block_reflectors = [&](const Matrix<T>& V, const Matrix<T>& Tmat, auto&& B_like) {
-    MatrixView<typename std::remove_reference_t<decltype(B_like)>::value_type> B = B_like.view();
+    auto&& B_ref = B_like;
+    using BType = std::remove_reference_t<decltype(B_ref)>;
+    typename MatrixView<T>::difference_type rs{}, cs{};
+    if constexpr (std::is_same_v<BType, Matrix<T>>) {
+      rs = static_cast<typename MatrixView<T>::difference_type>(B_ref.row_stride_value());
+      cs = static_cast<typename MatrixView<T>::difference_type>(B_ref.col_stride_value());
+    } else {
+      rs = static_cast<typename MatrixView<T>::difference_type>(B_ref.row_stride());
+      cs = static_cast<typename MatrixView<T>::difference_type>(B_ref.col_stride());
+    }
+    MatrixView<T> Bview(B_ref.data(), B_ref.rows(), B_ref.cols(), rs, cs);
     const std::size_t pm = V.rows();
     const std::size_t kb = V.cols();
-    const std::size_t nt = B.cols();
+    const std::size_t nt = Bview.cols();
     Matrix<T> Y(kb, nt, T{});
     // Y = V^H * B
     for (std::size_t jcol = 0; jcol < nt; ++jcol) {
