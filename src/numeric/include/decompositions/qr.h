@@ -503,7 +503,14 @@ int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
     return info;
   }
 #endif
-  return qr_factor_blocked(A, tau);
+  // Fallback heuristic: for wide matrices, prefer the robust unblocked path
+  // to avoid panel/WY edge cases in row-major without vendor BLAS.
+  const std::size_t m = A.rows();
+  const std::size_t n = A.cols();
+  if (m < n) {
+    return qr_factor_unblocked(A, tau);
+  }
+  return qr_factor_blocked(A, tau, /*block=*/48);
 }
 
 } // namespace fem::numeric::decompositions
