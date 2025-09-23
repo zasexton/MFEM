@@ -452,8 +452,8 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     for (std::size_t jcol = 0; jcol < nt; ++jcol) {
       for (std::size_t irow = 0; irow < kb; ++irow) {
         T s{};
-        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, irow)) * B(r, jcol);
-        Y(irow, jcol) = s;
+        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, irow)) * Bview(r, jcol);
+          Y(irow, jcol) = s;
       }
     }
     // Y = T * Y (upper triangular)
@@ -469,7 +469,7 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       for (std::size_t r = 0; r < pm; ++r) {
         T s{};
         for (std::size_t k = 0; k < kb; ++k) s += V(r, k) * Y(k, jcol);
-        B(r, jcol) = B(r, jcol) - s;
+        Bview(r, jcol) = Bview(r, jcol) - s;
       }
     }
   };
