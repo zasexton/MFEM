@@ -492,6 +492,14 @@ template <typename T, typename Storage, StorageOrder Order>
 int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
 {
 #if defined(FEM_NUMERIC_ENABLE_LAPACK)
+  // Prefer backend full-matrix GEQRF when available (handles RowMajor via
+  // LAPACKE or internal packing) for correctness across shapes.
+  {
+    int info_backend = 0;
+    if (backends::lapack::geqrf_inplace(A, tau, info_backend)) return info_backend;
+  }
+#endif
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
   if constexpr (Order == StorageOrder::ColumnMajor) {
     const std::size_t m = A.rows();
     const std::size_t n = A.cols();
