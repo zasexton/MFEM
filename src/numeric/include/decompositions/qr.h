@@ -503,14 +503,9 @@ int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
     return info;
   }
 #endif
-  // Fallback heuristic: for wide matrices, prefer the robust unblocked path
-  // to avoid panel/WY edge cases in row-major without vendor BLAS.
-  const std::size_t m = A.rows();
-  const std::size_t n = A.cols();
-  if (m < n) {
-    return qr_factor_unblocked(A, tau);
-  }
-  return qr_factor_blocked(A, tau, /*block=*/48);
+  // Row-major fallback: use robust unblocked Householder QR for correctness
+  // across all shapes. Blocked WY path remains available via ColumnMajor+LAPACK.
+  return qr_factor_unblocked(A, tau);
 }
 
 } // namespace fem::numeric::decompositions
