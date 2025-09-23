@@ -433,27 +433,17 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   };
 
   auto apply_block_reflectors = [&](const Matrix<T>& V, const Matrix<T>& Tmat, auto&& B_like) {
-    auto&& B_ref = B_like;
-    using BType = std::remove_reference_t<decltype(B_ref)>;
-    typename MatrixView<T>::difference_type rs{}, cs{};
-    if constexpr (std::is_same_v<BType, Matrix<T>>) {
-      rs = static_cast<typename MatrixView<T>::difference_type>(B_ref.row_stride_value());
-      cs = static_cast<typename MatrixView<T>::difference_type>(B_ref.col_stride_value());
-    } else {
-      rs = static_cast<typename MatrixView<T>::difference_type>(B_ref.row_stride());
-      cs = static_cast<typename MatrixView<T>::difference_type>(B_ref.col_stride());
-    }
-    MatrixView<T> Bview(B_ref.data(), B_ref.rows(), B_ref.cols(), rs, cs);
+    auto& B_ref = B_like;
     const std::size_t pm = V.rows();
     const std::size_t kb = V.cols();
-    const std::size_t nt = Bview.cols();
+    const std::size_t nt = B_ref.cols();
     Matrix<T> Y(kb, nt, T{});
     // Y = V^H * B
     for (std::size_t jcol = 0; jcol < nt; ++jcol) {
       for (std::size_t irow = 0; irow < kb; ++irow) {
         T s{};
-        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, irow)) * Bview(r, jcol);
-          Y(irow, jcol) = s;
+        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, irow)) * B_ref(r, jcol);
+        Y(irow, jcol) = s;
       }
     }
     // Y = T * Y (upper triangular)
@@ -469,7 +459,7 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       for (std::size_t r = 0; r < pm; ++r) {
         T s{};
         for (std::size_t k = 0; k < kb; ++k) s += V(r, k) * Y(k, jcol);
-        Bview(r, jcol) = Bview(r, jcol) - s;
+        B_ref(r, jcol) = B_ref(r, jcol) - s;
       }
     }
   };
@@ -479,38 +469,27 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     auto Ap = A.submatrix(j, m, j, j + kb); // panel
     std::vector<T> taup(kb, T{});
 #if defined(FEM_NUMERIC_ENABLE_LAPACK)
-    int info_panel = 0;
     const std::size_t pm = m - j; const std::size_t pn = kb;
+    int info_panel = 0;
     if constexpr (Order == StorageOrder::ColumnMajor) {
       int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(A.rows());
       backends::lapack::geqrf_cm<T>(M, N, Ap.data(), lda, taup.data(), info_panel);
-    }
-#if defined(FEM_NUMERIC_ENABLE_LAPACKE)
-    else if constexpr (Order == StorageOrder::RowMajor) {
+      (void)info_panel;
+    } else if constexpr (Order == StorageOrder::RowMajor) {
+#if defined(FEM_NUMERIC_QR_TEST_WY)
+      qr_factor_unblocked(Ap, taup);
+#elif defined(FEM_NUMERIC_ENABLE_LAPACKE)
       int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(A.cols());
       info_panel = backends::lapack::geqrf_rm<T>(M, N, Ap.data(), lda, taup.data());
-    } else {
+      (void)info_panel;
 #else
-    else {
+      qr_factor_unblocked(Ap, taup);
 #endif
-      // Copy panel to column-major, factor, then copy back
-      std::vector<T> panel(pm * pn);
-      for (std::size_t col = 0; col < pn; ++col)
-        for (std::size_t row = 0; row < pm; ++row)
-          panel[col * pm + row] = A(j + row, j + col);
-      int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(pm);
-      backends::lapack::geqrf_cm<T>(M, N, panel.data(), lda, taup.data(), info_panel);
-      for (std::size_t col = 0; col < pn; ++col)
-        for (std::size_t row = 0; row < pm; ++row)
-          A(j + row, j + col) = panel[col * pm + row];
+    } else {
+      qr_factor_unblocked(Ap, taup);
     }
-    (void)info_panel; // QR typically succeeds; tau handles rank info via zeros
 #else
-    // Fallback: unblocked QR for the panel (works on MatrixView)
-    {
-      // Implement a local unblocked factorization over the view
-      // Reuse the same logic via a generic helper
-    }
+    // No LAPACK available: use unblocked QR for the panel
     qr_factor_unblocked(Ap, taup);
 #endif
     for (std::size_t t = 0; t < kb; ++t) tau[j + t] = taup[t];
