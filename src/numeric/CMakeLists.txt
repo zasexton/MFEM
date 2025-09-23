@@ -314,6 +314,43 @@ endif()
 #     target_compile_definitions(fem_numeric INTERFACE FEM_HAS_EIGEN)
 # endif()
 
+# Optional LAPACK/MKL backend for decompositions
+option(FEM_NUMERIC_ENABLE_LAPACK "Enable LAPACK/MKL backend for numeric decompositions" OFF)
+if(FEM_NUMERIC_ENABLE_LAPACK)
+    # Try to enable LAPACK via system or FetchContent(OpenBLAS)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/EnableLAPACK.cmake)
+    if(TARGET LAPACK::LAPACK)
+        target_compile_definitions(fem_numeric INTERFACE FEM_NUMERIC_ENABLE_LAPACK=1)
+        target_link_libraries(fem_numeric INTERFACE LAPACK::LAPACK)
+        message(STATUS "FEM Numeric: LAPACK backend ENABLED for decompositions (${FEM_NUMERIC_LAPACK_PROVIDER})")
+    else()
+        message(WARNING "FEM Numeric: LAPACK backend requested but LAPACK::LAPACK target not available.")
+    endif()
+endif()
+
+# Optional LAPACKE (row-major) C interfaces
+option(FEM_NUMERIC_ENABLE_LAPACKE "Enable LAPACKE row-major interfaces when LAPACK is enabled" OFF)
+if(FEM_NUMERIC_ENABLE_LAPACKE AND FEM_NUMERIC_ENABLE_LAPACK)
+    find_package(LAPACKE QUIET)
+    if(LAPACKE_FOUND)
+        target_compile_definitions(fem_numeric INTERFACE FEM_NUMERIC_ENABLE_LAPACKE=1)
+        if(TARGET LAPACKE::LAPACKE)
+            target_link_libraries(fem_numeric INTERFACE LAPACKE::LAPACKE)
+        else()
+            # Some distros expose lapacke via LAPACK::LAPACKE or a plain lapacke library.
+            find_library(LAPACKE_LIBRARY lapacke)
+            if(LAPACKE_LIBRARY)
+                target_link_libraries(fem_numeric INTERFACE ${LAPACKE_LIBRARY})
+            else()
+                message(WARNING "FEM Numeric: LAPACKE_FOUND but LAPACKE target not detected; ensure lapacke is linked externally.")
+            endif()
+        endif()
+        message(STATUS "FEM Numeric: LAPACKE row-major ENABLED")
+    else()
+        message(STATUS "FEM Numeric: LAPACKE not found; using column-major/tile paths only")
+    endif()
+endif()
+
 # ============================================================================
 # Testing
 # ============================================================================
