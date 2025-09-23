@@ -18,6 +18,8 @@
 #include "../core/vector.h"
 #include "../base/traits_base.h"
 #include "../linear_algebra/blas_level2.h" // for Uplo and conj helper pattern
+#include "../linear_algebra/blas_level3.h" // for syrk/trsm/gemm
+#include "../backends/lapack_backend.h"
 
 namespace fem::numeric::decompositions {
 
@@ -32,94 +34,206 @@ constexpr T conj_if_complex(const T& x) {
   }
 }
 
+// Forward declaration (blocked Cholesky)
+template <typename T, typename Storage, StorageOrder Order>
+int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
+                            fem::numeric::linear_algebra::Uplo uplo,
+                            std::size_t block = 64);
+
 // ---------------------------------------------------------------------------
-// Factorization: Cholesky (in-place)
-// Returns 0 on success; returns i+1 if the leading i-by-i minor is not
-// positive-definite (i.e., a non-positive pivot encountered at step i).
+// Factorization: Cholesky (best path, in-place)
+// - ColumnMajor + LAPACK: full POTRF (zero-copy)
+// - Otherwise: blocked Cholesky (tile-level LAPACK for row-major if enabled)
+// Returns 0 on success; returns i+1 on failure like LAPACK.
 // ---------------------------------------------------------------------------
 
-template <typename T>
-int cholesky_factor(Matrix<T>& A,
+template <typename T, typename Storage, StorageOrder Order>
+int cholesky_factor(Matrix<T, Storage, Order>& A,
                     fem::numeric::linear_algebra::Uplo uplo = fem::numeric::linear_algebra::Uplo::Lower)
 {
-  using Uplo = fem::numeric::linear_algebra::Uplo;
-  using R = typename numeric_traits<T>::scalar_type;
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+  if constexpr (Order == StorageOrder::ColumnMajor) {
+    const std::size_t n = A.rows();
+    if (A.cols() != n) throw std::invalid_argument("cholesky_factor: matrix must be square");
+    int N = static_cast<int>(n), lda = static_cast<int>(A.rows());
+    int info = 0;
+    char u = (uplo == fem::numeric::linear_algebra::Uplo::Lower) ? 'L' : 'U';
+    backends::lapack::potrf_cm<T>(u, N, A.data(), lda, info);
+    return info;
+  }
+#endif
+  return cholesky_factor_blocked(A, uplo);
+}
+
+// ---------------------------------------------------------------------------
+// Blocked Cholesky factorization (LL^H / U^H U), right-looking
+// Uses Level-3 BLAS updates (TRSM + SYRK) on trailing matrix.
+// Falls back to LAPACK backend if enabled (stubbed unless linked in CMake).
+// Returns 0 on success; k+1 if leading minor of order k+1 is not SPD.
+// ---------------------------------------------------------------------------
+template <typename T, typename Storage, StorageOrder Order>
+int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
+                            fem::numeric::linear_algebra::Uplo uplo = fem::numeric::linear_algebra::Uplo::Lower,
+                            std::size_t block = 64)
+{
+  using namespace fem::numeric::linear_algebra;
 
   const std::size_t n = A.rows();
-  if (A.cols() != n) {
-    throw std::invalid_argument("cholesky_factor: matrix must be square");
-  }
+  if (A.cols() != n) throw std::invalid_argument("cholesky_factor_blocked: matrix must be square");
+
+  // Local helper: unblocked Cholesky on a view (Lower/Upper)
+  auto chol_unblocked_view = [&](auto&& V, Uplo u) -> int {
+    using R = typename numeric_traits<T>::scalar_type;
+    const std::size_t m = V.rows();
+    if (V.cols() != m) throw std::invalid_argument("chol_unblocked_view: square view required");
+    if (u == Uplo::Lower) {
+      for (std::size_t i = 0; i < m; ++i) {
+        for (std::size_t j = 0; j < i; ++j) {
+          auto sum = V(i, j);
+          for (std::size_t k = 0; k < j; ++k) sum -= V(i, k) * conj_if_complex(V(j, k));
+          V(i, j) = sum / V(j, j);
+        }
+        using std::real;
+        R diag = static_cast<R>(real(V(i, i)));
+        for (std::size_t k = 0; k < i; ++k) {
+          auto lik = V(i, k);
+          R mag2 = is_complex_number_v<T> ? static_cast<R>(std::norm(lik)) : static_cast<R>(lik * lik);
+          diag -= mag2;
+        }
+        if (!(diag > R{0})) return static_cast<int>(i) + 1;
+        auto rii = static_cast<R>(std::sqrt(diag));
+        V(i, i) = static_cast<T>(rii);
+        for (std::size_t j = i + 1; j < m; ++j) V(i, j) = T{};
+      }
+    } else { // Upper
+      for (std::size_t i = 0; i < m; ++i) {
+        for (std::size_t j = 0; j < i; ++j) {
+          auto sum = V(j, i);
+          for (std::size_t k = 0; k < j; ++k) sum -= conj_if_complex(V(k, j)) * V(k, i);
+          V(j, i) = sum / V(j, j);
+        }
+        using std::real;
+        R diag = static_cast<R>(real(V(i, i)));
+        for (std::size_t k = 0; k < i; ++k) {
+          auto uki = V(k, i);
+          R mag2 = is_complex_number_v<T> ? static_cast<R>(std::norm(uki)) : static_cast<R>(uki * uki);
+          diag -= mag2;
+        }
+        if (!(diag > R{0})) return static_cast<int>(i) + 1;
+        auto rii = static_cast<R>(std::sqrt(diag));
+        V(i, i) = static_cast<T>(rii);
+        for (std::size_t j = 0; j < i; ++j) V(i, j) = T{};
+      }
+    }
+    return 0;
+  };
+
+  if (n == 0) return 0;
+  const std::size_t bs = std::max<std::size_t>(1, block);
 
   if (uplo == Uplo::Lower) {
-    // Compute lower-triangular L such that A = L * L^H
-    for (std::size_t i = 0; i < n; ++i) {
-      // Off-diagonal elements in row i (columns j < i)
-      for (std::size_t j = 0; j < i; ++j) {
-        // A(i,j) := (A(i,j) - sum_{k<j} A(i,k) * conj(A(j,k))) / A(j,j)
-        auto sum = A(i, j);
-        for (std::size_t k = 0; k < j; ++k) {
-          sum -= A(i, k) * conj_if_complex(A(j, k));
+    for (std::size_t k = 0; k < n; k += bs) {
+      const std::size_t kb = std::min(bs, n - k);
+      // Factor diagonal block (prefer LAPACK on tile if available)
+      auto Akk = A.submatrix(k, k + kb, k, k + kb);
+      int info_blk = 0;
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+      if constexpr (Order == StorageOrder::ColumnMajor) {
+        char u = 'L'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(A.rows());
+        backends::lapack::potrf_cm<T>(u, Nkb, Akk.data(), lda, info_blk);
+      }
+#if defined(FEM_NUMERIC_ENABLE_LAPACKE)
+      else if constexpr (Order == StorageOrder::RowMajor) {
+        char u = 'L'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(A.cols());
+        // Akk.data() points at &A(k,k)
+        info_blk = backends::lapack::potrf_rm<T>(u, Nkb, Akk.data(), lda);
+      } else {
+#else
+      else {
+#endif
+        // Copy kb x kb tile to column-major buffer
+        std::vector<T> tile(kb * kb);
+        for (std::size_t j = 0; j < kb; ++j)
+          for (std::size_t i = 0; i < kb; ++i)
+            tile[j * kb + i] = Akk(i, j);
+        char u = 'L'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(kb);
+        backends::lapack::potrf_cm<T>(u, Nkb, tile.data(), lda, info_blk);
+        if (info_blk == 0) {
+          for (std::size_t i = 0; i < kb; ++i) {
+            for (std::size_t j = 0; j < kb; ++j) Akk(i, j) = (j <= i) ? tile[j * kb + i] : T{};
+          }
         }
-        A(i, j) = sum / A(j, j);
       }
-      // Diagonal: A(i,i) := sqrt( Re(A(i,i) - sum_{k<i} |A(i,k)|^2) )
-      using std::real;
-      R diag = static_cast<R>(real(A(i, i)));
-      for (std::size_t k = 0; k < i; ++k) {
-        auto lik = A(i, k);
-        R mag2;
-        if constexpr (is_complex_number_v<T>) {
-          mag2 = static_cast<R>(std::norm(lik));
-        } else {
-          mag2 = static_cast<R>(lik * lik);
-        }
-        diag -= mag2;
-      }
-      if (!(diag > R{0})) {
-        // Not strictly positive definite
-        return static_cast<int>(i) + 1;
-      }
-      auto rii = static_cast<R>(std::sqrt(diag));
-      A(i, i) = static_cast<T>(rii); // Diagonal is real-positive
+      if (info_blk != 0) return static_cast<int>(k + info_blk);
+#else
+      info_blk = chol_unblocked_view(Akk, Uplo::Lower);
+      if (info_blk != 0) return static_cast<int>(k + info_blk);
+#endif
 
-      // Zero out the upper part to maintain a clean packed L (optional)
-      for (std::size_t j = i + 1; j < n; ++j) A(i, j) = T{};
+      // Panel solve: L_ik = A_ik * inv(L_kk^H)
+      if (k + kb < n) {
+        auto Aik = A.submatrix(k + kb, n, k, k + kb); // (n-kb-k) x kb
+        trsm(Side::Right, Uplo::Lower,
+             Trans::ConjTranspose, Diag::NonUnit,
+             T{1}, Akk, Aik);
+
+        // Trailing update: A22 := A22 - Aik * Aik^H (SYRK on Lower)
+        auto A22 = A.submatrix(k + kb, n, k + kb, n);
+        // C = alpha*A*A^H + beta*C with alpha = -1, beta = 1
+        syrk(Uplo::Lower, Trans::NoTrans, T{-1}, Aik, T{1}, A22);
+      }
     }
-  } else { // Uplo::Upper
-    // Compute upper-triangular U such that A = U^H * U
-    for (std::size_t i = 0; i < n; ++i) {
-      for (std::size_t j = 0; j < i; ++j) {
-        // A(j,i) := (A(j,i) - sum_{k<j} conj(A(k,j)) * A(k,i)) / A(j,j)
-        auto sum = A(j, i);
-        for (std::size_t k = 0; k < j; ++k) {
-          sum -= conj_if_complex(A(k, j)) * A(k, i);
+  } else { // Upper
+    for (std::size_t k = 0; k < n; k += bs) {
+      const std::size_t kb = std::min(bs, n - k);
+      // Factor diagonal block (Upper) with LAPACK if available
+      auto Akk = A.submatrix(k, k + kb, k, k + kb);
+      int info_blk = 0;
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+      if constexpr (Order == StorageOrder::ColumnMajor) {
+        char u = 'U'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(A.rows());
+        backends::lapack::potrf_cm<T>(u, Nkb, Akk.data(), lda, info_blk);
+      }
+#if defined(FEM_NUMERIC_ENABLE_LAPACKE)
+      else if constexpr (Order == StorageOrder::RowMajor) {
+        char u = 'U'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(A.cols());
+        info_blk = backends::lapack::potrf_rm<T>(u, Nkb, Akk.data(), lda);
+      } else {
+#else
+      else {
+#endif
+        std::vector<T> tile(kb * kb);
+        for (std::size_t j = 0; j < kb; ++j)
+          for (std::size_t i = 0; i < kb; ++i)
+            tile[j * kb + i] = Akk(i, j);
+        char u = 'U'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(kb);
+        backends::lapack::potrf_cm<T>(u, Nkb, tile.data(), lda, info_blk);
+        if (info_blk == 0) {
+          for (std::size_t i = 0; i < kb; ++i) {
+            for (std::size_t j = 0; j < kb; ++j) Akk(i, j) = (j >= i) ? tile[j * kb + i] : T{};
+          }
         }
-        A(j, i) = sum / A(j, j);
       }
-      // Diagonal: A(i,i) := sqrt( Re(A(i,i) - sum_{k<i} |A(k,i)|^2) )
-      using std::real;
-      R diag = static_cast<R>(real(A(i, i)));
-      for (std::size_t k = 0; k < i; ++k) {
-        auto uki = A(k, i);
-        R mag2;
-        if constexpr (is_complex_number_v<T>) {
-          mag2 = static_cast<R>(std::norm(uki));
-        } else {
-          mag2 = static_cast<R>(uki * uki);
-        }
-        diag -= mag2;
-      }
-      if (!(diag > R{0})) {
-        return static_cast<int>(i) + 1;
-      }
-      auto rii = static_cast<R>(std::sqrt(diag));
-      A(i, i) = static_cast<T>(rii);
+      if (info_blk != 0) return static_cast<int>(k + info_blk);
+#else
+      info_blk = chol_unblocked_view(Akk, Uplo::Upper);
+      if (info_blk != 0) return static_cast<int>(k + info_blk);
+#endif
 
-      // Zero the lower part for a clean packed U (optional)
-      for (std::size_t j = 0; j < i; ++j) A(i, j) = T{};
+      if (k + kb < n) {
+        // Panel: U_jk solve: U_ki = inv(U_kk^H) * A_ki^H (equivalently right with Upper)
+        auto Aki = A.submatrix(k, k + kb, k + kb, n); // kb x (n-kb-k)
+        trsm(Side::Left, Uplo::Upper,
+             Trans::ConjTranspose, Diag::NonUnit,
+             T{1}, Akk, Aki);
+
+        // Update trailing: A22 := A22 - Aki^H * Aki (Upper)
+        auto A22 = A.submatrix(k + kb, n, k + kb, n);
+        // Using syrk on Upper with transA = ConjTranspose so A^H*A
+        syrk(Uplo::Upper, Trans::ConjTranspose, T{-1}, Aki, T{1}, A22);
+      }
     }
   }
-
   return 0;
 }
 

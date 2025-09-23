@@ -21,6 +21,8 @@
 #include "../core/vector.h"
 #include "../base/traits_base.h"
 #include "../linear_algebra/blas_level2.h" // Side, Trans enums
+#include "../linear_algebra/blas_level3.h" // gemm/trmm helpers
+#include "../backends/lapack_backend.h"
 
 namespace fem::numeric::decompositions {
 
@@ -31,12 +33,15 @@ constexpr T conj_if_complex(const T& x) {
   else { return x; }
 }
 
+// Forward declaration for blocked QR
+template <typename T, typename Storage, StorageOrder Order>
+int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 48);
+
 // ---------------------------------------------------------------------------
-// QR factorization (Householder) – in-place compact storage
-// Returns 0 on success. A is m x n. tau.size() becomes k = min(m,n).
+// Unblocked QR (Householder) – in-place compact storage (internal helper)
 // ---------------------------------------------------------------------------
-template <typename T>
-int qr_factor(Matrix<T>& A, std::vector<T>& tau)
+template <typename T, typename Storage, StorageOrder Order>
+int qr_factor_unblocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
 {
   const std::size_t m = A.rows();
   const std::size_t n = A.cols();
@@ -337,6 +342,149 @@ Matrix<T> form_R(const Matrix<T>& A_fact)
   return R;
 }
 
+// ---------------------------------------------------------------------------
+// Blocked QR factorization (Householder, compact WY form on updates)
+// 1) Panel factorization via unblocked qr_factor on A(j:m, j:j+kb)
+// 2) Build V (m_j x kb) with v_j columns (diag 1, below-diag from A)
+// 3) Build T (kb x kb) upper-triangular using LARFT (Forward, Columnwise)
+// 4) Trailing update: B := (I - V T V^H) B using Level-3 kernels
+// Falls back to LAPACK backend (geqrf) if enabled.
+// ---------------------------------------------------------------------------
+template <typename T>
+template <typename T, typename Storage, StorageOrder Order>
+int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 48)
+{
+  using namespace fem::numeric::linear_algebra;
+  const std::size_t m = A.rows();
+  const std::size_t n = A.cols();
+  const std::size_t k = std::min(m, n);
+  tau.assign(k, T{});
+
+  // Backend attempt (no-op unless linked via CMake)
+  {
+    int info_backend = 0;
+    if (backends::lapack::geqrf_inplace(A, tau, info_backend)) return info_backend;
+  }
+
+  if (k == 0) return 0;
+  const std::size_t bs = std::max<std::size_t>(1, block);
+
+  auto build_V_from_panel = [&](const Matrix<T>& P, Matrix<T>& V) {
+    const std::size_t pm = P.rows();
+    const std::size_t pk = P.cols();
+    V = Matrix<T>(pm, pk, T{});
+    for (std::size_t j = 0; j < pk; ++j) {
+      V(j, j) = T{1};
+      for (std::size_t i = j + 1; i < pm; ++i) V(i, j) = P(i, j);
+    }
+  };
+
+  auto build_T_from_V_tau = [&](const Matrix<T>& V, const std::vector<T>& taup, Matrix<T>& Tmat) {
+    const std::size_t pm = V.rows();
+    const std::size_t pk = V.cols();
+    Tmat = Matrix<T>(pk, pk, T{});
+    for (std::size_t i = 0; i < pk; ++i) {
+      T ti = taup[i];
+      Tmat(i, i) = ti;
+      if (ti == T{} || i == 0) continue;
+      // tmp = -tau_i * V(:,0:i-1)^H * v_i  (length i)
+      std::vector<T> tmp(i, T{});
+      for (std::size_t j = 0; j < i; ++j) {
+        T s{};
+        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, j)) * V(r, i);
+        tmp[j] = static_cast<T>(-1) * ti * s;
+      }
+      // z = T(0:i-1,0:i-1) * tmp  (upper triangular)
+      for (std::size_t row = 0; row < i; ++row) {
+        T acc{};
+        for (std::size_t col = row; col < i; ++col) acc += Tmat(row, col) * tmp[col];
+        Tmat(row, i) = acc;
+      }
+    }
+  };
+
+  for (std::size_t j = 0; j < k; j += bs) {
+    const std::size_t kb = std::min(bs, k - j);
+    auto Ap = A.submatrix(j, m, j, j + kb); // panel
+    std::vector<T> taup(kb, T{});
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+    int info_panel = 0;
+    const std::size_t pm = m - j; const std::size_t pn = kb;
+    if constexpr (Order == StorageOrder::ColumnMajor) {
+      int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(A.rows());
+      backends::lapack::geqrf_cm<T>(M, N, Ap.data(), lda, taup.data(), info_panel);
+    }
+#if defined(FEM_NUMERIC_ENABLE_LAPACKE)
+    else if constexpr (Order == StorageOrder::RowMajor) {
+      int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(A.cols());
+      info_panel = backends::lapack::geqrf_rm<T>(M, N, Ap.data(), lda, taup.data());
+    } else {
+#else
+    else {
+#endif
+      // Copy panel to column-major, factor, then copy back
+      std::vector<T> panel(pm * pn);
+      for (std::size_t col = 0; col < pn; ++col)
+        for (std::size_t row = 0; row < pm; ++row)
+          panel[col * pm + row] = A(j + row, j + col);
+      int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(pm);
+      backends::lapack::geqrf_cm<T>(M, N, panel.data(), lda, taup.data(), info_panel);
+      for (std::size_t col = 0; col < pn; ++col)
+        for (std::size_t row = 0; row < pm; ++row)
+          A(j + row, j + col) = panel[col * pm + row];
+    }
+    (void)info_panel; // QR typically succeeds; tau handles rank info via zeros
+#else
+    qr_factor_unblocked(Ap, taup);
+#endif
+    for (std::size_t t = 0; t < kb; ++t) tau[j + t] = taup[t];
+
+    // Trailing update with WY: B := (I - V T V^H) B
+    if (j + kb < n) {
+      // Build V and T from panel
+      Matrix<T> V;
+      build_V_from_panel(Ap, V);
+      Matrix<T> Tmat;
+      build_T_from_V_tau(V, taup, Tmat);
+
+      auto B = A.submatrix(j, m, j + kb, n); // trailing
+
+      // Y = V^H * B  (kb x nt)
+      Matrix<T> Y(V.cols(), B.cols(), T{});
+      gemm(Trans::ConjTranspose, Trans::NoTrans, T{1}, V, B, T{0}, Y);
+
+      // W = T * Y (in-place on Y), T is upper-triangular
+      trmm(Side::Left, Uplo::Upper, Trans::NoTrans, Diag::NonUnit, T{1}, Tmat, Y);
+
+      // B -= V * W
+      gemm(Trans::NoTrans, Trans::NoTrans, T{-1}, V, Y, T{1}, B);
+    }
+  }
+  return 0;
+}
+
 } // namespace fem::numeric::decompositions
 
 #endif // NUMERIC_DECOMPOSITIONS_QR_H
+// ---------------------------------------------------------------------------
+// QR factorization (best path):
+//  - ColumnMajor + LAPACK: call geqrf on whole matrix (zero-copy)
+//  - Otherwise: blocked QR (uses panel LAPACK when available; else unblocked on panels)
+// ---------------------------------------------------------------------------
+template <typename T, typename Storage, StorageOrder Order>
+int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
+{
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+  if constexpr (Order == StorageOrder::ColumnMajor) {
+    const std::size_t m = A.rows();
+    const std::size_t n = A.cols();
+    const std::size_t k = std::min(m, n);
+    tau.assign(k, T{});
+    int info = 0;
+    int M = static_cast<int>(m), N = static_cast<int>(n), lda = static_cast<int>(A.rows());
+    backends::lapack::geqrf_cm<T>(M, N, A.data(), lda, tau.data(), info);
+    return info;
+  }
+#endif
+  return qr_factor_blocked(A, tau);
+}

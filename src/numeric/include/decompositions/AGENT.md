@@ -32,3 +32,12 @@ decompositions/
 ## Notes
 - Factorization results should be compatible with autodiff element types (seeded via `operations/`).
 - Consider providing fallback iterative refinement routines to improve numerical robustness.
+
+## Performance Notes (blocked + backends)
+- Blocked variants now exist using Level-3 BLAS updates:
+  - `cholesky_factor_blocked(A, uplo, block)` (TRSM + SYRK updates)
+  - `lu_factor_blocked(A, piv, block)` (right-looking panel + GEMM update)
+  - `qr_factor_blocked(A, tau, block)` (WY update with V/T via GEMM/TRMM)
+- Optional backend dispatch to LAPACK/MKL is available when configured:
+  - Enable with CMake option `-DFEM_NUMERIC_ENABLE_LAPACK=ON` (requires `find_package(LAPACK)`)
+  - When enabled and linked, the blocked entry points will attempt backend calls first.
