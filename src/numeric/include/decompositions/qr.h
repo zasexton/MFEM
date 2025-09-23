@@ -432,7 +432,8 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     form_block_T_forward_columnwise<T>(V, taup, Tmat);
   };
 
-  auto apply_block_reflectors = [&](const Matrix<T>& V, const Matrix<T>& Tmat, Matrix<T>& B) {
+  auto apply_block_reflectors = [&](const Matrix<T>& V, const Matrix<T>& Tmat, auto&& B_like) {
+    MatrixView<typename std::remove_reference_t<decltype(B_like)>::value_type> B = B_like.view();
     const std::size_t pm = V.rows();
     const std::size_t kb = V.cols();
     const std::size_t nt = B.cols();
