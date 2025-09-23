@@ -33,6 +33,37 @@ constexpr T conj_if_complex(const T& x) {
   else { return x; }
 }
 
+// Internal helper: build T for a block of reflectors stored in V (Forward, Columnwise)
+// V is pm x pk with columns v_j in panel-relative indexing (unit lower trapezoidal)
+// tau contains the pk Householder scalars for this panel.
+template <typename T>
+static inline void form_block_T_forward_columnwise(const Matrix<T>& V,
+                                                   const std::vector<T>& tau,
+                                                   Matrix<T>& Tmat)
+{
+  const std::size_t pm = V.rows();
+  const std::size_t pk = V.cols();
+  Tmat = Matrix<T>(pk, pk, T{});
+  for (std::size_t i = 0; i < pk; ++i) {
+    const T ti = tau[i];
+    Tmat(i, i) = ti;
+    if (ti == T{} || i == 0) continue;
+    // tmp = -tau_i * V(:,0:i-1)^H * v_i  (length i)
+    std::vector<T> tmp(i, T{});
+    for (std::size_t j = 0; j < i; ++j) {
+      T s{};
+      for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, j)) * V(r, i);
+      tmp[j] = static_cast<T>(-1) * ti * s;
+    }
+    // z = T(0:i-1,0:i-1) * tmp  (upper triangular)
+    for (std::size_t row = 0; row < i; ++row) {
+      T acc{};
+      for (std::size_t col = row; col < i; ++col) acc += Tmat(row, col) * tmp[col];
+      Tmat(row, i) = acc;
+    }
+  }
+}
+
 // Forward declaration for blocked QR
 template <typename T, typename Storage, StorageOrder Order>
 int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 48);
@@ -372,11 +403,14 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   const std::size_t k = std::min(m, n);
   tau.assign(k, T{});
 
-  // Backend attempt (no-op unless linked via CMake)
+  // Backend attempt (no-op unless linked via CMake). For WY dev testing, skip
+  // the backend path so that the custom blocked implementation is exercised.
+#if !defined(FEM_NUMERIC_QR_TEST_WY)
   {
     int info_backend = 0;
     if (backends::lapack::geqrf_inplace(A, tau, info_backend)) return info_backend;
   }
+#endif
 
   if (k == 0) return 0;
   const std::size_t bs = std::max<std::size_t>(1, block);
@@ -395,25 +429,36 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   };
 
   auto build_T_from_V_tau = [&](const Matrix<T>& V, const std::vector<T>& taup, Matrix<T>& Tmat) {
+    form_block_T_forward_columnwise<T>(V, taup, Tmat);
+  };
+
+  auto apply_block_reflectors = [&](const Matrix<T>& V, const Matrix<T>& Tmat, Matrix<T>& B) {
     const std::size_t pm = V.rows();
-    const std::size_t pk = V.cols();
-    Tmat = Matrix<T>(pk, pk, T{});
-    for (std::size_t i = 0; i < pk; ++i) {
-      T ti = taup[i];
-      Tmat(i, i) = ti;
-      if (ti == T{} || i == 0) continue;
-      // tmp = -tau_i * V(:,0:i-1)^H * v_i  (length i)
-      std::vector<T> tmp(i, T{});
-      for (std::size_t j = 0; j < i; ++j) {
+    const std::size_t kb = V.cols();
+    const std::size_t nt = B.cols();
+    Matrix<T> Y(kb, nt, T{});
+    // Y = V^H * B
+    for (std::size_t jcol = 0; jcol < nt; ++jcol) {
+      for (std::size_t irow = 0; irow < kb; ++irow) {
         T s{};
-        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, j)) * V(r, i);
-        tmp[j] = static_cast<T>(-1) * ti * s;
+        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, irow)) * B(r, jcol);
+        Y(irow, jcol) = s;
       }
-      // z = T(0:i-1,0:i-1) * tmp  (upper triangular)
-      for (std::size_t row = 0; row < i; ++row) {
-        T acc{};
-        for (std::size_t col = row; col < i; ++col) acc += Tmat(row, col) * tmp[col];
-        Tmat(row, i) = acc;
+    }
+    // Y = T * Y (upper triangular)
+    for (std::size_t jcol = 0; jcol < nt; ++jcol) {
+      for (std::size_t irow = 0; irow < kb; ++irow) {
+        T s{};
+        for (std::size_t k = irow; k < kb; ++k) s += Tmat(irow, k) * Y(k, jcol);
+        Y(irow, jcol) = s;
+      }
+    }
+    // B -= V * Y
+    for (std::size_t jcol = 0; jcol < nt; ++jcol) {
+      for (std::size_t r = 0; r < pm; ++r) {
+        T s{};
+        for (std::size_t k = 0; k < kb; ++k) s += V(r, k) * Y(k, jcol);
+        B(r, jcol) = B(r, jcol) - s;
       }
     }
   };
@@ -468,16 +513,7 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       build_T_from_V_tau(V, taup, Tmat);
 
       auto B = A.submatrix(j, m, j + kb, n); // trailing
-
-      // Y = V^H * B  (kb x nt)
-      Matrix<T> Y(V.cols(), B.cols(), T{});
-      gemm(Trans::ConjTranspose, Trans::NoTrans, T{1}, V, B, T{0}, Y);
-
-      // W = T * Y (in-place on Y), T is upper-triangular
-      trmm(Side::Left, Uplo::Upper, Trans::NoTrans, Diag::NonUnit, T{1}, Tmat, Y);
-
-      // B -= V * W
-      gemm(Trans::NoTrans, Trans::NoTrans, T{-1}, V, Y, T{1}, B);
+      apply_block_reflectors(V, Tmat, B);
     }
   }
   return 0;
@@ -511,9 +547,13 @@ int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
     return info;
   }
 #endif
-  // Row-major fallback: use robust unblocked Householder QR for correctness
-  // across all shapes. Blocked WY path remains available via ColumnMajor+LAPACK.
+  // Row-major fallback: for WY development, allow blocked path when
+  // FEM_NUMERIC_QR_TEST_WY is enabled; otherwise use robust unblocked.
+#if defined(FEM_NUMERIC_QR_TEST_WY)
+  return qr_factor_blocked(A, tau, /*block=*/48);
+#else
   return qr_factor_unblocked(A, tau);
+#endif
 }
 
 } // namespace fem::numeric::decompositions
