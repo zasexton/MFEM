@@ -386,9 +386,11 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     const std::size_t pk = P.cols();
     V = Matrix<T>(pm, pk, T{});
     for (std::size_t j = 0; j < pk; ++j) {
-      // v = [1; P(1:pm-1, j)], since panel stores v_tail normalized and diag holds beta
-      V(0, j) = T{1};
-      for (std::size_t i = 1; i < pm; ++i) V(i, j) = P(i, j);
+      // For column j in the panel, v has zeros in rows 0..j-1, 1 at row j,
+      // and the stored tail P(j+1:pm-1, j) below.
+      for (std::size_t i = 0; i < j; ++i) V(i, j) = T{};
+      V(j, j) = T{1};
+      for (std::size_t i = j + 1; i < pm; ++i) V(i, j) = P(i, j);
     }
   };
 
