@@ -40,8 +40,9 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
 // ---------------------------------------------------------------------------
 // Unblocked QR (Householder) – in-place compact storage (internal helper)
 // ---------------------------------------------------------------------------
-template <typename T, typename Storage, StorageOrder Order>
-int qr_factor_unblocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
+// Generic unblocked QR helper operating on any matrix-like (Matrix or MatrixView)
+template <typename ARef, typename T>
+int qr_factor_unblocked_any(ARef& A, std::vector<T>& tau)
 {
   const std::size_t m = A.rows();
   const std::size_t n = A.cols();
@@ -120,6 +121,18 @@ int qr_factor_unblocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
   }
 
   return 0;
+}
+
+template <typename T, typename Storage, StorageOrder Order>
+int qr_factor_unblocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
+{
+  return qr_factor_unblocked_any<Matrix<T, Storage, Order>, T>(A, tau);
+}
+
+template <typename T>
+int qr_factor_unblocked(fem::numeric::MatrixView<T>& A, std::vector<T>& tau)
+{
+  return qr_factor_unblocked_any<fem::numeric::MatrixView<T>, T>(A, tau);
 }
 
 // ---------------------------------------------------------------------------
@@ -351,7 +364,7 @@ Matrix<T> form_R(const Matrix<T>& A_fact)
 // Falls back to LAPACK backend (geqrf) if enabled.
 // ---------------------------------------------------------------------------
 template <typename T, typename Storage, StorageOrder Order>
-int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 48)
+int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block)
 {
   using namespace fem::numeric::linear_algebra;
   const std::size_t m = A.rows();
@@ -434,6 +447,11 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     }
     (void)info_panel; // QR typically succeeds; tau handles rank info via zeros
 #else
+    // Fallback: unblocked QR for the panel (works on MatrixView)
+    {
+      // Implement a local unblocked factorization over the view
+      // Reuse the same logic via a generic helper
+    }
     qr_factor_unblocked(Ap, taup);
 #endif
     for (std::size_t t = 0; t < kb; ++t) tau[j + t] = taup[t];
