@@ -230,10 +230,16 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
           }
         }
       }
-      if (info_blk != 0) return static_cast<int>(k + info_blk);
+      if (info_blk != 0) {
+        int ret = (info_blk > 0) ? static_cast<int>(k) + info_blk : info_blk;
+        return ret;
+      }
 #else
       info_blk = chol_unblocked_view(Akk, Uplo::Upper);
-      if (info_blk != 0) return static_cast<int>(k + info_blk);
+      if (info_blk != 0) {
+        int ret = (info_blk > 0) ? static_cast<int>(k) + info_blk : info_blk;
+        return ret;
+      }
 #endif
 
       if (k + kb < n) {

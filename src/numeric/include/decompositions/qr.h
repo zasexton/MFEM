@@ -350,7 +350,6 @@ Matrix<T> form_R(const Matrix<T>& A_fact)
 // 4) Trailing update: B := (I - V T V^H) B using Level-3 kernels
 // Falls back to LAPACK backend (geqrf) if enabled.
 // ---------------------------------------------------------------------------
-template <typename T>
 template <typename T, typename Storage, StorageOrder Order>
 int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 48)
 {
