@@ -73,8 +73,8 @@ int cholesky_factor(Matrix<T, Storage, Order>& A,
 // ---------------------------------------------------------------------------
 template <typename T, typename Storage, StorageOrder Order>
 int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
-                            fem::numeric::linear_algebra::Uplo uplo = fem::numeric::linear_algebra::Uplo::Lower,
-                            std::size_t block = 64)
+                            fem::numeric::linear_algebra::Uplo uplo,
+                            std::size_t block)
 {
   using namespace fem::numeric::linear_algebra;
 
@@ -97,7 +97,12 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
         R diag = static_cast<R>(real(V(i, i)));
         for (std::size_t k = 0; k < i; ++k) {
           auto lik = V(i, k);
-          R mag2 = is_complex_number_v<T> ? static_cast<R>(std::norm(lik)) : static_cast<R>(lik * lik);
+          R mag2;
+          if constexpr (is_complex_number_v<T>) {
+            mag2 = static_cast<R>(std::norm(lik));
+          } else {
+            mag2 = static_cast<R>(lik * lik);
+          }
           diag -= mag2;
         }
         if (!(diag > R{0})) return static_cast<int>(i) + 1;
@@ -116,7 +121,12 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
         R diag = static_cast<R>(real(V(i, i)));
         for (std::size_t k = 0; k < i; ++k) {
           auto uki = V(k, i);
-          R mag2 = is_complex_number_v<T> ? static_cast<R>(std::norm(uki)) : static_cast<R>(uki * uki);
+          R mag2;
+          if constexpr (is_complex_number_v<T>) {
+            mag2 = static_cast<R>(std::norm(uki));
+          } else {
+            mag2 = static_cast<R>(uki * uki);
+          }
           diag -= mag2;
         }
         if (!(diag > R{0})) return static_cast<int>(i) + 1;
@@ -164,10 +174,16 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
           }
         }
       }
-      if (info_blk != 0) return static_cast<int>(k + info_blk);
+      if (info_blk != 0) {
+        int ret = (info_blk > 0) ? static_cast<int>(k) + info_blk : info_blk;
+        return ret;
+      }
 #else
       info_blk = chol_unblocked_view(Akk, Uplo::Lower);
-      if (info_blk != 0) return static_cast<int>(k + info_blk);
+      if (info_blk != 0) {
+        int ret = (info_blk > 0) ? static_cast<int>(k) + info_blk : info_blk;
+        return ret;
+      }
 #endif
 
       // Panel solve: L_ik = A_ik * inv(L_kk^H)

@@ -463,9 +463,6 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   return 0;
 }
 
-} // namespace fem::numeric::decompositions
-
-#endif // NUMERIC_DECOMPOSITIONS_QR_H
 // ---------------------------------------------------------------------------
 // QR factorization (best path):
 //  - ColumnMajor + LAPACK: call geqrf on whole matrix (zero-copy)
@@ -488,3 +485,7 @@ int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
 #endif
   return qr_factor_blocked(A, tau);
 }
+
+} // namespace fem::numeric::decompositions
+
+#endif // NUMERIC_DECOMPOSITIONS_QR_H

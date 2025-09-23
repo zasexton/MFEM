@@ -182,7 +182,7 @@ T lu_determinant(const Matrix<T>& LU, const std::vector<int>& piv)
 namespace fem::numeric::decompositions {
 
 template <typename T, typename Storage, StorageOrder Order>
-int lu_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<int>& piv, std::size_t block = 64)
+int lu_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<int>& piv, std::size_t block)
 {
     using std::abs;
     using namespace fem::numeric::linear_algebra;
