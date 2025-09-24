@@ -716,3 +716,8 @@ if(NOT DEFINED FEM_NUMERIC_QUIET_TESTS)
     message(STATUS "================================================================================")
     message(STATUS "")
 endif()
+# Dev option: enable WY parity tests and route row-major QR to blocked path
+option(FEM_NUMERIC_QR_TEST_WY "Enable WY dev tests and blocked row-major QR path" OFF)
+if(FEM_NUMERIC_QR_TEST_WY)
+    target_compile_definitions(fem_numeric_test_utils INTERFACE FEM_NUMERIC_QR_TEST_WY)
+endif()

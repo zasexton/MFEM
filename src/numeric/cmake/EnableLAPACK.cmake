@@ -35,8 +35,8 @@ set(OPENBLAS_ENABLE_LAPACK ON CACHE BOOL "Build OpenBLAS with LAPACK" FORCE)
 
 FetchContent_Declare(
     openblas
-    GIT_REPOSITORY https://github.com/xianyi/OpenBLAS.git
-    GIT_TAG v0.3.26
+    GIT_REPOSITORY https://github.com/OpenMathLib/OpenBLAS.git
+    GIT_TAG v0.3.30
     GIT_SHALLOW TRUE
 )
 

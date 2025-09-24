@@ -34,6 +34,11 @@ extern "C" {
   void dgeqrf_(const int*, const int*, double*, const int*, double*, double*, const int*, int*);
   void cgeqrf_(const int*, const int*, std::complex<float>*, const int*, std::complex<float>*, std::complex<float>*, const int*, int*);
   void zgeqrf_(const int*, const int*, std::complex<double>*, const int*, std::complex<double>*, std::complex<double>*, const int*, int*);
+  // DLARFT (form T for block of reflectors): Forward, Columnwise variants used.
+  void slarft_(const char*, const char*, const int*, const int*, const float*, const int*, const float*, float*, const int*);
+  void dlarft_(const char*, const char*, const int*, const int*, const double*, const int*, const double*, double*, const int*);
+  void clarft_(const char*, const char*, const int*, const int*, const std::complex<float>*, const int*, const std::complex<float>*, std::complex<float>*, const int*);
+  void zlarft_(const char*, const char*, const int*, const int*, const std::complex<double>*, const int*, const std::complex<double>*, std::complex<double>*, const int*);
 }
 
 template <typename T>
@@ -73,6 +78,19 @@ inline void geqrf_cm(int m, int n, T* a, int lda, T* tau, int& info)
   else if constexpr (std::is_same_v<T, double>) dgeqrf_(&m, &n, reinterpret_cast<double*>(a), &lda, reinterpret_cast<double*>(tau), reinterpret_cast<double*>(work.data()), &lwork, &info);
   else if constexpr (std::is_same_v<T, std::complex<float>>)  cgeqrf_(&m, &n, reinterpret_cast<std::complex<float>*>(a), &lda, reinterpret_cast<std::complex<float>*>(tau), reinterpret_cast<std::complex<float>*>(work.data()), &lwork, &info);
   else if constexpr (std::is_same_v<T, std::complex<double>>) zgeqrf_(&m, &n, reinterpret_cast<std::complex<double>*>(a), &lda, reinterpret_cast<std::complex<double>*>(tau), reinterpret_cast<std::complex<double>*>(work.data()), &lwork, &info);
+}
+
+// Lightweight wrapper to form T from V and tau for a block of reflectors
+template <typename T>
+inline void larft_cm(char direct, char storev, int n, int k,
+                     const T* V, int ldv,
+                     const T* tau,
+                     T* Tm, int ldt)
+{
+  if constexpr (std::is_same_v<T, float>)      slarft_(&direct, &storev, &n, &k, reinterpret_cast<const float*>(V), &ldv, reinterpret_cast<const float*>(tau), reinterpret_cast<float*>(Tm), &ldt);
+  else if constexpr (std::is_same_v<T, double>) dlarft_(&direct, &storev, &n, &k, reinterpret_cast<const double*>(V), &ldv, reinterpret_cast<const double*>(tau), reinterpret_cast<double*>(Tm), &ldt);
+  else if constexpr (std::is_same_v<T, std::complex<float>>)  clarft_(&direct, &storev, &n, &k, reinterpret_cast<const std::complex<float>*>(V), &ldv, reinterpret_cast<const std::complex<float>*>(tau), reinterpret_cast<std::complex<float>*>(Tm), &ldt);
+  else if constexpr (std::is_same_v<T, std::complex<double>>) zlarft_(&direct, &storev, &n, &k, reinterpret_cast<const std::complex<double>*>(V), &ldv, reinterpret_cast<const std::complex<double>*>(tau), reinterpret_cast<std::complex<double>*>(Tm), &ldt);
 }
 #endif // FEM_NUMERIC_ENABLE_LAPACK
 
