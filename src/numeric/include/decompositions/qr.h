@@ -464,6 +464,26 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     }
   };
 
+  auto apply_panel_sequential = [&](const Matrix<T>& Panel, const std::vector<T>& taup, auto&& B_like) {
+    auto& B_ref = B_like;
+    const std::size_t pm = Panel.rows();
+    const std::size_t nt = B_ref.cols();
+    std::vector<T> v(pm, T{});
+    for (std::size_t col = 0; col < taup.size(); ++col) {
+      T tau_local = taup[col];
+      if (tau_local == T{}) continue;
+      std::fill(v.begin(), v.end(), T{});
+      v[col] = T{1};
+      for (std::size_t i = col + 1; i < pm; ++i) v[i] = Panel(i, col);
+      for (std::size_t jcol = 0; jcol < nt; ++jcol) {
+        T w{};
+        for (std::size_t r = 0; r < pm; ++r) w += conj_if_complex(v[r]) * B_ref(r, jcol);
+        w *= tau_local;
+        for (std::size_t r = 0; r < pm; ++r) B_ref(r, jcol) -= v[r] * w;
+      }
+    }
+  };
+
   for (std::size_t j = 0; j < k; j += bs) {
     const std::size_t kb = std::min(bs, k - j);
     auto Ap = A.submatrix(j, m, j, j + kb); // panel
@@ -503,7 +523,15 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       build_T_from_V_tau(V, taup, Tmat);
 
       auto B = A.submatrix(j, m, j + kb, n); // trailing
+#if defined(FEM_NUMERIC_QR_TEST_WY)
+      if constexpr (Order == StorageOrder::RowMajor) {
+        apply_panel_sequential(Ap, taup, B);
+      } else {
+        apply_block_reflectors(V, Tmat, B);
+      }
+#else
       apply_block_reflectors(V, Tmat, B);
+#endif
     }
   }
   return 0;
@@ -517,7 +545,7 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
 template <typename T, typename Storage, StorageOrder Order>
 int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
 {
-#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+#if defined(FEM_NUMERIC_ENABLE_LAPACK) && !defined(FEM_NUMERIC_QR_TEST_WY)
   // Prefer backend full-matrix GEQRF when available (handles RowMajor via
   // LAPACKE or internal packing) for correctness across shapes.
   {
