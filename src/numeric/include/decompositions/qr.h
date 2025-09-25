@@ -446,12 +446,14 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
         Y(irow, jcol) = s;
       }
     }
-    // Y = T * Y (upper triangular)
+    // Y = T^H * Y (DLARFB-style: transpose + conjugate)
     for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-      for (std::size_t irow = 0; irow < kb; ++irow) {
-        T s{};
-        for (std::size_t k = irow; k < kb; ++k) s += Tmat(irow, k) * Y(k, jcol);
-        Y(irow, jcol) = s;
+      for (std::size_t rev = kb; rev-- > 0;) {
+        T s = conj_if_complex(Tmat(rev, rev)) * Y(rev, jcol);
+        for (std::size_t k = 0; k < rev; ++k) {
+          s += conj_if_complex(Tmat(k, rev)) * Y(k, jcol);
+        }
+        Y(rev, jcol) = s;
       }
     }
     // B -= V * Y
@@ -460,26 +462,6 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
         T s{};
         for (std::size_t k = 0; k < kb; ++k) s += V(r, k) * Y(k, jcol);
         B_ref(r, jcol) = B_ref(r, jcol) - s;
-      }
-    }
-  };
-
-  auto apply_panel_sequential = [&](const Matrix<T>& Panel, const std::vector<T>& taup, auto&& B_like) {
-    auto& B_ref = B_like;
-    const std::size_t pm = Panel.rows();
-    const std::size_t nt = B_ref.cols();
-    std::vector<T> v(pm, T{});
-    for (std::size_t col = 0; col < taup.size(); ++col) {
-      T tau_local = taup[col];
-      if (tau_local == T{}) continue;
-      std::fill(v.begin(), v.end(), T{});
-      v[col] = T{1};
-      for (std::size_t i = col + 1; i < pm; ++i) v[i] = Panel(i, col);
-      for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-        T w{};
-        for (std::size_t r = 0; r < pm; ++r) w += conj_if_complex(v[r]) * B_ref(r, jcol);
-        w *= tau_local;
-        for (std::size_t r = 0; r < pm; ++r) B_ref(r, jcol) -= v[r] * w;
       }
     }
   };
@@ -525,7 +507,44 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       auto B = A.submatrix(j, m, j + kb, n); // trailing
 #if defined(FEM_NUMERIC_QR_TEST_WY)
       if constexpr (Order == StorageOrder::RowMajor) {
-        apply_panel_sequential(Ap, taup, B);
+        // Diagnostic: compare blocked vs sequential application on row-major path
+        Matrix<T> B_block = B;
+        Matrix<T> B_seq = B;
+        apply_block_reflectors(V, Tmat, B_block);
+        // Sequential Householder application
+        Matrix<T> PanelCopy = Ap;
+        const std::size_t pm = PanelCopy.rows();
+        auto apply_seq = [&](Matrix<T>& target) {
+          for (std::size_t col = 0; col < taup.size(); ++col) {
+            T tau_local = taup[col];
+            if (tau_local == T{}) continue;
+            std::vector<T> v(pm, T{});
+            v[col] = T{1};
+            for (std::size_t r = col + 1; r < pm; ++r) v[r] = PanelCopy(r, col);
+            for (std::size_t cc = 0; cc < target.cols(); ++cc) {
+              T w{};
+              for (std::size_t rr = 0; rr < pm; ++rr) w += conj_if_complex(v[rr]) * target(rr, cc);
+              w *= tau_local;
+              for (std::size_t rr = 0; rr < pm; ++rr) target(rr, cc) -= v[rr] * w;
+            }
+          }
+        };
+        apply_seq(B_seq);
+        double max_diff = 0.0;
+        auto abs_val = [](const T& val) {
+          if constexpr (is_complex_number_v<T>) return std::abs(val);
+          else return std::abs(static_cast<typename numeric_traits<T>::scalar_type>(val));
+        };
+        for (std::size_t rr = 0; rr < B.rows(); ++rr)
+          for (std::size_t cc = 0; cc < B.cols(); ++cc) {
+            double d = static_cast<double>(abs_val(B_block(rr, cc) - B_seq(rr, cc)));
+            if (d > max_diff) max_diff = d;
+            B(rr, cc) = B_block(rr, cc);
+          }
+        if (max_diff > 1e-9) {
+          std::cerr << "WY blocked mismatch (row-major) at panel " << j
+                    << " block size " << kb << " diff=" << max_diff << "\n";
+        }
       } else {
         apply_block_reflectors(V, Tmat, B);
       }
@@ -565,13 +584,20 @@ int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
     return info;
   }
 #endif
-  // Row-major fallback: for WY development, allow blocked path when
-  // FEM_NUMERIC_QR_TEST_WY is enabled; otherwise use robust unblocked.
-#if defined(FEM_NUMERIC_QR_TEST_WY)
+  const std::size_t m = A.rows();
+  const std::size_t n = A.cols();
+  const std::size_t k = std::min(m, n);
+  if (k == 0) {
+    tau.clear();
+    return 0;
+  }
+
+  // Small problems benefit from the scalar unblocked path (less overhead).
+  if (k <= 8) {
+    return qr_factor_unblocked(A, tau);
+  }
+
   return qr_factor_blocked(A, tau, /*block=*/48);
-#else
-  return qr_factor_unblocked(A, tau);
-#endif
 }
 
 } // namespace fem::numeric::decompositions

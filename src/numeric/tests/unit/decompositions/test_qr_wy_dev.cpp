@@ -3,6 +3,10 @@
 #include <decompositions/qr.h>
 #include <core/matrix.h>
 #include <vector>
+#include <complex>
+#include <array>
+#include <type_traits>
+#include <cmath>
 
 using namespace fem::numeric;
 using namespace fem::numeric::decompositions;
@@ -16,6 +20,11 @@ namespace {
 template <typename T>
 Matrix<T> matmul(const Matrix<T>& A, const Matrix<T>& B)
 {
+    if (A.cols() != B.rows()) {
+        ADD_FAILURE() << "Inner dimensions must agree for matmul: A.cols()="
+                       << A.cols() << " B.rows()=" << B.rows();
+        return Matrix<T>();
+    }
     Matrix<T> C(A.rows(), B.cols(), T{});
     for (size_t i=0;i<A.rows();++i)
         for (size_t j=0;j<B.cols();++j) {
@@ -25,38 +34,130 @@ Matrix<T> matmul(const Matrix<T>& A, const Matrix<T>& B)
     return C;
 }
 
+template <typename T>
+T sample_value(double& v)
+{
+    double real = std::sin(v) + 0.2 * std::cos(2 * v);
+    v += 0.37;
+    if constexpr (std::is_same_v<T, std::complex<double>>) {
+        double imag = std::cos(3 * v) + 0.15 * std::sin(5 * v);
+        v += 0.19;
+        return T(real, imag);
+    } else {
+        return static_cast<T>(real);
+    }
+}
+
+template <typename T>
+Matrix<T> make_matrix(size_t m, size_t n, double seed)
+{
+    Matrix<T> A(m, n, T{});
+    double v = seed;
+    for (size_t i = 0; i < m; ++i)
+        for (size_t j = 0; j < n; ++j)
+            A(i, j) = sample_value<T>(v);
+    return A;
+}
+
+template <typename T>
+double value_norm(const T& x)
+{
+    if constexpr (std::is_same_v<T, std::complex<double>>) {
+        return std::abs(x);
+    } else {
+        return std::abs(static_cast<double>(x));
+    }
+}
+
+template <typename T>
+void expect_blocked_matches_unblocked(size_t m, size_t n, std::size_t block, double seed)
+{
+    Matrix<T> A0 = make_matrix<T>(m, n, seed);
+
+    Matrix<T> Au = A0;
+    std::vector<T> tau_u;
+    ASSERT_EQ(qr_factor_unblocked(Au, tau_u), 0);
+
+    Matrix<T> Ab = A0;
+    std::vector<T> tau_b;
+    ASSERT_EQ(qr_factor_blocked(Ab, tau_b, block), 0);
+
+    ASSERT_EQ(tau_u.size(), tau_b.size());
+    for (size_t i = 0; i < tau_u.size(); ++i)
+        EXPECT_NEAR(value_norm(tau_u[i] - tau_b[i]), 0.0, 1e-12);
+
+    for (size_t i = 0; i < m; ++i)
+        for (size_t j = 0; j < n; ++j)
+            EXPECT_NEAR(value_norm(Au(i, j) - Ab(i, j)), 0.0, 1e-10);
+
+    Matrix<T> Qu(m, m, T{}); for (size_t i = 0; i < m; ++i) Qu(i, i) = T{1};
+    Matrix<T> Qb(m, m, T{}); for (size_t i = 0; i < m; ++i) Qb(i, i) = T{1};
+
+    apply_Q_inplace(Side::Left, Trans::NoTrans, Au, tau_u, Qu);
+    apply_Q_inplace(Side::Left, Trans::NoTrans, Ab, tau_b, Qb);
+
+    Matrix<T> Ru = form_R(Au);
+    Matrix<T> Rb = form_R(Ab);
+
+    const size_t r = std::min(m, n);
+    Matrix<T> Qu_leading(m, r, T{});
+    Matrix<T> Qb_leading(m, r, T{});
+    for (size_t i = 0; i < m; ++i) {
+        for (size_t j = 0; j < r; ++j) {
+            Qu_leading(i, j) = Qu(i, j);
+            Qb_leading(i, j) = Qb(i, j);
+        }
+    }
+
+    Matrix<T> QRu = matmul(Qu_leading, Ru);
+    Matrix<T> QRb = matmul(Qb_leading, Rb);
+
+    for (size_t i = 0; i < m; ++i)
+        for (size_t j = 0; j < n; ++j) {
+            EXPECT_NEAR(value_norm(QRu(i, j) - A0(i, j)), 0.0, 1e-10);
+            EXPECT_NEAR(value_norm(QRb(i, j) - A0(i, j)), 0.0, 1e-10);
+        }
+}
+
 } // namespace
 
 TEST(Decompositions_WY_Dev, RowMajor_Wide_Equals_Unblocked)
 {
-    // Random-ish wide matrices; compare blocked WY vs unblocked QR
-    for (auto [m,n] : { std::pair<size_t,size_t>{3,5}, std::pair<size_t,size_t>{4,7} }) {
-        Matrix<double> A0(m,n, 0.0);
-        double v=0.3; for (size_t i=0;i<m;++i) for (size_t j=0;j<n;++j) { A0(i,j) = std::sin(v) + 0.2*std::cos(2*v); v += 0.37; }
+    const std::array<std::pair<size_t, size_t>, 3> shapes{ {{3,5}, {4,7}, {5,9}} };
+    const std::array<std::size_t, 5> blocks{ {1u, 2u, 4u, 8u, 64u} };
+    const std::array<double, 3> seeds{ {0.31, 1.17, 2.05} };
 
-        // Unblocked reference
-        Matrix<double> Au = A0; std::vector<double> tau_u; ASSERT_EQ(qr_factor_unblocked(Au, tau_u), 0);
-        Matrix<double> Qu(m,m, 0.0); for (size_t i=0;i<m;++i) Qu(i,i) = 1.0;
-        apply_Q_inplace(Side::Left, Trans::NoTrans, Au, tau_u, Qu);
-        Matrix<double> Ru = form_R(Au);
-        Matrix<double> QRu = matmul(Qu, Ru);
+    for (auto [m, n] : shapes)
+        for (auto blk : blocks)
+            for (double s : seeds)
+                expect_blocked_matches_unblocked<double>(m, n, blk,
+                    s + static_cast<double>(blk) * 0.013);
+}
 
-        // Blocked WY under row-major (dev path): call blocked directly
-        Matrix<double> Ab = A0; std::vector<double> tau_b; ASSERT_EQ(qr_factor_blocked(Ab, tau_b, 32), 0);
-        Matrix<double> Qb(m,m, 0.0); for (size_t i=0;i<m;++i) Qb(i,i) = 1.0;
-        apply_Q_inplace(Side::Left, Trans::NoTrans, Ab, tau_b, Qb);
-        Matrix<double> Rb = form_R(Ab);
-        Matrix<double> QRb = matmul(Qb, Rb);
+TEST(Decompositions_WY_Dev, RowMajor_Tall_Equals_Unblocked)
+{
+    const std::array<std::pair<size_t, size_t>, 3> shapes{ {{6,4}, {7,3}, {9,5}} };
+    const std::array<std::size_t, 4> blocks{ {1u, 3u, 6u, 32u} };
+    const std::array<double, 2> seeds{ {0.42, 1.91} };
 
-        for (size_t i=0;i<m;++i) for (size_t j=0;j<n;++j) {
-            EXPECT_NEAR(Au(i,j), Ab(i,j), 1e-10);
-        }
-        // Compare reconstructions to the original A0
-        for (size_t i=0;i<m;++i) for (size_t j=0;j<n;++j) {
-            EXPECT_NEAR(QRu(i,j), A0(i,j), 1e-10);
-            EXPECT_NEAR(QRb(i,j), A0(i,j), 1e-10);
-        }
-    }
+    for (auto [m, n] : shapes)
+        for (auto blk : blocks)
+            for (double s : seeds)
+                expect_blocked_matches_unblocked<double>(m, n, blk, s + static_cast<double>(m + n) * 0.007);
+}
+
+TEST(Decompositions_WY_Dev, RowMajor_Wide_Complex_Equals_Unblocked)
+{
+    using Z = std::complex<double>;
+    const std::array<std::pair<size_t, size_t>, 2> shapes{ {{3,6}, {4,7}} };
+    const std::array<std::size_t, 4> blocks{ {1u, 2u, 4u, 16u} };
+    const std::array<double, 2> seeds{ {0.27, 1.55} };
+
+    for (auto [m, n] : shapes)
+        for (auto blk : blocks)
+            for (double s : seeds)
+                expect_blocked_matches_unblocked<Z>(m, n, blk,
+                    s + static_cast<double>(blk) * 0.021);
 }
 
 TEST(Decompositions_WY_Dev, Panel_T_vs_LAPACK_and_Update)
