@@ -251,6 +251,18 @@ if(CORE_ENABLE_THREADING)
     endif()
 endif()
 
+# POSIX real-time library (needed for shared memory functions on some systems)
+if(NOT WIN32)
+    find_library(RT_LIBRARY rt)
+    if(RT_LIBRARY)
+        if(CORE_SOURCES)
+            target_link_libraries(${LIBRARY_NAME} PUBLIC ${RT_LIBRARY})
+        else()
+            target_link_libraries(${LIBRARY_NAME} INTERFACE ${RT_LIBRARY})
+        endif()
+    endif()
+endif()
+
 # Link to parent project's options if available
 if(NOT CORE_STANDALONE_BUILD AND TARGET femsolver_options)
     if(CORE_SOURCES)

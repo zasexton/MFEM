@@ -27,6 +27,9 @@
 
 namespace fem::core::memory {
 
+// Forward declaration
+fem::core::error::ErrorCode map_ec(const std::error_code& ec, bool create) noexcept;
+
 class SharedMemory {
 public:
     SharedMemory() = default;
