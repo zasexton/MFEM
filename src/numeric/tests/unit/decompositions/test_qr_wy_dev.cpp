@@ -96,10 +96,16 @@ void expect_blocked_matches_unblocked(size_t m, size_t n, std::size_t block, dou
     apply_Q_inplace(Side::Left, Trans::NoTrans, Au, tau_u, Qu);
     apply_Q_inplace(Side::Left, Trans::NoTrans, Ab, tau_b, Qb);
 
-    Matrix<T> Ru = form_R(Au);
-    Matrix<T> Rb = form_R(Ab);
-
+    // Use economy-sized R (r x n) for WY dev comparisons
     const size_t r = std::min(m, n);
+    Matrix<T> Ru_full = form_R(Au);
+    Matrix<T> Rb_full = form_R(Ab);
+    Matrix<T> Ru(r, n, T{}), Rb(r, n, T{});
+    for (size_t i = 0; i < r; ++i)
+        for (size_t j = 0; j < n; ++j) {
+            Ru(i, j) = Ru_full(i, j);
+            Rb(i, j) = Rb_full(i, j);
+        }
     Matrix<T> Qu_leading(m, r, T{});
     Matrix<T> Qb_leading(m, r, T{});
     for (size_t i = 0; i < m; ++i) {

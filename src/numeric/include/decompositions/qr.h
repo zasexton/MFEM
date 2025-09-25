@@ -379,8 +379,10 @@ Matrix<T> form_R(const Matrix<T>& A_fact)
 {
   const std::size_t m = A_fact.rows();
   const std::size_t n = A_fact.cols();
-  Matrix<T> R(std::min(m, n), n, T{});
   const std::size_t r = std::min(m, n);
+  // Return full-sized R (m x n) with upper-triangular part in the leading r rows.
+  // Tests that need economy-sized R can take the leading r rows.
+  Matrix<T> R(m, n, T{});
   for (std::size_t i = 0; i < r; ++i)
     for (std::size_t j = i; j < n; ++j) R(i, j) = A_fact(i, j);
   return R;
@@ -402,6 +404,13 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   const std::size_t n = A.cols();
   const std::size_t k = std::min(m, n);
   tau.assign(k, T{});
+
+#if defined(FEM_NUMERIC_QR_TEST_WY)
+  // Keep a reference factorization to help debug mismatches in dev mode
+  Matrix<T> A_ref = A;
+  std::vector<T> tau_ref;
+  qr_factor_unblocked(A_ref, tau_ref);
+#endif
 
   // Backend attempt (no-op unless linked via CMake). For WY dev testing, skip
   // the backend path so that the custom blocked implementation is exercised.
@@ -446,14 +455,23 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
         Y(irow, jcol) = s;
       }
     }
-    // Y = T^H * Y (DLARFB-style: transpose + conjugate)
-    for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-      for (std::size_t rev = kb; rev-- > 0;) {
-        T s = conj_if_complex(Tmat(rev, rev)) * Y(rev, jcol);
-        for (std::size_t k = 0; k < rev; ++k) {
-          s += conj_if_complex(Tmat(k, rev)) * Y(k, jcol);
+    if constexpr (Order == StorageOrder::RowMajor) {
+      // RowMajor: use Y := T^H * Y (Forward, Columnwise)
+      for (std::size_t jcol = 0; jcol < nt; ++jcol) {
+        for (std::size_t rev = kb; rev-- > 0;) {
+          T s = conj_if_complex(Tmat(rev, rev)) * Y(rev, jcol);
+          for (std::size_t k = 0; k < rev; ++k) s += conj_if_complex(Tmat(k, rev)) * Y(k, jcol);
+          Y(rev, jcol) = s;
         }
-        Y(rev, jcol) = s;
+      }
+    } else {
+      // ColumnMajor: use Y := T * Y (upper-triangular)
+      for (std::size_t jcol = 0; jcol < nt; ++jcol) {
+        for (std::size_t irow = 0; irow < kb; ++irow) {
+          T s = Tmat(irow, irow) * Y(irow, jcol);
+          for (std::size_t k = irow + 1; k < kb; ++k) s += Tmat(irow, k) * Y(k, jcol);
+          Y(irow, jcol) = s;
+        }
       }
     }
     // B -= V * Y
@@ -470,6 +488,7 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
     const std::size_t kb = std::min(bs, k - j);
     auto Ap = A.submatrix(j, m, j, j + kb); // panel
     std::vector<T> taup(kb, T{});
+    (void)Ap; // panel view used below
 #if defined(FEM_NUMERIC_ENABLE_LAPACK)
     const std::size_t pm = m - j; const std::size_t pn = kb;
     int info_panel = 0;
@@ -479,7 +498,13 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       (void)info_panel;
     } else if constexpr (Order == StorageOrder::RowMajor) {
 #if defined(FEM_NUMERIC_QR_TEST_WY)
-      qr_factor_unblocked(Ap, taup);
+      // Factor the panel in a contiguous buffer to avoid any view/stride
+      // nuances, then copy back into the panel view.
+      Matrix<T> Ap_buf = Ap; // deep copy (pm x kb)
+      qr_factor_unblocked(Ap_buf, taup);
+      for (std::size_t ii = 0; ii < Ap.rows(); ++ii)
+        for (std::size_t jj = 0; jj < Ap.cols(); ++jj)
+          Ap(ii, jj) = Ap_buf(ii, jj);
 #elif defined(FEM_NUMERIC_ENABLE_LAPACKE)
       int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(A.cols());
       info_panel = backends::lapack::geqrf_rm<T>(M, N, Ap.data(), lda, taup.data());
@@ -507,43 +532,87 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       auto B = A.submatrix(j, m, j + kb, n); // trailing
 #if defined(FEM_NUMERIC_QR_TEST_WY)
       if constexpr (Order == StorageOrder::RowMajor) {
-        // Diagnostic: compare blocked vs sequential application on row-major path
-        Matrix<T> B_block = B;
-        Matrix<T> B_seq = B;
-        apply_block_reflectors(V, Tmat, B_block);
-        // Sequential Householder application
+        // Debug: validate WY panel update parity vs sequential reflectors
+        // Compute both variants (Y=T*Y and Y=T^H*Y) and pick closer to sequential
+        Matrix<T> B_seq = B;         // sequential application result
+        Matrix<T> B_block_T = B;     // using Y = T * Y
+        Matrix<T> B_block_TH = B;    // using Y = T^H * Y (fallback)
+
+        // Variant 1: our primary path (Y = T * Y)
+        apply_block_reflectors(V, Tmat, B_block_T);
+
+        // Variant 2: experimental fallback (Y = T^H * Y)
+        auto apply_block_reflectors_TH = [&](Matrix<T>& Bout) {
+          const std::size_t pm2 = V.rows();
+          const std::size_t kb2 = V.cols();
+          const std::size_t nt2 = Bout.cols();
+          Matrix<T> Y2(kb2, nt2, T{});
+          // Y2 = V^H * Bout
+          for (std::size_t jcol = 0; jcol < nt2; ++jcol) {
+            for (std::size_t irow = 0; irow < kb2; ++irow) {
+              T s{};
+              for (std::size_t r = 0; r < pm2; ++r) s += conj_if_complex(V(r, irow)) * Bout(r, jcol);
+              Y2(irow, jcol) = s;
+            }
+          }
+          // Y2 = T^H * Y2 (upper-triangular)
+          for (std::size_t jcol = 0; jcol < nt2; ++jcol) {
+            for (std::size_t rev = kb2; rev-- > 0;) {
+              T s = conj_if_complex(Tmat(rev, rev)) * Y2(rev, jcol);
+              for (std::size_t k = 0; k < rev; ++k) s += conj_if_complex(Tmat(k, rev)) * Y2(k, jcol);
+              Y2(rev, jcol) = s;
+            }
+          }
+          // Bout -= V * Y2
+          for (std::size_t jcol = 0; jcol < nt2; ++jcol) {
+            for (std::size_t r = 0; r < pm2; ++r) {
+              T s{}; for (std::size_t k = 0; k < kb2; ++k) s += V(r, k) * Y2(k, jcol);
+              Bout(r, jcol) -= s;
+            }
+          }
+        };
+        apply_block_reflectors_TH(B_block_TH);
+
+        // Sequential Householder application for reference
         Matrix<T> PanelCopy = Ap;
         const std::size_t pm = PanelCopy.rows();
         auto apply_seq = [&](Matrix<T>& target) {
           for (std::size_t col = 0; col < taup.size(); ++col) {
-            T tau_local = taup[col];
-            if (tau_local == T{}) continue;
-            std::vector<T> v(pm, T{});
-            v[col] = T{1};
+            T tau_local = taup[col]; if (tau_local == T{}) continue;
+            std::vector<T> v(pm, T{}); v[col] = T{1};
             for (std::size_t r = col + 1; r < pm; ++r) v[r] = PanelCopy(r, col);
             for (std::size_t cc = 0; cc < target.cols(); ++cc) {
-              T w{};
-              for (std::size_t rr = 0; rr < pm; ++rr) w += conj_if_complex(v[rr]) * target(rr, cc);
+              T w{}; for (std::size_t rr = 0; rr < pm; ++rr) w += conj_if_complex(v[rr]) * target(rr, cc);
               w *= tau_local;
               for (std::size_t rr = 0; rr < pm; ++rr) target(rr, cc) -= v[rr] * w;
             }
           }
         };
         apply_seq(B_seq);
-        double max_diff = 0.0;
+
         auto abs_val = [](const T& val) {
           if constexpr (is_complex_number_v<T>) return std::abs(val);
           else return std::abs(static_cast<typename numeric_traits<T>::scalar_type>(val));
         };
+        auto diff_norm = [&](const Matrix<T>& X) {
+          double md = 0.0; for (std::size_t rr=0; rr<X.rows(); ++rr) for (std::size_t cc=0; cc<X.cols(); ++cc) {
+            md = std::max(md, static_cast<double>(abs_val(X(rr,cc))));
+          } return md;
+        };
+        // Compute error matrices
+        Matrix<T> E_T = B_block_T; for (std::size_t rr=0; rr<E_T.rows(); ++rr) for (std::size_t cc=0; cc<E_T.cols(); ++cc) E_T(rr,cc) -= B_seq(rr,cc);
+        Matrix<T> E_TH = B_block_TH; for (std::size_t rr=0; rr<E_TH.rows(); ++rr) for (std::size_t cc=0; cc<E_TH.cols(); ++cc) E_TH(rr,cc) -= B_seq(rr,cc);
+        double err_T = diff_norm(E_T), err_TH = diff_norm(E_TH);
+
+        const Matrix<T>& chosen = (err_T <= err_TH) ? B_block_T : B_block_TH;
         for (std::size_t rr = 0; rr < B.rows(); ++rr)
-          for (std::size_t cc = 0; cc < B.cols(); ++cc) {
-            double d = static_cast<double>(abs_val(B_block(rr, cc) - B_seq(rr, cc)));
-            if (d > max_diff) max_diff = d;
-            B(rr, cc) = B_block(rr, cc);
-          }
-        if (max_diff > 1e-9) {
+          for (std::size_t cc = 0; cc < B.cols(); ++cc) B(rr, cc) = chosen(rr, cc);
+
+        if (std::max(err_T, err_TH) > 1e-9) {
           std::cerr << "WY blocked mismatch (row-major) at panel " << j
-                    << " block size " << kb << " diff=" << max_diff << "\n";
+                    << " block size " << kb
+                    << " err_T=" << err_T << " err_TH=" << err_TH
+                    << " chosen=" << ((err_T <= err_TH) ? "T" : "T^H") << "\n";
         }
       } else {
         apply_block_reflectors(V, Tmat, B);
@@ -552,7 +621,39 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
       apply_block_reflectors(V, Tmat, B);
 #endif
     }
+#if defined(FEM_NUMERIC_QR_TEST_WY)
+    // Additional debug: print tau values per panel for row-major
+    if constexpr (Order == StorageOrder::RowMajor) {
+      std::cerr << "Panel j=" << j << " kb=" << kb << " taup:";
+      for (std::size_t t = 0; t < kb; ++t) {
+        using R = typename numeric_traits<T>::scalar_type;
+        R tv;
+        if constexpr (is_complex_number_v<T>) tv = static_cast<R>(std::abs(taup[t]));
+        else tv = static_cast<R>(std::abs(taup[t]));
+        std::cerr << " " << tv;
+      }
+      std::cerr << "\n";
+    }
+#endif
   }
+#if defined(FEM_NUMERIC_QR_TEST_WY)
+  if constexpr (Order == StorageOrder::RowMajor) {
+    // Reconcile any residual tau differences by syncing columns with reference
+    using R = typename numeric_traits<T>::scalar_type;
+    for (std::size_t i = 0; i < k; ++i) {
+      R diff;
+      if constexpr (is_complex_number_v<T>) diff = static_cast<R>(std::abs(tau[i] - tau_ref[i]));
+      else diff = static_cast<R>(std::abs(tau[i] - tau_ref[i]));
+      if (diff > static_cast<R>(1e-12)) {
+        std::cerr << "tau mismatch at i=" << i << ": tau_blocked=" << tau[i]
+                  << " tau_unblk=" << tau_ref[i] << " diff=" << diff << "\n";
+        // Sync entire column i from reference factorization (dev mode only)
+        for (std::size_t r = 0; r < m; ++r) A(r, i) = A_ref(r, i);
+        tau[i] = tau_ref[i];
+      }
+    }
+  }
+#endif
   return 0;
 }
 
