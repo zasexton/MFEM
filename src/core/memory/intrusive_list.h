@@ -61,10 +61,21 @@ public:
     };
 
     [[nodiscard]] bool empty() const noexcept { return head_.next == &tail_; }
-    [[nodiscard]] std::size_t size() const noexcept { std::size_t c = 0; for (auto it = begin(); it != end(); ++it) ++c; return c; }
+    [[nodiscard]] std::size_t size() const noexcept {
+        std::size_t c = 0;
+        const intrusive_list_node* node = head_.next;
+        while (node != &tail_) {
+            ++c;
+            node = node->next;
+        }
+        return c;
+    }
 
     iterator begin() { return iterator(head_.next); }
     iterator end() { return iterator(&tail_); }
+
+    iterator begin() const { return iterator(const_cast<intrusive_list_node*>(head_.next)); }
+    iterator end() const { return iterator(const_cast<intrusive_list_node*>(&tail_)); }
 
     void push_front(T& obj) { insert_after(&head_, node_of(obj)); }
     void push_back(T& obj) { insert_before(&tail_, node_of(obj)); }
