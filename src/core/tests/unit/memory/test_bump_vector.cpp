@@ -720,7 +720,7 @@ TEST_F(BumpVectorTest, StressTest) {
 
     // Some large strings
     for (int i = 0; i < 10; ++i) {
-        vec.push_back(std::string(1000, 'A' + i));
+        vec.push_back(std::string(1000, static_cast<char>('A' + (i % 26))));
     }
 
     // Clear and refill
