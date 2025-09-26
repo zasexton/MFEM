@@ -16,24 +16,26 @@ The `memory/` layer provides advanced memory management facilities including cus
 
 ### Allocators
 ```cpp
-allocator_base.hpp      // Base allocator interface
-malloc_allocator.hpp    // Standard malloc wrapper
-aligned_allocator.hpp   // SIMD/cache-aligned allocation
-pool_allocator.hpp      // Fixed-size object pools
-arena_allocator.hpp     // Linear arena allocation
-stack_allocator.hpp     // Stack-based allocation
-freelist_allocator.hpp  // Free list management
-buddy_allocator.hpp     // Buddy system allocation
-slab_allocator.hpp      // Slab allocation for kernel-style
+allocator_base.h        // Base allocator interface
+malloc_allocator.h      // Standard malloc wrapper
+aligned_allocator.h     // SIMD/cache-aligned allocation
+pool_allocator.h        // Fixed-size object pools
+arena_allocator.h       // Linear arena allocation
+stack_allocator.h       // Stack-based allocation
+freelist_allocator.h    // Free list management
+buddy_allocator.h       // Buddy system allocation
+slab_allocator.h        // Slab allocation for kernel-style
+allocator_traits.h      // Allocator traits and type detection
 ```
 
 ### Memory Pools
 ```cpp
-memory_pool.hpp         // Generic memory pool
-object_pool.hpp         // Type-safe object pool
-thread_pool_allocator.hpp // Thread-local pools
-concurrent_pool.hpp     // Lock-free memory pool
-growing_pool.hpp        // Dynamically growing pool
+memory_pool.h           // Generic memory pool
+object_pool.h           // Type-safe object pool
+thread_pool_allocator.h // Thread-local pools
+concurrent_pool.h       // Thread-safe memory pool (mutex-based, not lock-free)
+growing_pool.h          // Dynamically growing pool
+arena.h                 // Arena memory management
 ```
 
 > **Thread Safety Note**: These pool implementations—including the concurrent variants—are the single source of truth for pooled allocation inside the core library. The `concurrency/` module reuses them for task scheduling support instead of maintaining parallel implementations.
@@ -42,37 +44,39 @@ growing_pool.hpp        // Dynamically growing pool
 
 ### Specialized Containers
 ```cpp
-small_vector.hpp        // Small buffer optimization vector
-stable_vector.hpp       // Stable pointer vector
-circular_buffer.hpp     // Fixed-size circular buffer
-flat_map.hpp           // Cache-friendly map
-flat_set.hpp           // Cache-friendly set
-intrusive_list.hpp     // Zero-allocation list
-bump_vector.hpp        // Append-only vector
+small_vector.h          // Small buffer optimization vector
+stable_vector.h         // Stable pointer vector
+circular_buffer.h       // Alias for ring_buffer
+ring_buffer.h           // Fixed-size ring buffer implementation
+flat_map.h              // Cache-friendly map
+flat_set.h              // Cache-friendly set
+intrusive_list.h        // Zero-allocation list
+bump_vector.h           // Append-only vector
 ```
-> Use in Concurrency: Bounded SPSC/MPSC queues in `core/concurrency` may wrap or be backed by these containers (e.g., `circular_buffer`) but concurrency owns the thread-safety and backpressure semantics.
+> Use in Concurrency: Bounded SPSC/MPSC queues in `core/concurrency` may wrap or be backed by these containers (e.g., `ring_buffer` via its `circular_buffer` alias) but concurrency owns the thread-safety and backpressure semantics.
 
 ### Memory Management
 ```cpp
-memory_resource.hpp     // Polymorphic allocator interface
-memory_tracker.hpp      // Memory usage tracking
-memory_mapped.hpp       // Memory-mapped file support
-shared_memory.hpp       // Inter-process shared memory
-memory_barrier.hpp      // Memory ordering primitives
+memory_resource.h       // Polymorphic allocator interface
+memory_tracker.h        // Memory usage tracking
+scoped_memory_tracker.h // RAII memory tracking wrapper
+memory_mapped.h         // Memory-mapped file support
+shared_memory.h         // Inter-process shared memory
+memory_barrier.h        // Memory ordering primitives
 ```
 
 ### Utilities
 ```cpp
-aligned_storage.hpp     // Aligned storage utilities
-memory_utils.hpp        // Memory manipulation functions
-cache_line.hpp         // Cache line utilities
-prefetch.hpp           // Prefetch hints
-memory_stats.hpp       // Memory statistics collection
+aligned_storage.h       // Aligned storage utilities
+memory_utils.h          // Memory manipulation functions
+cache_line.h            // Cache line utilities
+prefetch.h              // Prefetch hints
+memory_stats.h          // Memory statistics collection
 ```
 
 ## Detailed Component Specifications
 
-### `allocator_base.hpp`
+### `allocator_base.h`
 ```cpp
 template<typename T>
 class AllocatorBase {
@@ -113,7 +117,7 @@ struct allocator_traits {
 **Why necessary**: Unified interface for all allocators, enables allocator-aware containers.
 **Usage**: Custom memory strategies, performance optimization.
 
-### `pool_allocator.hpp`
+### `pool_allocator.h`
 ```cpp
 template<typename T, size_t ChunkSize = 1024>
 class PoolAllocator : public AllocatorBase<T> {
@@ -143,17 +147,53 @@ public:
     double fragmentation() const;
 };
 
-// Thread-safe version
-template<typename T, size_t ChunkSize = 1024>
-class ConcurrentPoolAllocator : public PoolAllocator<T, ChunkSize> {
-    mutable std::mutex mutex_;
-    // Lock-free free list implementation
-};
+// Thread-safe version is provided by concurrent_pool.h
+// Uses mutex-based synchronization, not lock-free
 ```
 **Why necessary**: Eliminates allocation overhead for fixed-size objects, reduces fragmentation.
 **Usage**: Particle systems, node-based data structures, frequent allocations.
 
-### `arena_allocator.hpp`
+### `concurrent_pool.h`
+```cpp
+class ConcurrentPool {
+public:
+    using Config = MemoryPool::Config;
+
+#if CORE_MEMORY_ENABLE_TELEMETRY
+    struct telemetry_t {
+        std::size_t alloc_calls = 0;
+        std::size_t dealloc_calls = 0;
+        std::size_t refills = 0;
+    };
+    using telemetry_callback_t = std::function<void(const char* event, const telemetry_t&)>;
+#endif
+
+    explicit ConcurrentPool(Config cfg, memory_resource* upstream = default_resource());
+
+    void* allocate();
+    void deallocate(void* p);
+
+    // Pool statistics
+    std::size_t free_count() const;
+    std::size_t block_count() const;
+
+    // Reserve additional nodes
+    void reserve_nodes(std::size_t count);
+
+#if CORE_MEMORY_ENABLE_TELEMETRY
+    void set_telemetry_callback(telemetry_callback_t cb);
+#endif
+
+private:
+    MemoryPool pool_;
+    mutable std::mutex mutex_;
+    // Telemetry data when enabled
+};
+```
+**Why necessary**: Thread-safe memory pool for concurrent allocations.
+**Usage**: Multi-threaded environments where objects need safe concurrent allocation.
+
+### `arena_allocator.h` and `arena.h`
 ```cpp
 class Arena {
     std::byte* begin_;
@@ -205,8 +245,8 @@ public:
 
 ## Module Boundaries with Concurrency
 
-- Single Source of Truth for Pools: All object and memory pool implementations live here. `core/concurrency` must reuse these (e.g., `concurrent_pool.hpp`) and must not introduce new pool types.
-- Reclamation Primitives: Safe memory reclamation strategies tied to lock-free concurrency data structures (e.g., hazard pointers, epoch management) are specified in `core/concurrency` because they integrate with its schedulers and queues. `memory/` exposes low-level barriers (`memory_barrier.hpp`) but does not own concurrency-specific reclamation lifecycles.
+- Single Source of Truth for Pools: All object and memory pool implementations live here. `core/concurrency` must reuse these (e.g., `concurrent_pool.h`) and must not introduce new pool types.
+- Reclamation Primitives: Safe memory reclamation strategies tied to lock-free concurrency data structures (e.g., hazard pointers, epoch management) are specified in `core/concurrency` because they integrate with its schedulers and queues. `memory/` exposes low-level barriers (`memory_barrier.h`) but does not own concurrency-specific reclamation lifecycles.
 - Queue/Buffer Demarcation: `memory/` provides general-purpose containers (e.g., `circular_buffer`, `ring_buffer`), while `core/concurrency` provides inter-thread communication primitives (e.g., SPSC/MPSC queues) with backpressure policies and cancellation support.
 - Ownership & Affinity: Thread management, affinity, priorities, and scheduling policies are out of scope for `memory/` and belong to `core/concurrency`.
 
@@ -216,7 +256,7 @@ public:
 - No parallel pipeline or task graph here; those are `core/concurrency` concerns.
 - No error handling policies specific to async execution; use `core/error` or call sites.
 
-### `object_pool.hpp`
+### `object_pool.h`
 ```cpp
 template<typename T>
 class ObjectPool {
@@ -267,7 +307,7 @@ public:
 **Why necessary**: Reuse objects without heap allocation, reduce construction overhead.
 **Usage**: Temporary objects, message passing, game entities.
 
-### `small_vector.hpp`
+### `small_vector.h`
 ```cpp
 template<typename T, size_t N = 16>
 class SmallVector {
@@ -319,7 +359,7 @@ private:
 **Why necessary**: Avoid heap allocation for small arrays, cache efficiency.
 **Usage**: Temporary collections, small fixed-size arrays, return values.
 
-### `stable_vector.hpp`
+### `stable_vector.h`
 ```cpp
 template<typename T, size_t BlockSize = 16>
 class StableVector {
@@ -365,7 +405,7 @@ public:
 **Why necessary**: Pointers remain valid through insertions/deletions.
 **Usage**: Graph nodes, observer lists, cached references.
 
-### `memory_tracker.hpp`
+### `memory_tracker.h` and `scoped_memory_tracker.h`
 ```cpp
 class MemoryTracker {
     struct AllocationInfo {
@@ -425,46 +465,81 @@ public:
 **Why necessary**: Memory leak detection, profiling, debugging.
 **Usage**: Debug builds, memory profiling, resource tracking.
 
-### `memory_mapped.hpp`
+### `memory_mapped.h`
 ```cpp
+class MemoryMappedView {
+    void* base_;
+    size_t size_;
+    MemoryMappedFile* parent_;
+    size_t parent_offset_;
+    bool writable_;
+
+public:
+    void* data() noexcept { return base_; }
+    const void* data() const noexcept { return base_; }
+
+    template<typename T>
+    T* data_as() noexcept { return static_cast<T*>(base_); }
+
+    template<typename T>
+    const T* data_as() const noexcept { return static_cast<const T*>(base_); }
+
+    size_t size() const noexcept { return size_; }
+    bool writable() const noexcept { return writable_; }
+
+    void flush(size_t offset = 0, size_t length = 0,
+              std::error_code* ec = nullptr) noexcept;
+};
+
 class MemoryMappedFile {
     void* base_;
     size_t size_;
-    int fd_;
     bool writable_;
-    
+    Mode mode_;
+    // Platform-specific handles
+
 public:
     enum class Mode {
         ReadOnly,
         ReadWrite,
         CopyOnWrite
     };
-    
+
     MemoryMappedFile(const std::filesystem::path& path, Mode mode);
+    MemoryMappedFile(const std::filesystem::path& path, Mode mode, size_t length);
     ~MemoryMappedFile();
-    
+
+    // Move-only semantics
+    MemoryMappedFile(MemoryMappedFile&&) noexcept;
+    MemoryMappedFile& operator=(MemoryMappedFile&&) noexcept;
+
     // Access
-    void* data() { return base_; }
-    const void* data() const { return base_; }
-    size_t size() const { return size_; }
-    
+    void* data() noexcept { return base_; }
+    const void* data() const noexcept { return base_; }
+    size_t size() const noexcept { return size_; }
+    bool writable() const noexcept { return writable_; }
+    Mode mode() const noexcept { return mode_; }
+
     // Typed access
     template<typename T>
-    T* as() { return static_cast<T*>(base_); }
-    
+    T* data_as() noexcept { return static_cast<T*>(base_); }
+
     template<typename T>
-    std::span<T> as_span() {
-        return std::span<T>(as<T>(), size_ / sizeof(T));
-    }
-    
+    const T* data_as() const noexcept { return static_cast<const T*>(base_); }
+
     // Memory management
-    void flush();
-    void advise_sequential();
-    void advise_random();
-    void lock_in_memory();
-    
+    void flush(size_t offset = 0, size_t length = 0,
+              std::error_code* ec = nullptr) noexcept;
+    void advise_sequential(std::error_code* ec = nullptr) noexcept;
+    void advise_random(std::error_code* ec = nullptr) noexcept;
+    void lock_in_memory(std::error_code* ec = nullptr) noexcept;
+
+    // Result-based API
+    Result<void, ErrorCode> open_result(const std::filesystem::path& path, Mode mode) noexcept;
+    Result<void, ErrorCode> flush_result(size_t offset = 0, size_t length = 0) const noexcept;
+
     // Create view
-    MemoryMappedView create_view(size_t offset, size_t length);
+    MemoryMappedView create_view(size_t offset, size_t length) noexcept;
 };
 ```
 **Why necessary**: Efficient large file access, zero-copy I/O, shared memory.

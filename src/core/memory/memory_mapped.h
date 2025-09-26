@@ -30,6 +30,31 @@
 
 namespace fem::core::memory {
 
+// Map std::error_code or platform error to core ErrorCode
+inline fem::core::error::ErrorCode map_ec(const std::error_code& ec) noexcept {
+#if !defined(CORE_PLATFORM_WINDOWS)
+    switch (ec.value()) {
+        case ENOENT: return fem::core::error::ErrorCode::FileNotFound;
+        case EACCES: return fem::core::error::ErrorCode::FileAccessDenied;
+        case EEXIST: return fem::core::error::ErrorCode::FileAlreadyExists;
+        case ENOTDIR: case EINVAL: case EFAULT: case ENAMETOOLONG:
+            return fem::core::error::ErrorCode::InvalidPath;
+        case EIO: return fem::core::error::ErrorCode::IoError;
+        case ENOMEM: return fem::core::error::ErrorCode::OutOfMemory;
+        default: return fem::core::error::ErrorCode::SystemError;
+    }
+#else
+    switch (ec.value()) {
+        case ERROR_FILE_NOT_FOUND: return fem::core::error::ErrorCode::FileNotFound;
+        case ERROR_PATH_NOT_FOUND: return fem::core::error::ErrorCode::InvalidPath;
+        case ERROR_ACCESS_DENIED: return fem::core::error::ErrorCode::FileAccessDenied;
+        case ERROR_ALREADY_EXISTS: case ERROR_FILE_EXISTS: return fem::core::error::ErrorCode::FileAlreadyExists;
+        case ERROR_NOT_ENOUGH_MEMORY: case ERROR_OUTOFMEMORY: return fem::core::error::ErrorCode::OutOfMemory;
+        default: return fem::core::error::ErrorCode::SystemError;
+    }
+#endif
+}
+
 class MemoryMappedFile;
 
 class MemoryMappedView {
@@ -357,31 +382,6 @@ inline void MemoryMappedFile::lock_in_memory(std::error_code* ec) noexcept {
     int r = ::mlock(base_, size_);
     if (r != 0 && ec) *ec = std::error_code(errno, std::generic_category());
 #endif
-#endif
-}
-
-// Map std::error_code or platform error to core ErrorCode
-inline fem::core::error::ErrorCode map_ec(const std::error_code& ec) noexcept {
-#if !defined(CORE_PLATFORM_WINDOWS)
-    switch (ec.value()) {
-        case ENOENT: return fem::core::error::ErrorCode::FileNotFound;
-        case EACCES: return fem::core::error::ErrorCode::FileAccessDenied;
-        case EEXIST: return fem::core::error::ErrorCode::FileAlreadyExists;
-        case ENOTDIR: case EINVAL: case EFAULT: case ENAMETOOLONG:
-            return fem::core::error::ErrorCode::InvalidPath;
-        case EIO: return fem::core::error::ErrorCode::IoError;
-        case ENOMEM: return fem::core::error::ErrorCode::OutOfMemory;
-        default: return fem::core::error::ErrorCode::SystemError;
-    }
-#else
-    switch (ec.value()) {
-        case ERROR_FILE_NOT_FOUND: return fem::core::error::ErrorCode::FileNotFound;
-        case ERROR_PATH_NOT_FOUND: return fem::core::error::ErrorCode::InvalidPath;
-        case ERROR_ACCESS_DENIED: return fem::core::error::ErrorCode::FileAccessDenied;
-        case ERROR_ALREADY_EXISTS: case ERROR_FILE_EXISTS: return fem::core::error::ErrorCode::FileAlreadyExists;
-        case ERROR_NOT_ENOUGH_MEMORY: case ERROR_OUTOFMEMORY: return fem::core::error::ErrorCode::OutOfMemory;
-        default: return fem::core::error::ErrorCode::SystemError;
-    }
 #endif
 }
 
