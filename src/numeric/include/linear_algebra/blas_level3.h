@@ -282,6 +282,124 @@ inline void herk(Uplo uplo, Trans transA,
 }
 
 // ---------------------------------------------------------------------------
+// SYR2K: C := alpha*A*B^T + alpha*B*A^T + beta*C (symmetric, triangular update)
+// HER2K: C := alpha*A*B^H + conj(alpha)*B*A^H + beta*C (Hermitian)
+// ---------------------------------------------------------------------------
+
+template <typename Alpha, typename A, typename B, typename Beta, typename C>
+  requires (MatrixLike<A> && MatrixLike<B> && MatrixLike<C>)
+inline void syr2k(Uplo uplo, Trans trans,
+                  const Alpha& alpha, const A& A_, const B& B_,
+                  const Beta& beta, C& C_)
+{
+  const bool ta = (trans != Trans::NoTrans);
+  const std::size_t Am = A_.rows();
+  const std::size_t An = A_.cols();
+  const std::size_t N = ta ? An : Am;
+  const std::size_t K = ta ? Am : An;
+  if (C_.rows() != N || C_.cols() != N) throw std::invalid_argument("syr2k: size mismatch");
+
+  // Scale C triangle
+  if (beta == Beta{}) {
+    for (std::size_t i = 0; i < N; ++i)
+      for (std::size_t j = (uplo == Uplo::Upper ? i : 0); j <= (uplo == Uplo::Upper ? N - 1 : i); ++j)
+        C_(i, j) = mat_elem_t<C>{};
+  } else if (!(beta == Beta{1})) {
+    for (std::size_t i = 0; i < N; ++i)
+      for (std::size_t j = (uplo == Uplo::Upper ? i : 0); j <= (uplo == Uplo::Upper ? N - 1 : i); ++j)
+        C_(i, j) = static_cast<mat_elem_t<C>>(beta * C_(i, j));
+  }
+  if (alpha == Alpha{}) return;
+
+  if (uplo == Uplo::Upper) {
+    for (std::size_t i = 0; i < N; ++i) {
+      for (std::size_t j = i; j < N; ++j) {
+        auto s1 = decltype(alpha * detail::getA(A_, i, std::size_t{0}, trans) * detail::getA(B_, j, std::size_t{0}, trans)){};
+        auto s2 = decltype(alpha * detail::getA(B_, i, std::size_t{0}, trans) * detail::getA(A_, j, std::size_t{0}, trans)){};
+        for (std::size_t k = 0; k < K; ++k) {
+          s1 += static_cast<decltype(s1)>(detail::getA(A_, i, k, trans)) * static_cast<decltype(s1)>(detail::getA(B_, j, k, trans));
+          s2 += static_cast<decltype(s2)>(detail::getA(B_, i, k, trans)) * static_cast<decltype(s2)>(detail::getA(A_, j, k, trans));
+        }
+        C_(i, j) = static_cast<mat_elem_t<C>>(C_(i, j) + alpha * s1 + alpha * s2);
+      }
+    }
+  } else {
+    for (std::size_t i = 0; i < N; ++i) {
+      for (std::size_t j = 0; j <= i; ++j) {
+        auto s1 = decltype(alpha * detail::getA(A_, i, std::size_t{0}, trans) * detail::getA(B_, j, std::size_t{0}, trans)){};
+        auto s2 = decltype(alpha * detail::getA(B_, i, std::size_t{0}, trans) * detail::getA(A_, j, std::size_t{0}, trans)){};
+        for (std::size_t k = 0; k < K; ++k) {
+          s1 += static_cast<decltype(s1)>(detail::getA(A_, i, k, trans)) * static_cast<decltype(s1)>(detail::getA(B_, j, k, trans));
+          s2 += static_cast<decltype(s2)>(detail::getA(B_, i, k, trans)) * static_cast<decltype(s2)>(detail::getA(A_, j, k, trans));
+        }
+        C_(i, j) = static_cast<mat_elem_t<C>>(C_(i, j) + alpha * s1 + alpha * s2);
+      }
+    }
+  }
+}
+
+template <typename Alpha, typename A, typename B, typename Beta, typename C>
+  requires (MatrixLike<A> && MatrixLike<B> && MatrixLike<C>)
+inline void her2k(Uplo uplo, Trans trans,
+                  const Alpha& alpha, const A& A_, const B& B_,
+                  const Beta& beta, C& C_)
+{
+  const bool ta = (trans != Trans::NoTrans);
+  const std::size_t Am = A_.rows();
+  const std::size_t An = A_.cols();
+  const std::size_t N = ta ? An : Am;
+  const std::size_t K = ta ? Am : An;
+  if (C_.rows() != N || C_.cols() != N) throw std::invalid_argument("her2k: size mismatch");
+
+  // Scale C triangle
+  if (beta == Beta{}) {
+    for (std::size_t i = 0; i < N; ++i)
+      for (std::size_t j = (uplo == Uplo::Upper ? i : 0); j <= (uplo == Uplo::Upper ? N - 1 : i); ++j)
+        C_(i, j) = mat_elem_t<C>{};
+  } else if (!(beta == Beta{1})) {
+    for (std::size_t i = 0; i < N; ++i)
+      for (std::size_t j = (uplo == Uplo::Upper ? i : 0); j <= (uplo == Uplo::Upper ? N - 1 : i); ++j)
+        C_(i, j) = static_cast<mat_elem_t<C>>(beta * C_(i, j));
+  }
+  if (alpha == Alpha{}) return;
+  auto alpha_conj = conj_if_complex(alpha);
+
+  if (uplo == Uplo::Upper) {
+    for (std::size_t i = 0; i < N; ++i) {
+      for (std::size_t j = i; j < N; ++j) {
+        auto s1 = decltype(alpha * detail::getA(A_, i, std::size_t{0}, trans) * conj_if_complex(detail::getA(B_, j, std::size_t{0}, trans))){};
+        auto s2 = decltype(alpha_conj * detail::getA(B_, i, std::size_t{0}, trans) * conj_if_complex(detail::getA(A_, j, std::size_t{0}, trans))){};
+        for (std::size_t k = 0; k < K; ++k) {
+          auto aik = detail::getA(A_, i, k, trans);
+          auto bjk = detail::getA(B_, j, k, trans);
+          auto bik = detail::getA(B_, i, k, trans);
+          auto ajk = detail::getA(A_, j, k, trans);
+          s1 += static_cast<decltype(s1)>(aik) * static_cast<decltype(s1)>(conj_if_complex(bjk));
+          s2 += static_cast<decltype(s2)>(bik) * static_cast<decltype(s2)>(conj_if_complex(ajk));
+        }
+        C_(i, j) = static_cast<mat_elem_t<C>>(C_(i, j) + alpha * s1 + alpha_conj * s2);
+      }
+    }
+  } else {
+    for (std::size_t i = 0; i < N; ++i) {
+      for (std::size_t j = 0; j <= i; ++j) {
+        auto s1 = decltype(alpha * detail::getA(A_, i, std::size_t{0}, trans) * conj_if_complex(detail::getA(B_, j, std::size_t{0}, trans))){};
+        auto s2 = decltype(alpha_conj * detail::getA(B_, i, std::size_t{0}, trans) * conj_if_complex(detail::getA(A_, j, std::size_t{0}, trans))){};
+        for (std::size_t k = 0; k < K; ++k) {
+          auto aik = detail::getA(A_, i, k, trans);
+          auto bjk = detail::getA(B_, j, k, trans);
+          auto bik = detail::getA(B_, i, k, trans);
+          auto ajk = detail::getA(A_, j, k, trans);
+          s1 += static_cast<decltype(s1)>(aik) * static_cast<decltype(s1)>(conj_if_complex(bjk));
+          s2 += static_cast<decltype(s2)>(bik) * static_cast<decltype(s2)>(conj_if_complex(ajk));
+        }
+        C_(i, j) = static_cast<mat_elem_t<C>>(C_(i, j) + alpha * s1 + alpha_conj * s2);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // SYMM/HEMM: C := alpha * A * B + beta * C   or   C := alpha * B * A + beta * C
 // A is symmetric (SYMM) or Hermitian (HEMM). Side controls multiplication side.
 // ---------------------------------------------------------------------------

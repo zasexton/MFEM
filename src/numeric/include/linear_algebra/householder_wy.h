@@ -167,29 +167,26 @@ inline void apply_block_reflectors_two_sided_hermitian(const VMat& V,
   // X := T^H * X
   Matrix<T> X2(kb, kb, T{});
   gemm(Trans::ConjTranspose, Trans::NoTrans, T{1}, Tmat, X, T{0}, X2);
-  // W := W - 0.5 * V * X2
-  Matrix<T> VX(n, kb, T{});
-  gemm(Trans::NoTrans, Trans::NoTrans, static_cast<T>(-0.5), V, X2, T{0}, VX);
-  for (std::size_t i = 0; i < n; ++i)
-    for (std::size_t j = 0; j < kb; ++j)
-      W(i, j) = static_cast<T>(W(i, j) + VX(i, j));
+  // W := W - 0.5 * V * X2 (in-place via a temporary for VX)
+  {
+    Matrix<T> VX(n, kb, T{});
+    gemm(Trans::NoTrans, Trans::NoTrans, T{1}, V, X2, T{0}, VX);
+    for (std::size_t i = 0; i < n; ++i)
+      for (std::size_t j = 0; j < kb; ++j)
+        W(i, j) = static_cast<T>(W(i, j) - static_cast<T>(0.5) * VX(i, j));
+  }
 
-  // D = V * W^H + W * V^H (Hermitian)
-  Matrix<T> D(n, n, T{});
-  Matrix<T> VW_H(n, n, T{});
-  gemm(Trans::NoTrans, Trans::ConjTranspose, T{1}, V, W, T{0}, VW_H);
-  Matrix<T> WV_H(n, n, T{});
-  gemm(Trans::NoTrans, Trans::ConjTranspose, T{1}, W, V, T{0}, WV_H);
-  for (std::size_t i = 0; i < n; ++i)
-    for (std::size_t j = 0; j < n; ++j)
-      D(i, j) = static_cast<T>(VW_H(i, j) + WV_H(i, j));
-
-  // A := A - D, enforce Hermitian structure explicitly
+  // A := A - V W^H - W V^H using HER2K/SYR2K on the stored triangle
+  if constexpr (is_complex_number_v<T>) {
+    her2k(Uplo::Upper, Trans::NoTrans, static_cast<T>(-1), V, W, static_cast<T>(1), A);
+  } else {
+    syr2k(Uplo::Upper, Trans::NoTrans, static_cast<T>(-1), V, W, static_cast<T>(1), A);
+  }
+  // Ensure Hermitian symmetry by mirroring upper to lower
   for (std::size_t i = 0; i < n; ++i) {
-    for (std::size_t j = i; j < n; ++j) {
-      auto val = static_cast<T>(A(i, j) - D(i, j));
-      A(i, j) = val;
-      if (j != i) A(j, i) = conj_if_complex(val);
+    for (std::size_t j = i + 1; j < n; ++j) {
+      auto val = A(i, j);
+      A(j, i) = conj_if_complex(val);
     }
   }
 }
