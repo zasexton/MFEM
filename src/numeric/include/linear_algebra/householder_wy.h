@@ -25,6 +25,9 @@
 
 namespace fem::numeric::linear_algebra {
 
+#ifndef FEM_WY_TILE_SIZE
+#define FEM_WY_TILE_SIZE 256
+#endif
 // ---------------------------------------------------------------------------
 // form_block_T_forward_columnwise: build T (upper-triangular) such that
 //   H = I - V T V^H, with Householder vectors v_j in columns of V, v_j(0)=1
@@ -176,12 +179,54 @@ inline void apply_block_reflectors_two_sided_hermitian(const VMat& V,
         W(i, j) = static_cast<T>(W(i, j) - static_cast<T>(0.5) * VX(i, j));
   }
 
-  // A := A - V W^H - W V^H using HER2K/SYR2K on the stored triangle
-  if constexpr (is_complex_number_v<T>) {
-    her2k(Uplo::Upper, Trans::NoTrans, static_cast<T>(-1), V, W, static_cast<T>(1), A);
-  } else {
-    syr2k(Uplo::Upper, Trans::NoTrans, static_cast<T>(-1), V, W, static_cast<T>(1), A);
+  // Tiled update: A := A - V W^H - W V^H, updating only upper triangle tiles
+  const std::size_t TS = FEM_WY_TILE_SIZE;
+  Matrix<T> Tile; // reusable tile buffer
+  for (std::size_t i0 = 0; i0 < n; i0 += TS) {
+    const std::size_t i1 = std::min(n, i0 + TS);
+    const std::size_t ti = i1 - i0;
+    auto Vi = V.submatrix(i0, i1, 0, kb);
+    auto Wi = W.submatrix(i0, i1, 0, kb);
+    for (std::size_t j0 = i0; j0 < n; j0 += TS) {
+      const std::size_t j1 = std::min(n, j0 + TS);
+      const std::size_t tj = j1 - j0;
+      auto Vj = V.submatrix(j0, j1, 0, kb);
+      auto Wj = W.submatrix(j0, j1, 0, kb);
+      auto Aij = A.submatrix(i0, i1, j0, j1);
+
+      // Tile = Vi * Wj^H
+      Tile = Matrix<T>(ti, tj, T{});
+      gemm(Trans::NoTrans, Trans::ConjTranspose, T{1}, Vi, Wj, T{0}, Tile);
+      // Subtract into Aij (respect upper-triangular region on diagonal tiles)
+      if (i0 == j0) {
+        for (std::size_t ii = 0; ii < ti; ++ii) {
+          for (std::size_t jj = ii; jj < tj; ++jj) {
+            Aij(ii, jj) = static_cast<T>(Aij(ii, jj) - Tile(ii, jj));
+          }
+        }
+      } else {
+        for (std::size_t ii = 0; ii < ti; ++ii)
+          for (std::size_t jj = 0; jj < tj; ++jj)
+            Aij(ii, jj) = static_cast<T>(Aij(ii, jj) - Tile(ii, jj));
+      }
+
+      // Tile = Wi * Vj^H
+      Tile = Matrix<T>(ti, tj, T{});
+      gemm(Trans::NoTrans, Trans::ConjTranspose, T{1}, Wi, Vj, T{0}, Tile);
+      if (i0 == j0) {
+        for (std::size_t ii = 0; ii < ti; ++ii) {
+          for (std::size_t jj = ii; jj < tj; ++jj) {
+            Aij(ii, jj) = static_cast<T>(Aij(ii, jj) - Tile(ii, jj));
+          }
+        }
+      } else {
+        for (std::size_t ii = 0; ii < ti; ++ii)
+          for (std::size_t jj = 0; jj < tj; ++jj)
+            Aij(ii, jj) = static_cast<T>(Aij(ii, jj) - Tile(ii, jj));
+      }
+    }
   }
+
   // Ensure Hermitian symmetry by mirroring upper to lower
   for (std::size_t i = 0; i < n; ++i) {
     for (std::size_t j = i + 1; j < n; ++j) {
