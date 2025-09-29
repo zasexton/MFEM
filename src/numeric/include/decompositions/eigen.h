@@ -198,7 +198,7 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
                                             std::vector<typename numeric_traits<T>::scalar_type>& sub,
                                             Matrix<T, Storage, Order>* Q_accumulate,
                                             std::size_t block_size = FEM_EIGEN_BLOCK_SIZE,
-                                            bool use_panel_update = true)
+                                            bool use_panel_update = false)
 {
   using R = typename numeric_traits<T>::scalar_type;
   const std::size_t n = A.rows();
