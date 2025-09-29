@@ -22,6 +22,7 @@
 #include "../base/traits_base.h"
 #include "../linear_algebra/blas_level2.h" // Side, Trans enums
 #include "../linear_algebra/blas_level3.h" // gemm/trmm helpers
+#include "../linear_algebra/householder_wy.h" // WY helpers
 #include "../backends/lapack_backend.h"
 
 namespace fem::numeric::decompositions {
@@ -31,37 +32,6 @@ template <typename T>
 constexpr T conj_if_complex(const T& x) {
   if constexpr (is_complex_number_v<T>) { using std::conj; return conj(x); }
   else { return x; }
-}
-
-// Internal helper: build T for a block of reflectors stored in V (Forward, Columnwise)
-// V is pm x pk with columns v_j in panel-relative indexing (unit lower trapezoidal)
-// tau contains the pk Householder scalars for this panel.
-template <typename T>
-static inline void form_block_T_forward_columnwise(const Matrix<T>& V,
-                                                   const std::vector<T>& tau,
-                                                   Matrix<T>& Tmat)
-{
-  const std::size_t pm = V.rows();
-  const std::size_t pk = V.cols();
-  Tmat = Matrix<T>(pk, pk, T{});
-  for (std::size_t i = 0; i < pk; ++i) {
-    const T ti = tau[i];
-    Tmat(i, i) = ti;
-    if (ti == T{} || i == 0) continue;
-    // tmp = -tau_i * V(:,0:i-1)^H * v_i  (length i)
-    std::vector<T> tmp(i, T{});
-    for (std::size_t j = 0; j < i; ++j) {
-      T s{};
-      for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, j)) * V(r, i);
-      tmp[j] = static_cast<T>(-1) * ti * s;
-    }
-    // z = T(0:i-1,0:i-1) * tmp  (upper triangular)
-    for (std::size_t row = 0; row < i; ++row) {
-      T acc{};
-      for (std::size_t col = row; col < i; ++col) acc += Tmat(row, col) * tmp[col];
-      Tmat(row, i) = acc;
-    }
-  }
 }
 
 // Forward declaration for blocked QR
@@ -438,51 +408,10 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   };
 
   auto build_T_from_V_tau = [&](const Matrix<T>& V, const std::vector<T>& taup, Matrix<T>& Tmat) {
-    form_block_T_forward_columnwise<T>(V, taup, Tmat);
+    fem::numeric::linear_algebra::form_block_T_forward_columnwise<T>(V, taup, Tmat);
   };
 
-  auto apply_block_reflectors = [&](const Matrix<T>& V, const Matrix<T>& Tmat, auto&& B_like) {
-    auto& B_ref = B_like;
-    const std::size_t pm = V.rows();
-    const std::size_t kb = V.cols();
-    const std::size_t nt = B_ref.cols();
-    Matrix<T> Y(kb, nt, T{});
-    // Y = V^H * B
-    for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-      for (std::size_t irow = 0; irow < kb; ++irow) {
-        T s{};
-        for (std::size_t r = 0; r < pm; ++r) s += conj_if_complex(V(r, irow)) * B_ref(r, jcol);
-        Y(irow, jcol) = s;
-      }
-    }
-    if constexpr (Order == StorageOrder::RowMajor) {
-      // RowMajor: use Y := T^H * Y (Forward, Columnwise)
-      for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-        for (std::size_t rev = kb; rev-- > 0;) {
-          T s = conj_if_complex(Tmat(rev, rev)) * Y(rev, jcol);
-          for (std::size_t k = 0; k < rev; ++k) s += conj_if_complex(Tmat(k, rev)) * Y(k, jcol);
-          Y(rev, jcol) = s;
-        }
-      }
-    } else {
-      // ColumnMajor: use Y := T * Y (upper-triangular)
-      for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-        for (std::size_t irow = 0; irow < kb; ++irow) {
-          T s = Tmat(irow, irow) * Y(irow, jcol);
-          for (std::size_t k = irow + 1; k < kb; ++k) s += Tmat(irow, k) * Y(k, jcol);
-          Y(irow, jcol) = s;
-        }
-      }
-    }
-    // B -= V * Y
-    for (std::size_t jcol = 0; jcol < nt; ++jcol) {
-      for (std::size_t r = 0; r < pm; ++r) {
-        T s{};
-        for (std::size_t k = 0; k < kb; ++k) s += V(r, k) * Y(k, jcol);
-        B_ref(r, jcol) = B_ref(r, jcol) - s;
-      }
-    }
-  };
+  // Block application helper is now centralized in linear_algebra/householder_wy.h
 
   for (std::size_t j = 0; j < k; j += bs) {
     const std::size_t kb = std::min(bs, k - j);
@@ -615,10 +544,10 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
                     << " chosen=" << ((err_T <= err_TH) ? "T" : "T^H") << "\n";
         }
       } else {
-        apply_block_reflectors(V, Tmat, B);
+        fem::numeric::linear_algebra::apply_block_reflectors_left(V, Tmat, B);
       }
 #else
-      apply_block_reflectors(V, Tmat, B);
+      fem::numeric::linear_algebra::apply_block_reflectors_left(V, Tmat, B);
 #endif
     }
 #if defined(FEM_NUMERIC_QR_TEST_WY)

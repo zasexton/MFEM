@@ -13,6 +13,10 @@ option (WARNINGS_AS_ERRORS      "Treat warnings as errors"                 ON)
 option (BUILD_UNIT_TESTS        "Build unit tests"                         ON)
 option (BUILD_PERFORMANCE_TESTS "Build micro-benchmarks"                    ON)
 
+# Optional LAPACK backend for numeric library (header-only code may call vendor routines)
+option (FEM_NUMERIC_ENABLE_LAPACK "Enable LAPACK/MKL backend for numeric algorithms" OFF)
+option (FEM_NUMERIC_ENABLE_LAPACKE "Enable LAPACKE row-major interfaces (requires LAPACK)" OFF)
+
 # -----------------------------------------------------------------------------
 # ------------------------ Parallelism Options --------------------------------
 # -----------------------------------------------------------------------------
@@ -152,6 +156,36 @@ endif()
 
 # Link the parallel support to your options library
 target_link_libraries(femsolver_options INTERFACE femsolver_parallel)
+
+# -----------------------------------------------------------------------------
+#  Optional LAPACK (for eigensolvers, QR, etc.)
+# -----------------------------------------------------------------------------
+if (FEM_NUMERIC_ENABLE_LAPACK)
+    # Reuse the numeric library helper to provide LAPACK::LAPACK via system or OpenBLAS
+    include(${CMAKE_CURRENT_SOURCE_DIR}/src/numeric/cmake/EnableLAPACK.cmake)
+    if (TARGET LAPACK::LAPACK)
+        target_compile_definitions(femsolver_options INTERFACE FEM_NUMERIC_ENABLE_LAPACK=1)
+        target_link_libraries(femsolver_options INTERFACE LAPACK::LAPACK)
+        message(STATUS "Numeric: LAPACK backend enabled for header-only algorithms")
+    else()
+        message(WARNING "FEM_NUMERIC_ENABLE_LAPACK=ON but LAPACK not found; vendor paths will be disabled.")
+    endif()
+    if (FEM_NUMERIC_ENABLE_LAPACKE)
+        find_package(LAPACKE QUIET)
+        if (LAPACKE_FOUND)
+            target_compile_definitions(femsolver_options INTERFACE FEM_NUMERIC_ENABLE_LAPACKE=1)
+            if (TARGET LAPACKE::LAPACKE)
+                target_link_libraries(femsolver_options INTERFACE LAPACKE::LAPACKE)
+            else()
+                find_library(LAPACKE_LIBRARY lapacke)
+                if (LAPACKE_LIBRARY)
+                    target_link_libraries(femsolver_options INTERFACE ${LAPACKE_LIBRARY})
+                endif()
+            endif()
+            message(STATUS "Numeric: LAPACKE row-major wrappers enabled")
+        endif()
+    endif()
+endif()
 
 # -----------------------------------------------------------------------------
 #  Third-party header-only deps via FetchContent

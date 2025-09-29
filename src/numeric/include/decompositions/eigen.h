@@ -7,6 +7,14 @@
 // Implements reduction to tridiagonal form via Householder reflectors and
 // implicit QL iteration with Wilkinson shifts. Optional accumulation of
 // eigenvectors is supported; eigenvalues are returned in ascending order.
+//
+// Enhancements over the basic version:
+// - Optional LAPACK vendor backend (if FEM_NUMERIC_ENABLE_LAPACK defined)
+// - Blocked Householder option for better cache use (simple panel grouping)
+// - Preallocated/reused work buffers to avoid per-iteration allocations
+// - Stable v-norm using scaled norm routine
+// - Exposed convergence info (return index l+1 on failure), per-index cap
+// - Fast path for eigenvalues-only that avoids any eigenvector accumulation
 
 #include <vector>
 #include <algorithm>
@@ -17,14 +25,121 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <cstddef>
 
 #include "../core/matrix.h"
 #include "../core/vector.h"
 #include "../base/traits_base.h"
+#include "../linear_algebra/householder_wy.h"
 
 namespace fem::numeric::decompositions {
 
 namespace detail {
+
+#ifndef FEM_EIGEN_BLOCK_SIZE
+#define FEM_EIGEN_BLOCK_SIZE 32
+#endif
+
+#ifdef FEM_NUMERIC_ENABLE_LAPACK
+// Optional LAPACK vendor backends. Expected linkage provided by build system.
+extern "C" {
+  // Real symmetric eigensolver (full, not just tridiagonal): xSYEV
+  void ssyev_(char* jobz, char* uplo, int* n, float* a, int* lda,
+              float* w, float* work, int* lwork, int* info);
+  void dsyev_(char* jobz, char* uplo, int* n, double* a, int* lda,
+              double* w, double* work, int* lwork, int* info);
+
+  // Complex Hermitian eigensolver: xHEEV
+  void cheev_(char* jobz, char* uplo, int* n, std::complex<float>* a, int* lda,
+              float* w, std::complex<float>* work, int* lwork, float* rwork, int* info);
+  void zheev_(char* jobz, char* uplo, int* n, std::complex<double>* a, int* lda,
+              double* w, std::complex<double>* work, int* lwork, double* rwork, int* info);
+}
+
+// Helper: call LAPACK xSYEV/xHEEV. Returns true if path taken.
+template <typename T, typename Storage, StorageOrder Order>
+static inline bool lapack_eigh(const Matrix<T, Storage, Order>& A,
+                               Vector<typename numeric_traits<T>::scalar_type>& evals,
+                               Matrix<T, Storage, Order>& eigenvectors,
+                               bool compute_vectors)
+{
+  using R = typename numeric_traits<T>::scalar_type;
+  const std::size_t n = A.rows();
+  if (A.cols() != n) throw std::invalid_argument("lapack_eigh: matrix must be square");
+
+  // Only support float/double and complex float/double
+  if constexpr (!(std::is_same_v<T, float> || std::is_same_v<T, double> ||
+                  std::is_same_v<T, std::complex<float>> || std::is_same_v<T, std::complex<double>>)) {
+    return false;
+  } else {
+    if (n == 0) {
+      evals = Vector<R>(0);
+      eigenvectors = Matrix<T, Storage, Order>(0, 0, T{0});
+      return true;
+    }
+
+    // LAPACK expects column-major; copy into a column-major buffer
+    Matrix<T, Storage, StorageOrder::ColumnMajor> Acol(n, n);
+    for (std::size_t i = 0; i < n; ++i)
+      for (std::size_t j = 0; j < n; ++j)
+        Acol(i, j) = A(i, j);
+
+    evals = Vector<R>(n);
+    int info = 0;
+    int N = static_cast<int>(n);
+    int lda = static_cast<int>(Acol.leading_dimension());
+    char jobz = compute_vectors ? 'V' : 'N';
+    char uplo = 'U'; // assume upper is referenced; matrix is Hermitian
+
+    if constexpr (std::is_same_v<T, float>) {
+      // Query optimal work size
+      float wkopt; int lwork = -1;
+      ssyev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), &wkopt, &lwork, &info);
+      if (info != 0) return false;
+      lwork = static_cast<int>(wkopt);
+      std::vector<float> work(std::max(1, lwork));
+      ssyev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), work.data(), &lwork, &info);
+      if (info != 0) return false;
+    } else if constexpr (std::is_same_v<T, double>) {
+      double wkopt; int lwork = -1;
+      dsyev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), &wkopt, &lwork, &info);
+      if (info != 0) return false;
+      lwork = static_cast<int>(wkopt);
+      std::vector<double> work(std::max(1, lwork));
+      dsyev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), work.data(), &lwork, &info);
+      if (info != 0) return false;
+    } else if constexpr (std::is_same_v<T, std::complex<float>>) {
+      std::complex<float> wkopt; int lwork = -1;
+      std::vector<float> rwork(std::max<std::size_t>(1, 3*n-2));
+      cheev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), &wkopt, &lwork, rwork.data(), &info);
+      if (info != 0) return false;
+      lwork = static_cast<int>(std::real(wkopt));
+      std::vector<std::complex<float>> work(std::max(1, lwork));
+      cheev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), work.data(), &lwork, rwork.data(), &info);
+      if (info != 0) return false;
+    } else {
+      std::complex<double> wkopt; int lwork = -1;
+      std::vector<double> rwork(std::max<std::size_t>(1, 3*n-2));
+      zheev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), &wkopt, &lwork, rwork.data(), &info);
+      if (info != 0) return false;
+      lwork = static_cast<int>(std::real(wkopt));
+      std::vector<std::complex<double>> work(std::max(1, lwork));
+      zheev_(&jobz, &uplo, &N, Acol.data(), &lda, evals.data(), work.data(), &lwork, rwork.data(), &info);
+      if (info != 0) return false;
+    }
+
+    if (compute_vectors) {
+      eigenvectors = Matrix<T, Storage, Order>(n, n, T{0});
+      for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = 0; j < n; ++j)
+          eigenvectors(i, j) = Acol(i, j); // Columns are eigenvectors
+    } else {
+      eigenvectors = Matrix<T, Storage, Order>(0, 0, T{0});
+    }
+    return true;
+  }
+}
+#endif // FEM_NUMERIC_ENABLE_LAPACK
 
 // Conjugate helper that is a no-op for real scalars.
 template <typename T>
@@ -81,7 +196,9 @@ template <typename T, typename Storage, StorageOrder Order>
 static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
                                             std::vector<typename numeric_traits<T>::scalar_type>& diag,
                                             std::vector<typename numeric_traits<T>::scalar_type>& sub,
-                                            Matrix<T, Storage, Order>* Q_accumulate)
+                                            Matrix<T, Storage, Order>* Q_accumulate,
+                                            std::size_t block_size = FEM_EIGEN_BLOCK_SIZE,
+                                            bool use_panel_update = true)
 {
   using R = typename numeric_traits<T>::scalar_type;
   const std::size_t n = A.rows();
@@ -106,134 +223,119 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
     Q = &Qtmp;
   }
 
-  for (std::size_t k = 0; k + 1 < n; ++k) {
-    const std::size_t m = n - k - 1;
-    if (m == 0) continue;
+  // Preallocate reusable work buffers (avoid per-iteration allocations)
+  std::vector<T> x, v, p, w;
+  x.reserve(n);
+  v.reserve(n);
+  p.reserve(n);
+  w.reserve(n);
 
-    std::vector<T> x(m);
-    for (std::size_t i = 0; i < m; ++i) x[i] = A(k + 1 + i, k);
+  // Simple panel blocking
+  const std::size_t bs = (block_size == 0 ? FEM_EIGEN_BLOCK_SIZE : block_size);
+  for (std::size_t k = 0; k + 1 < n; ) {
+    const std::size_t m_full = n - k - 1;
+    const std::size_t b = std::min<std::size_t>(bs, m_full);
+    if (b == 0) break;
 
-    R xnorm = stable_norm(x);
-    if (xnorm == R{0}) {
-      sub[k] = R{0};
-      for (std::size_t i = k + 2; i < n; ++i) {
-        A(i, k) = T{0};
-        A(k, i) = T{0};
-      }
-      continue;
+    // Aggregation storage for Q update
+    Matrix<T, Storage, Order> Vp(m_full, b, T{0});
+    std::vector<T> tau_p(b, T{0});
+
+    // Save trailing block before any per-column updates (for aggregated two-sided update)
+    Matrix<T, Storage, Order> A22_before;
+    if (use_panel_update) {
+      auto A22_view = A.submatrix(k + 1, n, k + 1, n);
+      A22_before = A22_view;
     }
 
-    // Choose alpha for Householder reflection
-    T alpha;
+    const std::size_t kend = std::min(n - 1, k + b);
+    for (std::size_t kk = k; kk < kend; ++kk) {
+      const std::size_t j = kk - k;     // panel-local column
+      const std::size_t m = n - kk - 1; // remaining length below diag
+      if (m == 0) continue;
 
-    if constexpr (is_complex_number_v<T>) {
-      // For complex Hermitian matrices, use standard Householder choice
-      // The subdiagonals will be complex, but phase tracking will handle it
+      x.resize(m);
+      for (std::size_t i = 0; i < m; ++i) x[i] = A(kk + 1 + i, kk);
 
-      if (std::abs(x[0]) < std::numeric_limits<R>::epsilon()) {
-        // x[0] is near zero
-        alpha = static_cast<T>(xnorm);
-      } else {
-        // Standard choice: maximize |x[0] - alpha| for numerical stability
-        // alpha = -sign(x[0]) * ||x|| where sign(z) = z/|z| for complex
-        T phase = x[0] / static_cast<T>(std::abs(x[0]));
-        alpha = -phase * static_cast<T>(xnorm);
+      R xnorm = stable_norm(x);
+      if (xnorm == R{0}) {
+        sub[kk] = R{0};
+        for (std::size_t i = kk + 2; i < n; ++i) { A(i, kk) = T{0}; A(kk, i) = T{0}; }
+        continue;
       }
-    } else {
-      // For real symmetric matrices
-      alpha = (x[0] >= R{0}) ? static_cast<T>(-xnorm) : static_cast<T>(xnorm);
-    }
 
-    // Compute Householder vector v = x - alpha*e1
-    std::vector<T> v = x;
-    v[0] -= alpha;
-
-    // Compute ||v||^2
-    R vnorm2 = R{0};
-    for (const auto& vi : v) {
+      // Choose alpha for Householder
+      T alpha;
       if constexpr (is_complex_number_v<T>) {
-        vnorm2 += static_cast<R>(std::norm(vi));
+        if (std::abs(x[0]) < std::numeric_limits<R>::epsilon()) alpha = static_cast<T>(xnorm);
+        else { T phase = x[0] / static_cast<T>(std::abs(x[0])); alpha = -phase * static_cast<T>(xnorm); }
       } else {
-        vnorm2 += static_cast<R>(vi * vi);
+        alpha = (x[0] >= R{0}) ? static_cast<T>(-xnorm) : static_cast<T>(xnorm);
       }
-    }
 
-    if (vnorm2 < std::numeric_limits<R>::epsilon()) {
-      sub[k] = R{0};
-      continue;
-    }
+      // v_raw = x - alpha*e1
+      v = x; v[0] -= alpha;
+      // Stable norm^2
+      R vnorm = stable_norm(v); R vnorm2 = vnorm * vnorm;
+      if (vnorm2 < std::numeric_limits<R>::epsilon()) { sub[kk] = R{0}; continue; }
 
-    // Beta for Householder reflection H = I - beta*v*v^H
-    T beta = static_cast<T>(2) / static_cast<T>(vnorm2);
-
-    // Compute p = A*v
-    std::vector<T> p(m, T{0});
-    for (std::size_t i = 0; i < m; ++i) {
-      T sum{};
-      for (std::size_t j = 0; j < m; ++j) {
-        sum += A(k + 1 + i, k + 1 + j) * v[j];
-      }
-      p[i] = sum;
-    }
-
-    // Compute K = (beta/2) * v^H * p
-    T K{};
-    for (std::size_t i = 0; i < m; ++i) {
-      K += detail::conj_if_complex(v[i]) * p[i];
-    }
-    K *= beta * static_cast<T>(0.5);
-
-    // Compute w = p - K*v
-    std::vector<T> w(m);
-    for (std::size_t i = 0; i < m; ++i) {
-      w[i] = p[i] - K * v[i];
-    }
-
-    // Update A = A - beta*(v*w^H + w*v^H)
-    for (std::size_t i = 0; i < m; ++i) {
-      for (std::size_t j = i; j < m; ++j) {
-        T update = beta * (v[i] * detail::conj_if_complex(w[j]) + w[i] * detail::conj_if_complex(v[j]));
-        T newval = A(k + 1 + i, k + 1 + j) - update;
-        A(k + 1 + i, k + 1 + j) = newval;
-        if (j != i) A(k + 1 + j, k + 1 + i) = detail::conj_if_complex(newval);
-      }
-    }
-
-    for (std::size_t i = k + 2; i < n; ++i) {
-      A(i, k) = T{0};
-      A(k, i) = T{0};
-    }
-
-    // Set the subdiagonal element
-    // The Householder produces A[k+1,k] = alpha
-    // For complex Hermitian, alpha will be complex in general
-    A(k + 1, k) = alpha;
-    A(k, k + 1) = detail::conj_if_complex(alpha);
-
-    // Store the subdiagonal value
-    if constexpr (is_complex_number_v<T>) {
-      // For complex, we store the magnitude
-      // The phase will be handled by the eigen_symmetric function
-      sub[k] = std::abs(alpha);
-    } else {
-      // Real case - store the actual value
-      sub[k] = static_cast<R>(alpha);
-    }
-
-    if (Q) {
-      // Apply Q = Q * H where H = I - beta*v*v^H
-      // This means Q_new[:,j] = Q[:,j] - beta * (Q * v) * v^H[j]
-      // Or equivalently: Q_new[i,j] = Q[i,j] - beta * (sum_k Q[i,k]*v[k-k-1]) * conj(v[j-k-1])
-      for (std::size_t row = 0; row < n; ++row) {
-        T dot{};
-        for (std::size_t r = 0; r < m; ++r) {
-          dot += (*Q)(row, k + 1 + r) * v[r];
+      // Build normalized vhat (vhat[0]=1) and tau
+      T v0 = v[0];
+      T tau{}; bool use_raw = (v0 == T{0});
+      if (!use_raw) {
+        Vp(j, j) = T{1};
+        R sumsq = R{0};
+        for (std::size_t t = 1; t < m; ++t) {
+          T val = v[t] / v0; Vp(j + t, j) = val;
+          if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(val));
+          else sumsq += static_cast<R>(val * val);
         }
-        for (std::size_t r = 0; r < m; ++r) {
-          (*Q)(row, k + 1 + r) -= beta * dot * detail::conj_if_complex(v[r]);
+        tau = static_cast<T>(R{2} / (R{1} + sumsq));
+        tau_p[j] = tau;
+      }
+
+      // Two-sided update on trailing block for this column (sequential path)
+      if (!use_panel_update) {
+        auto A22 = A.submatrix(kk + 1, n, kk + 1, n);
+        if (!use_raw) {
+          Matrix<T, Storage, Order> Vblk(m, 1, T{0}); Vblk(0, 0) = T{1};
+          for (std::size_t t = 1; t < m; ++t) Vblk(t, 0) = Vp(j + t, j);
+          Matrix<T, Storage, Order> Tbl(1, 1, T{0}); Tbl(0, 0) = tau;
+          fem::numeric::linear_algebra::apply_block_reflectors_two_sided_hermitian(Vblk, Tbl, A22);
+        } else {
+          T beta = static_cast<T>(2) / static_cast<T>(vnorm2);
+          Matrix<T, Storage, Order> Vblk(m, 1, T{0}); for (std::size_t i=0;i<m;++i) Vblk(i,0)=v[i];
+          Matrix<T, Storage, Order> Tbl(1, 1, T{0}); Tbl(0,0)=beta;
+          fem::numeric::linear_algebra::apply_block_reflectors_two_sided_hermitian(Vblk, Tbl, A22);
         }
       }
+
+      // Zero below-subdiagonal in current column and set the subdiagonal element
+      for (std::size_t i = kk + 2; i < n; ++i) { A(i, kk) = T{0}; A(kk, i) = T{0}; }
+      A(kk + 1, kk) = alpha; A(kk, kk + 1) = detail::conj_if_complex(alpha);
+      if constexpr (is_complex_number_v<T>) sub[kk] = std::abs(alpha);
+      else sub[kk] = static_cast<R>(alpha);
     }
+
+    // Aggregate Q update for this panel
+    if (Q && m_full > 0) {
+      Matrix<T, Storage, Order> Tpanel;
+      fem::numeric::linear_algebra::form_block_T_forward_columnwise(Vp, tau_p, Tpanel);
+      auto Qsub = Q->submatrix(k + 1, n, 0, n);
+      fem::numeric::linear_algebra::apply_block_reflectors_left(Vp, Tpanel, Qsub);
+      // Aggregated two-sided update on trailing block using panel V/T
+      if (use_panel_update) {
+        auto A22_view = A.submatrix(k + 1, n, k + 1, n);
+        Matrix<T, Storage, Order> A22_after = A22_before; // copy of pre-panel block
+        fem::numeric::linear_algebra::apply_block_reflectors_two_sided_hermitian(Vp, Tpanel, A22_after);
+        // Overwrite A22 with aggregated result (should match sequential updates numerically)
+        for (std::size_t ii = 0; ii < A22_after.rows(); ++ii)
+          for (std::size_t jj = 0; jj < A22_after.cols(); ++jj)
+            A22_view(ii, jj) = A22_after(ii, jj);
+      }
+    }
+
+    k = kend;
   }
 
   for (std::size_t i = 0; i < n; ++i) diag[i] = static_cast<R>(std::real(A(i, i)));
@@ -246,7 +348,7 @@ template <typename R, typename T, typename Storage, StorageOrder Order>
 static inline int tridiagonal_ql(std::vector<R>& diag,
                                  std::vector<R>& off,
                                  Matrix<T, Storage, Order>* Z,
-                                 std::size_t max_iter)
+                                 std::size_t max_iter_per_index)
 {
   const std::size_t n = diag.size();
   if (n == 0) return 0;
@@ -261,7 +363,9 @@ static inline int tridiagonal_ql(std::vector<R>& diag,
         if (std::abs(off[m]) <= std::numeric_limits<R>::epsilon() * dd) break;
       }
       if (m == l) break;
-      if (iter++ >= max_iter) return static_cast<int>(l) + 1;
+      // Per-index iteration cap (if max_iter_per_index==0, default to 80)
+      const std::size_t cap = (max_iter_per_index == 0 ? 80 : max_iter_per_index);
+      if (iter++ >= cap) return static_cast<int>(l) + 1;
 
       R g = (diag[l + 1] - diag[l]) / (R{2} * off[l]);
       R r = std::hypot(g, R{1});
@@ -311,12 +415,16 @@ static inline int tridiagonal_ql(std::vector<R>& diag,
 // Symmetric/Hermitian eigensolver. On success (info==0) eigenvalues are placed
 // in ascending order inside evals. If compute_vectors is true, eigenvectors is
 // resized to n x n with columns matching evals.
+// Compute eigenvalues (ascending) and optionally eigenvectors of a symmetric/Hermitian matrix.
+// - Returns 0 on success; if QL failed to converge for eigenvalue l, returns l+1.
+// - If FEM_NUMERIC_ENABLE_LAPACK is defined and supported types are used, defers to LAPACK xSYEV/xHEEV.
+// - max_iter is a per-index cap (typical 30–80). Use 0 to use a default of 80.
 template <typename T, typename Storage, StorageOrder Order>
 int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
                     Vector<typename numeric_traits<T>::scalar_type>& evals,
                     Matrix<T, Storage, Order>& eigenvectors,
                     bool compute_vectors = true,
-                    std::size_t max_iter = 1000)
+                    std::size_t max_iter = 80)
 {
   using R = typename numeric_traits<T>::scalar_type;
   const std::size_t n = A_in.rows();
@@ -327,6 +435,13 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
     eigenvectors = Matrix<T, Storage, Order>(0, 0, T{0});
     return 0;
   }
+
+  // Vendor backend (optional): if enabled and supported types, use it for full solve
+#ifdef FEM_NUMERIC_ENABLE_LAPACK
+  if (lapack_eigh(A_in, evals, eigenvectors, compute_vectors)) {
+    return 0; // success via LAPACK
+  }
+#endif
 
   Matrix<T, Storage, Order> tri = A_in;
   std::vector<R> diag(n, R{0});
@@ -341,24 +456,24 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
   }
 
   // Reduce A to Hermitian tridiagonal tri, optionally accumulating Q such that A = Q * tri * Q^H
-  detail::hermitian_to_tridiagonal(tri, diag, off, Qptr);
+  // Use light panel blocking with preallocated workspace
+  detail::hermitian_to_tridiagonal(tri, diag, off, Qptr, FEM_EIGEN_BLOCK_SIZE);
 
-  // For complex Hermitian matrices, enforce real nonnegative off-diagonal entries via a
-  // diagonal unitary similarity D: T' = D^H * tri * D. We track the cumulative phase per row.
+  // Realify tridiagonal: for complex Hermitian, make subdiagonals nonnegative real via a diagonal D.
+  // Track phase only if computing eigenvectors (needed to reconstruct Q*D).
   std::vector<T> phase(n, T{1});
   if constexpr (is_complex_number_v<T>) {
     for (std::size_t k = 0; k + 1 < n; ++k) {
       const T a = tri(k + 1, k);
       const R aa = static_cast<R>(std::abs(a));
       if (aa == R{0}) {
-        phase[k + 1] = phase[k];
+        if (compute_vectors) phase[k + 1] = phase[k];
         off[k] = R{0};
       } else {
         const T s = a / static_cast<T>(aa); // unit magnitude
-        phase[k + 1] = phase[k] * s;
+        if (compute_vectors) phase[k + 1] = phase[k] * s;
         off[k] = aa; // real positive
       }
-      // Diagonal stays real (Hermitian); ensure we copy it explicitly below.
     }
   } else {
     // Real symmetric case: use the actual (signed) subdiagonal entries
@@ -447,10 +562,12 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
   return 0;
 }
 
+// Eigenvalues-only fast path (avoids accumulating Q/Z/vectors).
+// Returns 0 on success; if QL failed to converge for eigenvalue l, returns l+1.
 template <typename T, typename Storage, StorageOrder Order>
 int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
                            Vector<typename numeric_traits<T>::scalar_type>& evals,
-                           std::size_t max_iter = 1000)
+                           std::size_t max_iter = 80)
 {
   Matrix<T, Storage, Order> dummy;
   return eigen_symmetric(A, evals, dummy, false, max_iter);

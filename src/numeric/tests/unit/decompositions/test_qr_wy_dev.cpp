@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <decompositions/qr.h>
+#include <linear_algebra/householder_wy.h>
 #include <core/matrix.h>
 #include <vector>
 #include <complex>
@@ -186,8 +187,8 @@ TEST(Decompositions_WY_Dev, Panel_T_vs_LAPACK_and_Update)
             for (int i=j+1;i<pm;++i) V(i,j) = Ap(i,j);
         }
     }
-    // Our T via internal helper
-    Matrix<T> Tmy; fem::numeric::decompositions::form_block_T_forward_columnwise<T>(V, taup, Tmy);
+    // Our T via consolidated WY helper
+    Matrix<T> Tmy; fem::numeric::linear_algebra::form_block_T_forward_columnwise(V, taup, Tmy);
     // LAPACK T via DLARFT (column-major)
     std::vector<T> Vcm(static_cast<size_t>(pm)*kb);
     for (int j=0;j<kb;++j) for (int i=0;i<pm;++i) Vcm[j*pm+i]=V(i,j);
@@ -247,7 +248,7 @@ TEST(Decompositions_WY_Dev, Panel_T_vs_LAPACK_and_Update_Complex)
         Matrix<Z> Ap = Panel; std::vector<Z> taup; ASSERT_EQ(qr_factor_unblocked(Ap, taup), 0);
         Matrix<Z> V(pm, kb, Z(0,0));
         for (int j=0;j<kb;++j) { for (int i=0;i<j;++i) V(i,j)=Z(0,0); V(j,j)=Z(1,0); for (int i=j+1;i<pm;++i) V(i,j)=Ap(i,j); }
-        Matrix<Z> Tmy; fem::numeric::decompositions::form_block_T_forward_columnwise<Z>(V, taup, Tmy);
+        Matrix<Z> Tmy; fem::numeric::linear_algebra::form_block_T_forward_columnwise(V, taup, Tmy);
         std::vector<Z> Vcm(static_cast<size_t>(pm)*kb);
         for (int j=0;j<kb;++j) for (int i=0;i<pm;++i) Vcm[j*pm+i]=V(i,j);
         std::vector<Z> Tcm(static_cast<size_t>(kb)*kb, Z(0,0));
