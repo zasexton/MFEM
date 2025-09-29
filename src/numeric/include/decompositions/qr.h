@@ -408,7 +408,7 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
   };
 
   auto build_T_from_V_tau = [&](const Matrix<T>& V, const std::vector<T>& taup, Matrix<T>& Tmat) {
-    fem::numeric::linear_algebra::form_block_T_forward_columnwise<T>(V, taup, Tmat);
+    fem::numeric::linear_algebra::form_block_T_forward_columnwise(V, taup, Tmat);
   };
 
   // Block application helper is now centralized in linear_algebra/householder_wy.h
