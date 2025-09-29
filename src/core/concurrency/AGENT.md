@@ -25,93 +25,93 @@ To address identified gaps and risks, the following additions and clarifications
 
 ### Terminology
 - Execution Engine: The low-level primitives provided by `core/concurrency` (thread pools, `task_graph`, `parallel_pipeline`).
-- Execution Policy: Configuration for how work runs (pool selection, chunking) defined in `execution.hpp`.
+- Execution Policy: Configuration for how work runs (pool selection, chunking) defined in `execution.h`.
 - Stage: A function node within a pipeline; stages compose into pipelines.
-- Backpressure Policy: Behavior for bounded queues under load (block, drop, fail) from `queue_policies.hpp`.
-- Cancellation Token: Cooperative cancellation primitive (`cancellation.hpp`) passed through tasks/algorithms.
+- Backpressure Policy: Behavior for bounded queues under load (block, drop, fail) from `queue_policies.h`.
+- Cancellation Token: Cooperative cancellation primitive (`cancellation.h`) passed through tasks/algorithms.
 
 ## Files Overview
 
 ### Thread Management
 ```cpp
-thread_pool.hpp        // Basic thread pool implementation
-work_stealing_pool.hpp // Work-stealing thread pool
-thread_local.hpp       // Thread-local storage utilities
-thread_affinity.hpp    // CPU affinity management
-thread_priority.hpp    // Thread priority control
-thread_native.hpp      // Platform abstraction for native handles
+thread_pool.h        // Basic thread pool implementation
+work_stealing_pool.h // Work-stealing thread pool
+thread_local.h       // Thread-local storage utilities
+thread_affinity.h    // CPU affinity management
+thread_priority.h    // Thread priority control
+thread_native.h      // Platform abstraction for native handles
 ```
 
 ### Task System
 ```cpp
-task.hpp              // Task abstraction
-task_graph.hpp        // DAG task dependencies
-task_scheduler.hpp    // Task scheduling strategies
-continuation.hpp      // Task continuations
-async.hpp            // Async task execution
-cancellation.hpp     // CancellationToken/Source (wraps std::stop_token)
-deadline.hpp         // Deadlines and timeouts for waits
+task.h              // Task abstraction
+task_graph.h        // DAG task dependencies
+task_scheduler.h    // Task scheduling strategies
+continuation.h      // Task continuations
+async.h            // Async task execution
+cancellation.h     // CancellationToken/Source (wraps std::stop_token)
+deadline.h         // Deadlines and timeouts for waits
 ```
 
 ### Synchronization
 ```cpp
-mutex.hpp            // Enhanced mutex types
-spinlock.hpp         // Spinlock implementations
-rwlock.hpp           // Reader-writer locks
-condition_var.hpp    // Condition variables
-barrier.hpp          // Thread barriers
-latch.hpp           // One-time synchronization
-semaphore.hpp       // Counting semaphores
-event.hpp           // Manual/auto reset events
+mutex.h            // Enhanced mutex types
+spinlock.h         // Spinlock implementations
+rwlock.h           // Reader-writer locks
+condition_var.h    // Condition variables
+barrier.h          // Thread barriers
+latch.h           // One-time synchronization
+semaphore.h       // Counting semaphores
+event.h           // Manual/auto reset events
 ```
 
 ### Lock-Free Structures
 ```cpp
-atomic_queue.hpp     // Lock-free MPMC queue
-atomic_stack.hpp     // Lock-free stack
-hazard_pointer.hpp   // Safe memory reclamation
-rcu.hpp             // Read-copy-update
-seqlock.hpp         // Sequence locks
-epoch.hpp           // Epoch-based reclamation manager
+atomic_queue.h     // Lock-free MPMC queue
+atomic_stack.h     // Lock-free stack
+hazard_pointer.h   // Safe memory reclamation
+rcu.h             // Read-copy-update
+seqlock.h         // Sequence locks
+epoch.h           // Epoch-based reclamation manager
 ```
 
 ### Futures and Promises
 ```cpp
-future.hpp          // Enhanced futures
-promise.hpp         // Enhanced promises
-shared_future.hpp   // Shared futures
-packaged_task.hpp   // Packaged tasks
-when_all.hpp        // Wait for multiple futures
-when_any.hpp        // Wait for any future
+future.h          // Enhanced futures
+promise.h         // Enhanced promises
+shared_future.h   // Shared futures
+packaged_task.h   // Packaged tasks
+when_all.h        // Wait for multiple futures
+when_any.h        // Wait for any future
 ```
 
 ### Parallel Algorithms
 ```cpp
-parallel_for.hpp       // Parallel loops (pool-backed)
-parallel_reduce.hpp    // Parallel reduction (pool-backed)
-parallel_scan.hpp      // Parallel prefix sum (pool-backed)
-parallel_sort.hpp      // Parallel sorting (pool-backed)
-parallel_pipeline.hpp  // Pipeline parallelism (owned by concurrency)
-execution.hpp          // Execution policies (pool selection, chunking)
+parallel_for.h       // Parallel loops (pool-backed)
+parallel_reduce.h    // Parallel reduction (pool-backed)
+parallel_scan.h      // Parallel prefix sum (pool-backed)
+parallel_sort.h      // Parallel sorting (pool-backed)
+parallel_pipeline.h  // Pipeline parallelism (owned by concurrency)
+execution.h          // Execution policies (pool selection, chunking)
 ```
 
 > **Pipeline Ownership**: The `parallel_pipeline` primitives are the foundational building blocks for staged execution and are owned by `core/concurrency`. Higher-level orchestration layers—such as `workflow/`—compose these primitives (branching, error handling, undo/redo) without reimplementing the execution engine.
 
 ### Utilities
 ```cpp
-thread_safe.hpp      // Thread-safe wrapper
-concurrent_hash_map.hpp // Thread-safe hash map
-mpsc_queue.hpp      // Multi-producer single-consumer
-spsc_queue.hpp      // Single-producer single-consumer
-queue_policies.hpp  // Backpressure/overflow policies for bounded queues
-telemetry.hpp       // Metrics/tracing hooks (optional, zero-cost when disabled)
+thread_safe.h      // Thread-safe wrapper
+concurrent_hash_map.h // Thread-safe hash map
+mpsc_queue.h      // Multi-producer single-consumer
+spsc_queue.h      // Single-producer single-consumer
+queue_policies.h  // Backpressure/overflow policies for bounded queues
+telemetry.h       // Metrics/tracing hooks (optional, zero-cost when disabled)
 ```
 
 > **Allocator Sharing**: Thread-safe object pools are sourced from the `memory/` module (see `concurrent_pool.hpp`); concurrency utilities wrap or configure them rather than defining new pool types.
 
 ## Detailed Component Specifications
 
-### `thread_pool.hpp`
+### `thread_pool.h`
 ```cpp
 class ThreadPool {
     std::vector<std::thread> threads_;
@@ -172,7 +172,7 @@ ThreadPool& global_thread_pool();
 **Why necessary**: Efficient thread reuse, controlled parallelism, task queuing.
 **Usage**: Background processing, parallel algorithms, async operations.
 
-### `task.hpp`
+### `task.h`
 ```cpp
 template<typename T>
 class Task {
@@ -238,7 +238,7 @@ auto async_task(F&& f) -> Task<decltype(f())>;
 **Why necessary**: Task abstraction, composable async operations, continuation support.
 **Usage**: Async workflows, task dependencies, parallel pipelines.
 
-### `execution.hpp`
+### `execution.h`
 ```cpp
 namespace exec {
     enum class chunking { auto_, static_, dynamic_, guided_ };
@@ -254,7 +254,7 @@ namespace exec {
 **Why necessary**: Centralizes execution configuration for algorithms and tasks.
 **Usage**: Select pool, chunking style, and granularity consistently.
 
-### `parallel_for.hpp`
+### `parallel_for.h`
 ```cpp
 template<typename IndexType, typename F>
 void parallel_for(IndexType begin, IndexType end, F&& func, exec::policy p = {}) {
@@ -310,7 +310,7 @@ void parallel_for_each(Container& container, F&& func, exec::policy p = {}) {
 **Why necessary**: Simple parallelization of loops, automatic work distribution.
 **Usage**: Array processing, matrix operations, independent computations.
 
-### `atomic_queue.hpp`
+### `atomic_queue.h`
 ```cpp
 template<typename T>
 class AtomicQueue {
@@ -376,7 +376,7 @@ public:
 **Why necessary**: Lock-free communication between threads, high-performance queuing.
 **Usage**: Message passing, work queues, producer-consumer patterns.
 
-### `rcu.hpp`
+### `rcu.h`
 ```cpp
 template<typename T>
 class RCU {
@@ -427,7 +427,7 @@ private:
 **Why necessary**: Read-heavy concurrent data structures, minimal reader overhead.
 **Usage**: Configuration updates, routing tables, caches.
 
-### `work_stealing_pool.hpp`
+### `work_stealing_pool.h`
 ```cpp
 class WorkStealingPool {
     struct Worker {
@@ -491,7 +491,7 @@ private:
 **Why necessary**: Better load balancing, reduces idle threads, improves throughput.
 **Usage**: Recursive algorithms, irregular workloads, task-based parallelism.
 
-### `barrier.hpp`
+### `barrier.h`
 ```cpp
 class Barrier {
     std::atomic<std::size_t> threshold_;
@@ -646,20 +646,20 @@ auto result = pipeline.process(5);  // "20"
 
 ## Platform Abstraction Notes
 
-- `thread_affinity.hpp` and `thread_priority.hpp` route through `thread_native.hpp`
+- `thread_affinity.h` and `thread_priority.h` route through `thread_native.h`
 - Unsupported platforms degrade to safe no-ops with feature detection at runtime
 
 ## Telemetry Integration
 
-- `telemetry.hpp` defines optional hooks for queue depths, task latency, steals, wakeups
+- `telemetry.h` defines optional hooks for queue depths, task latency, steals, wakeups
 - Hooks are no-ops when `metrics/` or `tracing/` is not present or disabled
 
 ## Backpressure Policies
 
-- `queue_policies.hpp` provides: block, drop_newest, drop_oldest, fail (try_enqueue)
+- `queue_policies.h` provides: block, drop_newest, drop_oldest, fail (try_enqueue)
 - Pipelines expose capacity and backpressure strategy per stage
 
 ## Memory Reclamation Strategy
 
-- Lock-free containers support hazard pointers and epoch-based reclamation (`epoch.hpp`)
+- Lock-free containers support hazard pointers and epoch-based reclamation (`epoch.h`)
 - RCU provided for read-dominant structures; document trade-offs and choose per-type
