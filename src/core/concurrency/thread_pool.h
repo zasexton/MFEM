@@ -104,7 +104,7 @@ private:
 
     // Task queue with priority support
     std::priority_queue<TaskWrapper> tasks_;
-    std::mutex queue_mutex_;
+    mutable std::mutex queue_mutex_;
     std::condition_variable cv_task_;
     std::condition_variable cv_idle_;
 
@@ -117,7 +117,7 @@ private:
     mutable Stats stats_;
 
     // Memory pool for task objects (reuse allocations)
-    mutable memory::ObjectPool<TaskWrapper> task_pool_{100};
+    mutable memory::ObjectPool<TaskWrapper> task_pool_;
 
     // Configuration
     const size_t max_queue_size_;
@@ -155,16 +155,7 @@ private:
                 stats_.active_threads++;
                 active_tasks_++;
 
-                try {
-                    task();
-                    stats_.tasks_completed++;
-                } catch (...) {
-                    stats_.tasks_failed++;
-                    // Log error if logging is available
-                    #ifdef CORE_LOGGING_ENABLED
-                    // TODO: Log exception when logging module is available
-                    #endif
-                }
+                task();
 
                 active_tasks_--;
                 stats_.active_threads--;
@@ -224,11 +215,25 @@ public:
      * @tparam Args Argument types
      * @param f Function to execute
      * @param args Arguments to pass to function
-     * @param priority Task priority
      * @return Future for the task result
      */
     template<typename F, typename... Args>
-    auto submit(F&& f, Args&&... args, Priority priority = Priority::Normal)
+    auto submit(F&& f, Args&&... args)
+        -> std::future<std::invoke_result_t<F, Args...>> {
+        return submit_with_priority(std::forward<F>(f), Priority::Normal, std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Submit a task to the thread pool with explicit priority
+     * @tparam F Function type
+     * @tparam Args Argument types
+     * @param f Function to execute
+     * @param priority Task priority
+     * @param args Arguments to pass to function
+     * @return Future for the task result
+     */
+    template<typename F, typename... Args>
+    auto submit_with_priority(F&& f, Priority priority, Args&&... args)
         -> std::future<std::invoke_result_t<F, Args...>> {
 
         using return_type = std::invoke_result_t<F, Args...>;
@@ -256,7 +261,15 @@ public:
                 throw std::runtime_error("ThreadPool: Queue size limit exceeded");
             }
 
-            tasks_.emplace([task]() { (*task)(); }, priority);
+            tasks_.emplace([task, this]() {
+                try {
+                    (*task)();
+                    stats_.tasks_completed++;
+                } catch (...) {
+                    stats_.tasks_failed++;
+                    throw; // Re-throw to preserve exception handling
+                }
+            }, priority);
             stats_.tasks_submitted++;
             stats_.queue_size = tasks_.size();
         }
@@ -282,7 +295,7 @@ public:
             typename std::invoke_result_t<F, Args...>::error_type;
         } {
 
-        return submit(std::forward<F>(f), std::forward<Args>(args)..., priority);
+        return submit_with_priority(std::forward<F>(f), priority, std::forward<Args>(args)...);
     }
 
     /**
@@ -295,7 +308,7 @@ public:
     template<typename F>
     void submit_bulk(F&& f, size_t count, Priority priority = Priority::Normal) {
         for (size_t i = 0; i < count; ++i) {
-            submit([func = f, idx = i]() { func(idx); }, priority);
+            submit_with_priority([func = f, idx = i]() { func(idx); }, priority);
         }
     }
 
@@ -311,7 +324,7 @@ public:
     template<typename Iterator, typename F>
     void submit_range(Iterator begin, Iterator end, F&& f, Priority priority = Priority::Normal) {
         for (auto it = begin; it != end; ++it) {
-            submit([func = f, value = *it]() { func(value); }, priority);
+            submit_with_priority([func = f, value = *it]() { func(value); }, priority);
         }
     }
 
@@ -461,7 +474,11 @@ public:
      * @brief Reset statistics
      */
     void reset_statistics() {
-        stats_ = Stats{};
+        stats_.tasks_submitted.store(0);
+        stats_.tasks_completed.store(0);
+        stats_.tasks_failed.store(0);
+        stats_.active_threads.store(0);
+        stats_.queue_size.store(0);
         stats_.start_time = std::chrono::steady_clock::now();
     }
 
