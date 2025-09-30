@@ -668,6 +668,35 @@ public:
         cols_ = new_cols;
         this->shape_ = Shape{rows_, cols_};
     }
+
+    /**
+     * @brief Shrink the number of columns without moving data
+     *
+     * Adjusts metadata to expose only the first new_cols columns. The underlying
+     * storage size is unchanged, so this is O(1) and non-destructive. new_cols
+     * must be <= current cols().
+     */
+    void shrink_to_cols(size_type new_cols) {
+        if (new_cols > cols_) {
+            throw std::invalid_argument("shrink_to_cols: new_cols must be <= current cols");
+        }
+        cols_ = new_cols;
+        this->shape_ = Shape{rows_, cols_};
+    }
+
+    /**
+     * @brief Shrink the number of rows without moving data
+     *
+     * Adjusts metadata to expose only the first new_rows rows. Underlying
+     * storage is unchanged (O(1)). new_rows must be <= current rows().
+     */
+    void shrink_to_rows(size_type new_rows) {
+        if (new_rows > rows_) {
+            throw std::invalid_argument("shrink_to_rows: new_rows must be <= current rows");
+        }
+        rows_ = new_rows;
+        this->shape_ = Shape{rows_, cols_};
+    }
     
     // === Expression Template Interface ===
     
