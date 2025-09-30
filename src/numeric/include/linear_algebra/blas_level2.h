@@ -445,6 +445,66 @@ inline void her(Uplo uplo, const Alpha& alpha, const X& x, A& A_)
   }
 }
 
+// ---------------------------------------------------------------------------
+// SYR2/HER2: A := alpha * x * y^T + alpha * y * x^T (+ conj on second vec for HER2) + A
+// ---------------------------------------------------------------------------
+
+template <typename Alpha, typename X, typename Y, typename A>
+  requires (VectorLike<X> && VectorLike<Y> && MatrixLike<A>)
+inline void syr2(Uplo uplo, const Alpha& alpha, const X& x, const Y& y, A& A_)
+{
+  const std::size_t n = A_.rows();
+  if (A_.cols() != n || x.size() != n || y.size() != n) {
+    throw std::invalid_argument("syr2: size mismatch");
+  }
+  if (uplo == Uplo::Upper) {
+    for (std::size_t i = 0; i < n; ++i) {
+      auto xi = x[i];
+      for (std::size_t j = i; j < n; ++j) {
+        A_(i, j) = static_cast<mat_elem_t<A>>(A_(i, j) + alpha * (xi * y[j] + y[i] * x[j]));
+      }
+    }
+  } else {
+    for (std::size_t i = 0; i < n; ++i) {
+      auto xi = x[i];
+      for (std::size_t j = 0; j <= i; ++j) {
+        A_(i, j) = static_cast<mat_elem_t<A>>(A_(i, j) + alpha * (xi * y[j] + y[i] * x[j]));
+      }
+    }
+  }
+}
+
+template <typename Alpha, typename X, typename Y, typename A>
+  requires (VectorLike<X> && VectorLike<Y> && MatrixLike<A>)
+inline void her2(Uplo uplo, const Alpha& alpha, const X& x, const Y& y, A& A_)
+{
+  const std::size_t n = A_.rows();
+  if (A_.cols() != n || x.size() != n || y.size() != n) {
+    throw std::invalid_argument("her2: size mismatch");
+  }
+  if (uplo == Uplo::Upper) {
+    for (std::size_t i = 0; i < n; ++i) {
+      auto xi = x[i];
+      for (std::size_t j = i; j < n; ++j) {
+        auto yj = y[j];
+        auto xj = x[j];
+        auto yi = y[i];
+        A_(i, j) = static_cast<mat_elem_t<A>>(A_(i, j) + alpha * (xi * conj_if_complex(yj) + yi * conj_if_complex(xj)));
+      }
+    }
+  } else {
+    for (std::size_t i = 0; i < n; ++i) {
+      auto xi = x[i];
+      for (std::size_t j = 0; j <= i; ++j) {
+        auto yj = y[j];
+        auto xj = x[j];
+        auto yi = y[i];
+        A_(i, j) = static_cast<mat_elem_t<A>>(A_(i, j) + alpha * (xi * conj_if_complex(yj) + yi * conj_if_complex(xj)));
+      }
+    }
+  }
+}
+
 } // namespace fem::numeric::linear_algebra
 
 #endif // NUMERIC_LINEAR_ALGEBRA_BLAS_LEVEL2_H
