@@ -210,15 +210,20 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
         R vnorm = stable_norm(v); R vnorm2 = vnorm * vnorm;
         if (vnorm2 < std::numeric_limits<R>::epsilon()) { sub[kk] = R{0}; tau_p[j] = T{0}; continue; }
 
-        // Normalize and store v into Vp(:,j); v0=1 convention
+        // Normalize and store shifted v into Vp(:,j); v0=1 convention
+        // Reflector acts on rows starting at k+j+1 => shift by j in Vp
         T v0 = v[0];
-        for (std::size_t i = 0; i < m; ++i) Vp(i, j) = (v0 != T{0}) ? v[i] / v0 : v[i];
-        Vp(0, j) = T{1};
+        for (std::size_t i = 0; i < m; ++i) {
+          std::size_t row = j + i;
+          Vp(row, j) = (v0 != T{0}) ? v[i] / v0 : v[i];
+        }
+        Vp(j, j) = T{1};
         // Tau
         R sumsq = R{1};
         for (std::size_t i = 1; i < m; ++i) {
-          if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(Vp(i, j)));
-          else sumsq += static_cast<R>(Vp(i, j) * Vp(i, j));
+          auto vij = Vp(j + i, j);
+          if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(vij));
+          else sumsq += static_cast<R>(vij * vij);
         }
         tau_p[j] = static_cast<T>(R{2} / sumsq);
 
