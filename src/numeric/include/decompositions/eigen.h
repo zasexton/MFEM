@@ -147,8 +147,12 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
   }
 #endif
 
-  // Disable panel update for now to avoid numerical issues in reference path
+  // Optional reference blocked two-sided update path (panel WY), enabled via macro
+#if defined(FEM_EIGEN_REF_BLOCKED_TRIDIAG)
+  use_panel_update = true;
+#else
   use_panel_update = false;
+#endif
 
   Matrix<T, Storage, Order> Qtmp;
   Matrix<T, Storage, Order>* Q = nullptr;
@@ -165,8 +169,92 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
   p.reserve(n);
   w.reserve(n);
 
-  // Process column by column (no blocking for now to ensure correctness)
-  for (std::size_t kk = 0; kk + 1 < n; ++kk) {
+  // Process reduction (optionally in panel blocks)
+  for (std::size_t k = 0; k + 1 < n; ) {
+    const std::size_t m_full = n - k - 1;
+    if (m_full == 0) break;
+    const std::size_t b = std::min<std::size_t>(block_size, m_full);
+
+#if defined(FEM_EIGEN_REF_BLOCKED_TRIDIAG)
+    if (use_panel_update && b > 1) {
+      // Build panel V and tau for columns k..k+b-1
+      Matrix<T, Storage, Order> Vp(m_full, b, T{});
+      std::vector<T> tau_p(b, T{});
+
+      for (std::size_t j = 0; j < b; ++j) {
+        const std::size_t kk = k + j;
+        const std::size_t m = n - kk - 1;
+        if (m == 0) { tau_p[j] = T{0}; continue; }
+
+        x.resize(m);
+        for (std::size_t i = 0; i < m; ++i) x[i] = A(kk + 1 + i, kk);
+
+        R xnorm = stable_norm(x);
+        if (xnorm == R{0}) {
+          sub[kk] = R{0};
+          for (std::size_t i = kk + 2; i < n; ++i) { A(i, kk) = T{0}; A(kk, i) = T{0}; }
+          tau_p[j] = T{0};
+          continue;
+        }
+
+        T alpha;
+        if constexpr (is_complex_number_v<T>) {
+          if (std::abs(x[0]) < std::numeric_limits<R>::epsilon()) alpha = static_cast<T>(xnorm);
+          else { T phase0 = x[0] / static_cast<T>(std::abs(x[0])); alpha = -phase0 * static_cast<T>(xnorm); }
+        } else {
+          alpha = (x[0] >= R{0}) ? static_cast<T>(-xnorm) : static_cast<T>(xnorm);
+        }
+
+        v = x; v[0] -= alpha;
+        R vnorm = stable_norm(v); R vnorm2 = vnorm * vnorm;
+        if (vnorm2 < std::numeric_limits<R>::epsilon()) { sub[kk] = R{0}; tau_p[j] = T{0}; continue; }
+
+        // Normalize and store v into Vp(:,j); v0=1 convention
+        T v0 = v[0];
+        for (std::size_t i = 0; i < m; ++i) Vp(i, j) = (v0 != T{0}) ? v[i] / v0 : v[i];
+        Vp(0, j) = T{1};
+        // Tau
+        R sumsq = R{1};
+        for (std::size_t i = 1; i < m; ++i) {
+          if constexpr (is_complex_number_v<T>) sumsq += static_cast<R>(std::norm(Vp(i, j)));
+          else sumsq += static_cast<R>(Vp(i, j) * Vp(i, j));
+        }
+        tau_p[j] = static_cast<T>(R{2} / sumsq);
+
+        // Write subdiagonal element and zero out below it in column kk
+        A(kk + 1, kk) = alpha; A(kk, kk + 1) = conj_if_complex(alpha);
+        if constexpr (is_complex_number_v<T>) sub[kk] = std::abs(alpha);
+        else sub[kk] = static_cast<R>(alpha);
+        for (std::size_t i = kk + 2; i < n; ++i) { A(i, kk) = T{0}; A(kk, i) = T{0}; }
+
+        // Accumulate Q with this reflector if requested (we will apply block below)
+        if (Q) {
+          // No-op here; block application after panel is formed
+        }
+      }
+
+      // Apply two-sided blocked update on trailing A22
+      if (b > 0) {
+        auto A22 = A.submatrix(k + 1, n, k + 1, n);
+        // Vp currently sized m_full x b; form T
+        Matrix<T, Storage, Order> Tmat;
+        fem::numeric::linear_algebra::form_block_T_forward_columnwise(Vp, tau_p, Tmat);
+        fem::numeric::linear_algebra::apply_block_reflectors_two_sided_hermitian(Vp, Tmat, A22);
+
+        // Apply block to Q if accumulating: Q(:,k+1:n-1) = Q(:,k+1:n-1) * H
+        if (Q) {
+          auto Qblk = Q->submatrix(0, n, k + 1, n);
+          fem::numeric::linear_algebra::apply_block_reflectors_right(Vp, Tmat, Qblk);
+        }
+      }
+
+      k += b;
+      continue;
+    }
+#endif
+
+    // Fallback unblocked per-column
+    for (std::size_t kk = k; kk + 1 < n && kk < k + b; ++kk) {
     const std::size_t m = n - kk - 1; // remaining length below diag
     if (m == 0) continue;
 
@@ -252,6 +340,8 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
     A(kk + 1, kk) = alpha; A(kk, kk + 1) = conj_if_complex(alpha);
     if constexpr (is_complex_number_v<T>) sub[kk] = std::abs(alpha);
     else sub[kk] = static_cast<R>(alpha);
+    }
+    k += b;
   }
 
   for (std::size_t i = 0; i < n; ++i) diag[i] = static_cast<R>(std::real(A(i, i)));
@@ -515,23 +605,39 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
     return 0;
   }
 
-  // Reorder columns by ascending eigenvalues
-  Matrix<T, Storage, Order> Zsorted(n, n, T{0});
-  for (std::size_t col = 0; col < n; ++col)
-    for (std::size_t row = 0; row < n; ++row)
-      Zsorted(row, col) = Z(row, perm[col]);
+  // In-place permute columns of Z by 'perm' and apply diagonal 'phase' row-wise
+  if (compute_vectors) {
+    // Column permutation: new Z(:,i) = old Z(:, perm[i])
+    std::vector<bool> visited(n, false);
+    Vector<T> coltmp(n, T{});
+    for (std::size_t start = 0; start < n; ++start) {
+      if (visited[start] || perm[start] == start) { visited[start] = true; continue; }
+      std::size_t cur = start;
+      // Save original column at 'start'
+      for (std::size_t r = 0; r < n; ++r) coltmp[r] = Z(r, start);
+      while (!visited[cur]) {
+        std::size_t next = perm[cur];
+        if (next == start) {
+          for (std::size_t r = 0; r < n; ++r) Z(r, cur) = coltmp[r];
+          visited[cur] = true;
+          break;
+        }
+        for (std::size_t r = 0; r < n; ++r) Z(r, cur) = Z(r, next);
+        visited[cur] = true;
+        cur = next;
+      }
+    }
+    // Row-wise scaling by phase: Z(i,:) *= phase[i]
+    for (std::size_t i = 0; i < n; ++i)
+      for (std::size_t j = 0; j < n; ++j)
+        Z(i, j) = phase[i] * Z(i, j);
+  }
 
-  // Apply the diagonal phase: Zph = D * Zsorted (row-wise scaling)
-  Matrix<T, Storage, Order> Zph(n, n, T{0});
-  for (std::size_t i = 0; i < n; ++i)
-    for (std::size_t j = 0; j < n; ++j)
-      Zph(i, j) = phase[i] * Zsorted(i, j);
-
-  // Form eigenvectors E = Q * Zph via GEMM
+  // Form eigenvectors E = Q * Z via GEMM
   Matrix<T, Storage, Order> E(n, n, T{0});
   fem::numeric::linear_algebra::gemm(fem::numeric::linear_algebra::Trans::NoTrans,
                                      fem::numeric::linear_algebra::Trans::NoTrans,
-                                     T{1}, Q, Zph, T{0}, E);
+                                     T{1}, Q, Z, T{0}, E);
 
   for (std::size_t j = 0; j < n; ++j) {
     R norm = R{0};
