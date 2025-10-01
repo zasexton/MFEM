@@ -142,6 +142,15 @@ inline void apply_block_reflectors_right(const VMat& V,
       B(i, j) = static_cast<T>(B(i, j) - Delta(i, j));
 }
 
+// Convenience wrapper matching legacy naming in some call-sites: apply left
+template <typename VMat, typename TMat, typename BMat>
+inline void apply_block_reflectors(const VMat& V,
+                                   const TMat& Tmat,
+                                   BMat& B)
+{
+  apply_block_reflectors_left(V, Tmat, B);
+}
+
 // ---------------------------------------------------------------------------
 // Two-sided Hermitian update: A := H A H, where H = I - V T V^H and A is Hermitian
 // Uses: W = A V; W := W - 0.5 * V * (T^H * (V^H * W)); A := A - V W^H - W V^H

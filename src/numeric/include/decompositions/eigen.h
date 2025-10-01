@@ -152,6 +152,7 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
   use_panel_update = true;
 #else
   use_panel_update = false;
+  (void)use_panel_update; // silence unused when blocked path disabled
 #endif
 
   Matrix<T, Storage, Order> Qtmp;
@@ -713,28 +714,27 @@ int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
                            Vector<typename numeric_traits<T>::scalar_type>& evals,
                            std::size_t max_iter = 80)
 {
-  using R = typename numeric_traits<T>::scalar_type;
 #ifdef FEM_NUMERIC_ENABLE_LAPACK
   // Try LAPACK tridiagonal path (STEVR) for values-only
   const std::size_t n = A.rows();
   if (A.cols() != n) throw std::invalid_argument("eigen_symmetric_values: matrix must be square");
-  if (n == 0) { evals = Vector<R>(0); return 0; }
+  if (n == 0) { evals = Vector<typename numeric_traits<T>::scalar_type>(0); return 0; }
   Matrix<T, Storage, Order> tri = A;
-  std::vector<R> diag(n, R{0});
-  std::vector<R> off((n > 1) ? n - 1 : 0, R{0});
+  std::vector<typename numeric_traits<T>::scalar_type> diag(n, typename numeric_traits<T>::scalar_type{0});
+  std::vector<typename numeric_traits<T>::scalar_type> off((n > 1) ? n - 1 : 0, typename numeric_traits<T>::scalar_type{0});
   detail::hermitian_to_tridiagonal(tri, diag, off, nullptr, FEM_EIGEN_BLOCK_SIZE);
   // Realify subdiagonal for complex case
   if constexpr (is_complex_number_v<T>) {
     for (std::size_t k = 0; k + 1 < n; ++k) {
       const T a = tri(k + 1, k);
-      const R aa = static_cast<R>(std::abs(a));
+      const auto aa = static_cast<typename numeric_traits<T>::scalar_type>(std::abs(a));
       off[k] = aa;
     }
   } else {
-    for (std::size_t k = 0; k + 1 < n; ++k) off[k] = static_cast<R>(std::real(tri(k + 1, k)));
+    for (std::size_t k = 0; k + 1 < n; ++k) off[k] = static_cast<typename numeric_traits<T>::scalar_type>(std::real(tri(k + 1, k)));
   }
   int info = 0;
-  if (fem::numeric::backends::lapack::stevr_values<R>(diag, off, evals, info)) {
+  if (fem::numeric::backends::lapack::stevr_values<typename numeric_traits<T>::scalar_type>(diag, off, evals, info)) {
     return (info == 0) ? 0 : static_cast<int>(1);
   }
 #endif
@@ -856,7 +856,6 @@ int eigen_symmetric_batched_small(const std::vector<Matrix<T, Storage, Order>>& 
                                   std::size_t max_iter = 80,
                                   EighMethod method = EighMethod::Auto)
 {
-  using R = typename numeric_traits<T>::scalar_type;
   const std::size_t b = A_batch.size();
   evals_batch.resize(b);
   if (evecs_batch && compute_vectors) evecs_batch->resize(b);
