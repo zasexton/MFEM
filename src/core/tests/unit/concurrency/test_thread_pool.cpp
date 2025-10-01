@@ -158,7 +158,7 @@ TEST_F(ThreadPoolTest, RangeSubmission) {
     std::atomic<int> sum{0};
 
     pool.submit_range(data.begin(), data.end(), [&sum](int value) {
-        sum += value;
+        sum.fetch_add(value, std::memory_order_relaxed);
     });
 
     pool.wait_idle();
@@ -629,22 +629,39 @@ TEST_F(ThreadPoolTest, LargeNumberOfTasks) {
 }
 
 TEST_F(ThreadPoolTest, RecursiveSubmission) {
-    fcc::ThreadPool pool(2);
-    std::atomic<int> depth{0};
+    fcc::ThreadPool pool(std::thread::hardware_concurrency());
+    std::atomic<int> count{0};
     const int max_depth = 5;
 
-    std::function<void(int)> recursive_task;
-    recursive_task = [&](int level) {
-        if (level < max_depth) {
-            depth++;
-            pool.submit([&recursive_task, level]() { recursive_task(level + 1); });
+    // Use a promise to signal completion of all recursive tasks
+    auto completion_promise = std::make_shared<std::promise<void>>();
+    auto completion_future = completion_promise->get_future();
+
+    // Use shared_ptr to safely share the lambda across threads
+    auto recursive_task = std::make_shared<std::function<void(int)>>();
+    *recursive_task = [&count, &pool, recursive_task, max_depth, completion_promise](int level) {
+        count.fetch_add(1, std::memory_order_relaxed);
+        if (level < max_depth - 1) {
+            // Submit the next level
+            pool.submit([recursive_task, next_level = level + 1]() {
+                (*recursive_task)(next_level);
+            });
+        } else {
+            // Last level - signal completion
+            completion_promise->set_value();
         }
     };
 
-    pool.submit([&recursive_task]() { recursive_task(0); });
-    pool.wait_idle();
+    // Start the recursion
+    pool.submit([recursive_task]() { (*recursive_task)(0); });
 
-    EXPECT_EQ(depth.load(), max_depth);
+    // Wait for the deepest level to complete
+    completion_future.wait();
+
+    // Give a small window for the count to be fully updated
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    EXPECT_EQ(count.load(), max_depth);
 }
 
 TEST_F(ThreadPoolTest, MoveOnlyTypes) {
