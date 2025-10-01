@@ -235,6 +235,56 @@ inline bool potrf_inplace(Matrix<T, Storage, Order>& A,
 #endif
 }
 
+// Backward-compatible overload defaulting to Upper for SYTRD + Q
+template <typename T, typename Storage, StorageOrder Order>
+inline bool sytrd_tridiag_with_Q(const Matrix<T, Storage, Order>& A,
+                                 std::vector<typename fem::numeric::numeric_traits<T>::scalar_type>& d,
+                                 std::vector<typename fem::numeric::numeric_traits<T>::scalar_type>& e,
+                                 Matrix<T, Storage, Order>* Qopt,
+                                 int& info_out)
+{
+  return sytrd_tridiag_with_Q(A, d, e, Qopt, fem::numeric::linear_algebra::Uplo::Upper, info_out);
+}
+
+// Backward-compatible overload defaulting to Upper triangle for EVD (non-destructive)
+template <typename T, typename Storage, StorageOrder Order>
+inline bool eigh_via_evd(const Matrix<T, Storage, Order>& A,
+                         Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
+                         Matrix<T, Storage, Order>& eigenvectors,
+                         bool compute_vectors,
+                         int& info_out)
+{
+  return eigh_via_evd(A, evals, eigenvectors, compute_vectors, fem::numeric::linear_algebra::Uplo::Upper, info_out);
+}
+
+// Backward-compatible overload defaulting to Upper triangle for range-select EVR
+template <typename T, typename Storage, StorageOrder Order>
+inline bool eigh_via_evr_range(const Matrix<T, Storage, Order>& A,
+                               Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
+                               Matrix<T, Storage, Order>& eigenvectors,
+                               bool compute_vectors,
+                               char range_sel,
+                               typename fem::numeric::numeric_traits<T>::scalar_type vl,
+                               typename fem::numeric::numeric_traits<T>::scalar_type vu,
+                               int il, int iu,
+                               int& info_out,
+                               int* m_out)
+{
+  return eigh_via_evr_range(A, evals, eigenvectors, compute_vectors, fem::numeric::linear_algebra::Uplo::Upper, range_sel, vl, vu, il, iu, info_out, m_out);
+}
+
+// Backward-compatible overloads defaulting to Upper triangle
+template <typename T, typename Storage, StorageOrder Order>
+inline bool eigh_via_evr(const Matrix<T, Storage, Order>& A,
+                         Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
+                         Matrix<T, Storage, Order>& eigenvectors,
+                         bool compute_vectors,
+                         int& info_out,
+                         int* m_out)
+{
+  return eigh_via_evr(A, evals, eigenvectors, compute_vectors, fem::numeric::linear_algebra::Uplo::Upper, info_out, m_out);
+}
+
 // ---------
 // LU: GETRF
 // ---------
@@ -394,11 +444,13 @@ inline bool geqrf_inplace(Matrix<T, Storage, Order>& A, std::vector<T>& tau, int
 
 // Prefer MRRR (SYEVR/HEEVR) when available; fall back to divide & conquer (SYEVD/HEEVD).
 // Returns true if a backend path was attempted. info_out holds LAPACK info if true.
+// uplo_sel selects which triangle of A is read (Upper or Lower).
 template <typename T, typename Storage, StorageOrder Order>
 inline bool eigh_via_evr(const Matrix<T, Storage, Order>& A,
                          Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
                          Matrix<T, Storage, Order>& eigenvectors,
                          bool compute_vectors,
+                         fem::numeric::linear_algebra::Uplo uplo_sel,
                          int& info_out,
                          int* m_out = nullptr)
 {
@@ -415,7 +467,7 @@ inline bool eigh_via_evr(const Matrix<T, Storage, Order>& A,
   if constexpr (Order == StorageOrder::RowMajor) {
     char jobz = compute_vectors ? 'V' : 'N';
     char range = 'A';
-    char uplo = 'U';
+    char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
     int N = static_cast<int>(n);
     evals = Vector<R>(n);
     std::vector<int> isuppz(2 * std::max<int>(1, N));
@@ -474,7 +526,7 @@ inline bool eigh_via_evr(const Matrix<T, Storage, Order>& A,
 
   char jobz = compute_vectors ? 'V' : 'N';
   char range = 'A';
-  char uplo = 'U';
+  char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
   int N = static_cast<int>(n);
   int LDA = static_cast<int>(n);
   R vl = R{}; R vu = R{}; int il = 0, iu = 0;
@@ -592,6 +644,7 @@ inline bool eigh_via_evr_range(const Matrix<T, Storage, Order>& A,
                                Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
                                Matrix<T, Storage, Order>& eigenvectors,
                                bool compute_vectors,
+                               fem::numeric::linear_algebra::Uplo uplo_sel,
                                char range_sel, // 'A', 'I', or 'V'
                                typename fem::numeric::numeric_traits<T>::scalar_type vl,
                                typename fem::numeric::numeric_traits<T>::scalar_type vu,
@@ -611,7 +664,7 @@ inline bool eigh_via_evr_range(const Matrix<T, Storage, Order>& A,
 #if defined(FEM_NUMERIC_ENABLE_LAPACKE)
   if constexpr (Order == StorageOrder::RowMajor) {
     char jobz = compute_vectors ? 'V' : 'N';
-    char uplo = 'U';
+    char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
     int N = static_cast<int>(n);
     evals = Vector<R>(n);
     std::vector<int> isuppz(2 * std::max<int>(1, N));
@@ -668,7 +721,7 @@ inline bool eigh_via_evr_range(const Matrix<T, Storage, Order>& A,
       a_cm[j * n + i] = A(i, j);
 
   char jobz = compute_vectors ? 'V' : 'N';
-  char uplo = 'U';
+  char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
   int N = static_cast<int>(n);
   int LDA = static_cast<int>(n);
   R abstol = R{};
@@ -781,6 +834,7 @@ inline bool sytrd_tridiag_with_Q(const Matrix<T, Storage, Order>& A,
                                  std::vector<typename fem::numeric::numeric_traits<T>::scalar_type>& d,
                                  std::vector<typename fem::numeric::numeric_traits<T>::scalar_type>& e,
                                  Matrix<T, Storage, Order>* Qopt,
+                                 fem::numeric::linear_algebra::Uplo uplo_sel,
                                  int& info_out)
 {
 #if !defined(FEM_NUMERIC_ENABLE_LAPACK)
@@ -800,7 +854,7 @@ inline bool sytrd_tridiag_with_Q(const Matrix<T, Storage, Order>& A,
     // Work on a row-major copy to avoid mutating A
     std::vector<T> a_rm(A.rows() * A.cols());
     for (std::size_t i = 0; i < A.rows(); ++i) for (std::size_t j = 0; j < A.cols(); ++j) a_rm[i * A.cols() + j] = A(i, j);
-    char uplo = 'U'; int N = static_cast<int>(n);
+    char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L'; int N = static_cast<int>(n);
     int info = 0;
     if constexpr (std::is_same_v<T, float>) {
       info = LAPACKE_ssytrd(LAPACK_ROW_MAJOR, uplo, N, reinterpret_cast<float*>(a_rm.data()), static_cast<int>(A.cols()),
@@ -848,7 +902,7 @@ inline bool sytrd_tridiag_with_Q(const Matrix<T, Storage, Order>& A,
   d.assign(n, R{});
   e.assign((n>1)? n-1 : 0, R{});
   std::vector<T> tau(std::max<std::size_t>(1, n));
-  char uplo = 'U';
+  char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
   int N = static_cast<int>(n), LDA = static_cast<int>(n);
   int info = 0;
 
@@ -925,6 +979,7 @@ inline bool eigh_via_evd(const Matrix<T, Storage, Order>& A,
                          Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
                          Matrix<T, Storage, Order>& eigenvectors,
                          bool compute_vectors,
+                         fem::numeric::linear_algebra::Uplo uplo_sel,
                          int& info_out)
 {
 #if !defined(FEM_NUMERIC_ENABLE_LAPACK)
@@ -939,7 +994,7 @@ inline bool eigh_via_evd(const Matrix<T, Storage, Order>& A,
   if constexpr (Order == StorageOrder::RowMajor) {
     Matrix<T, Storage, Order> W = A; // work on a mutable row-major copy
     char jobz = compute_vectors ? 'V' : 'N';
-    char uplo = 'U';
+    char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
     int N = static_cast<int>(A.rows());
     evals = Vector<R>(N);
     int info = 0;
@@ -971,7 +1026,7 @@ inline bool eigh_via_evd(const Matrix<T, Storage, Order>& A,
         W(i, j) = A(i, j);
 
     char jobz = compute_vectors ? 'V' : 'N';
-    char uplo = 'U';
+    char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
     int N = static_cast<int>(n);
     int LDA = static_cast<int>(W.leading_dimension());
     evals = Vector<R>(n);
@@ -1035,7 +1090,7 @@ inline bool eigh_via_evd(const Matrix<T, Storage, Order>& A,
         a_cm[j * n + i] = A(i, j);
 
     char jobz = compute_vectors ? 'V' : 'N';
-    char uplo = 'U';
+    char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
     int N = static_cast<int>(n);
     int LDA = static_cast<int>(n);
     evals = Vector<R>(n);
@@ -1193,6 +1248,7 @@ template <typename T, typename Storage, StorageOrder Order>
 inline bool eigh_via_evd_inplace(Matrix<T, Storage, Order>& A_inout,
                                  Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
                                  bool compute_vectors,
+                                 fem::numeric::linear_algebra::Uplo uplo_sel,
                                  int& info_out)
 {
 #if !defined(FEM_NUMERIC_ENABLE_LAPACK)
@@ -1204,7 +1260,7 @@ inline bool eigh_via_evd_inplace(Matrix<T, Storage, Order>& A_inout,
   if (n == 0) { evals = Vector<R>(0); info_out = 0; return true; }
 
   char jobz = compute_vectors ? 'V' : 'N';
-  char uplo = 'U';
+  char uplo = (uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) ? 'U' : 'L';
   evals = Vector<R>(n);
 
 #if defined(FEM_NUMERIC_ENABLE_LAPACKE)
@@ -1272,6 +1328,16 @@ inline bool eigh_via_evd_inplace(Matrix<T, Storage, Order>& A_inout,
 
   return false;
 #endif
+}
+
+// Backward-compatible overload defaulting to Upper for in-place EVD
+template <typename T, typename Storage, StorageOrder Order>
+inline bool eigh_via_evd_inplace(Matrix<T, Storage, Order>& A_inout,
+                                 Vector<typename fem::numeric::numeric_traits<T>::scalar_type>& evals,
+                                 bool compute_vectors,
+                                 int& info_out)
+{
+  return eigh_via_evd_inplace(A_inout, evals, compute_vectors, fem::numeric::linear_algebra::Uplo::Upper, info_out);
 }
 
 } // namespace fem::numeric::backends::lapack

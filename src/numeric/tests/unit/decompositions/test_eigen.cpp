@@ -12,8 +12,9 @@ using namespace fem::numeric::decompositions;
 
 namespace {
 
-template <typename T>
-Matrix<T> matmul(const Matrix<T>& A, const Matrix<T>& B)
+template <typename T, typename SA, fem::numeric::StorageOrder OA,
+          typename SB, fem::numeric::StorageOrder OB>
+Matrix<T> matmul(const Matrix<T, SA, OA>& A, const Matrix<T, SB, OB>& B)
 {
     Matrix<T> C(A.rows(), B.cols(), T{});
     for (std::size_t i = 0; i < A.rows(); ++i)
@@ -25,8 +26,8 @@ Matrix<T> matmul(const Matrix<T>& A, const Matrix<T>& B)
     return C;
 }
 
-template <typename T>
-Vector<T> matvec(const Matrix<T>& A, const Vector<T>& x)
+template <typename T, typename SA, fem::numeric::StorageOrder OA>
+Vector<T> matvec(const Matrix<T, SA, OA>& A, const Vector<T>& x)
 {
     Vector<T> y(A.rows(), T{});
     for (std::size_t i = 0; i < A.rows(); ++i) {
@@ -37,8 +38,8 @@ Vector<T> matvec(const Matrix<T>& A, const Vector<T>& x)
     return y;
 }
 
-template <typename T>
-Matrix<T> conj_transpose(const Matrix<T>& A)
+template <typename T, typename SA, fem::numeric::StorageOrder OA>
+Matrix<T> conj_transpose(const Matrix<T, SA, OA>& A)
 {
     Matrix<T> AH(A.cols(), A.rows(), T{});
     for (std::size_t i = 0; i < A.rows(); ++i)
@@ -48,8 +49,8 @@ Matrix<T> conj_transpose(const Matrix<T>& A)
     return AH;
 }
 
-template <typename T>
-void expect_orthonormal_columns(const Matrix<T>& V, double tol)
+template <typename T, typename SA, fem::numeric::StorageOrder OA>
+void expect_orthonormal_columns(const Matrix<T, SA, OA>& V, double tol)
 {
     const std::size_t n = V.cols();
     for (std::size_t j = 0; j < n; ++j) {
@@ -71,8 +72,8 @@ void expect_orthonormal_columns(const Matrix<T>& V, double tol)
     }
 }
 
-template <typename T>
-void fill_random_symmetric(Matrix<T>& A, uint32_t seed)
+template <typename T, typename SA, fem::numeric::StorageOrder OA>
+void fill_random_symmetric(Matrix<T, SA, OA>& A, uint32_t seed)
 {
     std::mt19937 gen(seed);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
@@ -85,8 +86,8 @@ void fill_random_symmetric(Matrix<T>& A, uint32_t seed)
     }
 }
 
-template <typename Z>
-void fill_random_hermitian(Matrix<Z>& A, uint32_t seed)
+template <typename Z, typename SA, fem::numeric::StorageOrder OA>
+void fill_random_hermitian(Matrix<Z, SA, OA>& A, uint32_t seed)
 {
     using R = typename numeric_traits<Z>::scalar_type;
     std::mt19937 gen(seed);
@@ -101,10 +102,11 @@ void fill_random_hermitian(Matrix<Z>& A, uint32_t seed)
     }
 }
 
-template <typename T>
-void expect_reconstruction(const Matrix<T>& A,
+template <typename T, typename SA, fem::numeric::StorageOrder OA,
+          typename SB, fem::numeric::StorageOrder OB>
+void expect_reconstruction(const Matrix<T, SA, OA>& A,
                            const Vector<typename numeric_traits<T>::scalar_type>& evals,
-                           const Matrix<T>& evecs,
+                           const Matrix<T, SB, OB>& evecs,
                            double tol)
 {
     const std::size_t n = A.rows();
@@ -117,8 +119,8 @@ void expect_reconstruction(const Matrix<T>& A,
             EXPECT_NEAR(std::abs(Ahat(i, j) - A(i, j)), 0.0, tol);
 }
 
-template <typename T>
-Vector<T> column_as_vector(const Matrix<T>& M, std::size_t col)
+template <typename T, typename SA, fem::numeric::StorageOrder OA>
+Vector<T> column_as_vector(const Matrix<T, SA, OA>& M, std::size_t col)
 {
     Vector<T> v(M.rows(), T{});
     for (std::size_t i = 0; i < M.rows(); ++i) v[i] = M(i, col);
@@ -293,6 +295,18 @@ TEST(Decompositions, Eigen_ValuesOnly)
         EXPECT_LE(evals[i], evals[i + 1]);
 }
 
+TEST(Decompositions, Eigen_ValuesOnly_Complex)
+{
+    using Z = std::complex<double>;
+    Matrix<Z> A(4, 4, Z{});
+    fill_random_hermitian(A, 777u);
+    Vector<double> evals;
+    ASSERT_EQ(eigen_symmetric_values(A, evals), 0);
+    ASSERT_EQ(evals.size(), 4u);
+    for (std::size_t i = 0; i + 1 < evals.size(); ++i)
+        EXPECT_LE(evals[i], evals[i + 1]);
+}
+
 TEST(Decompositions, Eigen_ZeroDimension)
 {
     Matrix<double> A; // default 0x0
@@ -302,6 +316,13 @@ TEST(Decompositions, Eigen_ZeroDimension)
     EXPECT_EQ(evals.size(), 0u);
     EXPECT_EQ(evecs.rows(), 0u);
     EXPECT_EQ(evecs.cols(), 0u);
+}
+
+TEST(Decompositions, Eigen_NonSquare_Throws)
+{
+    Matrix<double> A(2,3,0.0);
+    Vector<double> evals; Matrix<double> evecs;
+    EXPECT_THROW({ (void)eigen_symmetric(A, evals, evecs); }, std::invalid_argument);
 }
 
 TEST(Decompositions, Eigen_MaxIterFailure)
@@ -316,3 +337,240 @@ TEST(Decompositions, Eigen_MaxIterFailure)
     EXPECT_NE(info, 0);
 }
 
+TEST(Decompositions, Eigen_MaxIterZero_DiagonalSucceeds)
+{
+    // Diagonal matrix should succeed even with max_iter=0
+    Matrix<double> A(4, 4, 0.0);
+    A(0,0)=0.5; A(1,1)=1.0; A(2,2)=2.0; A(3,3)=4.0;
+    Vector<double> evals; Matrix<double> evecs;
+    int info = eigen_symmetric(A, evals, evecs, /*compute_vectors=*/true, /*max_iter=*/0);
+    EXPECT_EQ(info, 0);
+    const double tol = 1e-12;
+    expect_orthonormal_columns(evecs, tol);
+    expect_reconstruction(A, evals, evecs, tol);
+}
+
+TEST(Decompositions, Eigen_1x1_RealAndComplex)
+{
+    {
+        Matrix<double> A(1,1,0.0); A(0,0)=3.14;
+        Vector<double> evals; Matrix<double> evecs;
+        ASSERT_EQ(eigen_symmetric(A, evals, evecs), 0);
+        ASSERT_EQ(evals.size(), 1u);
+        EXPECT_NEAR(evals[0], 3.14, 1e-14);
+        ASSERT_EQ(evecs.rows(), 1u); ASSERT_EQ(evecs.cols(), 1u);
+        EXPECT_NEAR(evecs(0,0), 1.0, 1e-14);
+    }
+    {
+        using Z = std::complex<double>;
+        Matrix<Z> A(1,1, Z{}); A(0,0)=Z(2.5, 0.0);
+        Vector<double> evals; Matrix<Z> evecs;
+        ASSERT_EQ(eigen_symmetric(A, evals, evecs), 0);
+        ASSERT_EQ(evals.size(), 1u);
+        EXPECT_NEAR(evals[0], 2.5, 1e-14);
+        ASSERT_EQ(evecs.rows(), 1u); ASSERT_EQ(evecs.cols(), 1u);
+        EXPECT_NEAR(std::abs(evecs(0,0)), 1.0, 1e-14);
+    }
+}
+
+TEST(Decompositions, Eigen_UploUpper_IgnoresLower)
+{
+    // Build a symmetric matrix in the upper triangle; inject noise into lower.
+    const std::size_t n = 5;
+    Matrix<double> A(n,n,0.0);
+    std::mt19937 gen(777u); std::uniform_real_distribution<double> dist(-1,1);
+    for (std::size_t i=0;i<n;++i) {
+        for (std::size_t j=i;j<n;++j) {
+            double v = dist(gen); A(i,j)=v; A(j,i)=v;
+        }
+    }
+    Matrix<double> B = A; // reference fully symmetric
+    // Corrupt the lower triangle of A
+    for (std::size_t i=1;i<n;++i) for (std::size_t j=0;j<i;++j) A(i,j) = 42.0; // garbage
+
+    Vector<double> evals_ref; Matrix<double> evecs_ref;
+    ASSERT_EQ(eigen_symmetric(B, evals_ref, evecs_ref), 0);
+
+    EighOpts<double> opts; opts.uplo = linear_algebra::Uplo::Upper;
+    Vector<double> evals; Matrix<double> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs, opts), 0);
+
+    // Spectra should match (up to column phases); compare values and reconstruction
+    ASSERT_EQ(evals.size(), n);
+    for (std::size_t i=0;i<n;++i) EXPECT_NEAR(evals[i], evals_ref[i], 1e-9);
+    expect_reconstruction(B, evals, evecs, 1e-9);
+}
+
+TEST(Decompositions, Eigen_TopLevel_ColumnMajor)
+{
+    Matrix<double, DynamicStorage<double>, StorageOrder::ColumnMajor> A(3,3,0.0);
+    fill_random_symmetric(A, 2025u);
+    Vector<double> evals; Matrix<double, DynamicStorage<double>, StorageOrder::ColumnMajor> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs), 0);
+    expect_orthonormal_columns(evecs, 1e-9);
+    expect_reconstruction(A, evals, evecs, 1e-9);
+}
+
+TEST(Decompositions, Eigen_Range_Index_And_Value)
+{
+    Matrix<double> A(4,4,0.0);
+    A(0,0)=0.5; A(1,1)=1.0; A(2,2)=2.0; A(3,3)=4.0;
+    // Index range [1,2]
+    Vector<double> evals_idx; Matrix<double> evecs_idx;
+    auto range_idx = EighRange<double>::Index(1,2);
+    ASSERT_EQ(eigen_symmetric(A, evals_idx, evecs_idx, /*vecs*/true, /*iters*/80, EighMethod::Auto, range_idx), 0);
+    ASSERT_EQ(evals_idx.size(), 2u);
+    EXPECT_NEAR(evals_idx[0], 1.0, 1e-12);
+    EXPECT_NEAR(evals_idx[1], 2.0, 1e-12);
+    ASSERT_EQ(evecs_idx.cols(), 2u);
+    // Value range [1.1, 4]
+    Vector<double> evals_val;
+    auto range_val = EighRange<double>::Value(1.1, 4.0);
+    ASSERT_EQ(eigen_symmetric_values(A, evals_val, range_val), 0);
+    ASSERT_EQ(evals_val.size(), 2u);
+    EXPECT_NEAR(evals_val[0], 2.0, 1e-12);
+    EXPECT_NEAR(evals_val[1], 4.0, 1e-12);
+}
+
+TEST(Decompositions, Eigen_Batched_Small)
+{
+    std::vector<Matrix<double>> batch;
+    Matrix<double> A1(3,3,0.0); fill_random_symmetric(A1, 11u);
+    Matrix<double> A2(3,3,0.0); fill_random_symmetric(A2, 12u);
+    batch.push_back(A1); batch.push_back(A2);
+    std::vector<Vector<double>> evals_batch; std::vector<Matrix<double>> evecs_batch;
+    ASSERT_EQ(eigen_symmetric_batched_small(batch, evals_batch, &evecs_batch, /*vecs*/true), 0);
+    ASSERT_EQ(evals_batch.size(), 2u); ASSERT_EQ(evecs_batch.size(), 2u);
+    expect_reconstruction(A1, evals_batch[0], evecs_batch[0], 1e-9);
+    expect_reconstruction(A2, evals_batch[1], evecs_batch[1], 1e-9);
+}
+
+TEST(Decompositions, Eigen_RepeatedEigenvalues_Projector_Real)
+{
+    // Diagonal with repeated eigenvalues: [1,1,2,2,3,3]
+    const std::size_t n = 6;
+    Matrix<double> A(n, n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) A(i, i) = static_cast<double>(1 + (i / 2));
+
+    Vector<double> evals; Matrix<double> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs), 0);
+    // Build projector onto the eigenspace for value 2 (indices 2,3)
+    const double target = 2.0; std::vector<std::size_t> cols;
+    for (std::size_t j = 0; j < evals.size(); ++j) if (std::abs(evals[j] - target) < 1e-12) cols.push_back(j);
+    ASSERT_EQ(cols.size(), 2u);
+    Matrix<double> Vsub(n, cols.size(), 0.0);
+    for (std::size_t k = 0; k < cols.size(); ++k)
+        for (std::size_t i = 0; i < n; ++i)
+            Vsub(i, k) = evecs(i, cols[k]);
+    auto Pcomp = matmul(Vsub, conj_transpose(Vsub));
+    Matrix<double> Pref(n, n, 0.0);
+    Pref(2,2) = 1.0; Pref(3,3) = 1.0;
+    const double tol = 1e-10;
+    for (std::size_t i=0;i<n;++i)
+        for (std::size_t j=0;j<n;++j)
+            EXPECT_NEAR(std::abs(Pcomp(i,j) - Pref(i,j)), 0.0, tol);
+}
+
+TEST(Decompositions, Eigen_RepeatedEigenvalues_Projector_Complex)
+{
+    using Z = std::complex<double>;
+    const std::size_t n = 6;
+    Matrix<Z> A(n, n, Z{});
+    for (std::size_t i = 0; i < n; ++i) A(i, i) = Z(static_cast<double>(1 + (i/2)), 0.0);
+
+    Vector<double> evals; Matrix<Z> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs), 0);
+    const double target = 2.0; std::vector<std::size_t> cols;
+    for (std::size_t j = 0; j < evals.size(); ++j) if (std::abs(evals[j] - target) < 1e-12) cols.push_back(j);
+    ASSERT_EQ(cols.size(), 2u);
+    Matrix<Z> Vsub(n, cols.size(), Z{});
+    for (std::size_t k = 0; k < cols.size(); ++k)
+        for (std::size_t i = 0; i < n; ++i)
+            Vsub(i, k) = evecs(i, cols[k]);
+    auto Pcomp = matmul(Vsub, conj_transpose(Vsub));
+    Matrix<Z> Pref(n, n, Z{});
+    Pref(2,2) = Z(1.0,0.0); Pref(3,3) = Z(1.0,0.0);
+    const double tol = 1e-10;
+    for (std::size_t i=0;i<n;++i)
+        for (std::size_t j=0;j<n;++j)
+            EXPECT_NEAR(std::abs(Pcomp(i,j) - Pref(i,j)), 0.0, tol);
+}
+
+TEST(Decompositions, Eigen_Range_Empty_Value)
+{
+    const std::size_t n = 5;
+    Matrix<double> A(n, n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) A(i,i) = static_cast<double>(i+1);
+    Vector<double> evals;
+    auto r = EighRange<double>::Value(-10.0, -5.0);
+    ASSERT_EQ(eigen_symmetric_values(A, evals, r), 0);
+    EXPECT_EQ(evals.size(), 0u);
+}
+
+TEST(Decompositions, Eigen_Range_Empty_Index_Reference)
+{
+    const std::size_t n = 5;
+    Matrix<double> A(n, n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) A(i,i) = static_cast<double>(i+1);
+    Vector<double> evals; Matrix<double> evecs;
+    auto r = EighRange<double>::Index(3, 2); // empty
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs,
+                              /*vecs*/true, /*iters*/80, EighMethod::ReferenceQL, r), 0);
+    EXPECT_EQ(evals.size(), 0u);
+    EXPECT_EQ(evecs.cols(), 0u);
+}
+
+TEST(Decompositions, Eigen_UploLower_IgnoresUpper)
+{
+    const std::size_t n = 5;
+    Matrix<double> B(n,n,0.0);
+    std::mt19937 gen(4242u); std::uniform_real_distribution<double> dist(-1,1);
+    for (std::size_t i=0;i<n;++i) for (std::size_t j=i;j<n;++j) { double v=dist(gen); B(i,j)=v; B(j,i)=v; }
+
+    Matrix<double> A = B;
+    // Corrupt the upper triangle of A
+    for (std::size_t i=0;i<n;++i)
+      for (std::size_t j=i+1;j<n;++j)
+        A(i,j) = 99.0; // garbage
+
+    Vector<double> evals_ref; Matrix<double> evecs_ref;
+    ASSERT_EQ(eigen_symmetric(B, evals_ref, evecs_ref), 0);
+
+    EighOpts<double> opts; opts.uplo = linear_algebra::Uplo::Lower;
+    Vector<double> evals; Matrix<double> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs, opts), 0);
+
+    ASSERT_EQ(evals.size(), n);
+    for (std::size_t i=0;i<n;++i) EXPECT_NEAR(evals[i], evals_ref[i], 1e-9);
+    expect_reconstruction(B, evals, evecs, 1e-9);
+}
+
+#if defined(FEM_NUMERIC_ENABLE_LAPACK)
+TEST(Decompositions_LAPACK, Eigen_Destructive_RowMajor_MoveVectors)
+{
+    // Random symmetric, RowMajor
+    const std::size_t n = 6;
+    Matrix<double> A(n,n,0.0);
+    fill_random_symmetric(A, 31415u);
+    double* ptr_before = A.data();
+    EighOpts<double> opts; opts.destructive = true; opts.compute_vectors = true; opts.method = EighMethod::Auto;
+    Vector<double> evals; Matrix<double> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs, opts), 0);
+    // Ownership of A's data should have moved into evecs (no copy)
+    ASSERT_EQ(evecs.data(), ptr_before);
+    expect_orthonormal_columns(evecs, 1e-9);
+}
+
+TEST(Decompositions_LAPACK, Eigen_Destructive_RowMajor_ValuesOnly)
+{
+    const std::size_t n = 6;
+    Matrix<double> A(n,n,0.0);
+    fill_random_symmetric(A, 2718u);
+    EighOpts<double> opts; opts.destructive = true; opts.compute_vectors = false; opts.method = EighMethod::Auto;
+    Vector<double> evals; Matrix<double> evecs;
+    ASSERT_EQ(eigen_symmetric(A, evals, evecs, opts), 0);
+    EXPECT_EQ(evecs.rows(), 0u);
+    EXPECT_EQ(evecs.cols(), 0u);
+    for (std::size_t i=1;i<evals.size();++i) EXPECT_LE(evals[i-1], evals[i]);
+}
+#endif

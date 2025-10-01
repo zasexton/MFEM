@@ -15,6 +15,8 @@
 // - Stable v-norm using scaled norm routine
 // - Exposed convergence info (return index l+1 on failure), per-index cap
 // - Fast path for eigenvalues-only that avoids any eigenvector accumulation
+// - User-selectable triangle (uplo) for vendor backends; fallback mirrors Upper
+//   into Lower before reduction to ensure correctness with one-triangle inputs.
 
 #include <vector>
 #include <algorithm>
@@ -39,8 +41,12 @@ namespace fem::numeric::decompositions {
 
 namespace detail {
 
+// Tunables (compile-time; overridable via CMake cache definitions)
 #ifndef FEM_EIGEN_BLOCK_SIZE
 #define FEM_EIGEN_BLOCK_SIZE 32
+#endif
+#ifndef FEM_EIGEN_TRIDIAG_BLOCK_THRESHOLD
+#define FEM_EIGEN_TRIDIAG_BLOCK_THRESHOLD 128
 #endif
 
 #if defined(FEM_NUMERIC_ENABLE_LAPACK)
@@ -49,11 +55,12 @@ template <typename T, typename Storage, StorageOrder Order>
 static inline bool lapack_eigh(const Matrix<T, Storage, Order>& A,
                                Vector<typename numeric_traits<T>::scalar_type>& evals,
                                Matrix<T, Storage, Order>& eigenvectors,
-                               bool compute_vectors)
+                               bool compute_vectors,
+                               fem::numeric::linear_algebra::Uplo uplo_sel)
 {
   int info = 0;
-  if (fem::numeric::backends::lapack::eigh_via_evr(A, evals, eigenvectors, compute_vectors, info)) return info == 0;
-  if (fem::numeric::backends::lapack::eigh_via_evd(A, evals, eigenvectors, compute_vectors, info)) return info == 0;
+  if (fem::numeric::backends::lapack::eigh_via_evr(A, evals, eigenvectors, compute_vectors, uplo_sel, info)) return info == 0;
+  if (fem::numeric::backends::lapack::eigh_via_evd(A, evals, eigenvectors, compute_vectors, uplo_sel, info)) return info == 0;
   return false;
 }
 #endif // FEM_NUMERIC_ENABLE_LAPACK
@@ -115,7 +122,8 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
                                             std::vector<typename numeric_traits<T>::scalar_type>& sub,
                                             Matrix<T, Storage, Order>* Q_accumulate,
                                             std::size_t block_size = FEM_EIGEN_BLOCK_SIZE,
-                                            bool use_panel_update = false)
+                                            bool use_panel_update = false,
+                                            fem::numeric::linear_algebra::Uplo uplo_sel = fem::numeric::linear_algebra::Uplo::Upper)
 {
   using R = typename numeric_traits<T>::scalar_type;
   const std::size_t n = A.rows();
@@ -138,7 +146,7 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
     Matrix<T, Storage, Order> QL;
     Matrix<T, Storage, Order>* QLptr = Q_accumulate ? &QL : nullptr;
     int info = 0;
-    if (fem::numeric::backends::lapack::sytrd_tridiag_with_Q(A, diag, sub, QLptr, info)) {
+    if (fem::numeric::backends::lapack::sytrd_tridiag_with_Q(A, diag, sub, QLptr, uplo_sel, info)) {
       if (info == 0) {
         if (Q_accumulate) *Q_accumulate = std::move(QL);
         return;
@@ -147,13 +155,16 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
   }
 #endif
 
-  // Optional reference blocked two-sided update path (panel WY), enabled via macro
-#if defined(FEM_EIGEN_REF_BLOCKED_TRIDIAG)
-  use_panel_update = true;
-#else
-  use_panel_update = false;
-  (void)use_panel_update; // silence unused when blocked path disabled
-#endif
+  // If user supplied Upper triangle only for fallback, mirror it into lower so the
+  // lower-based reducer can safely read A(i>j,j). O(n^2) but negligible vs O(n^3).
+  if (n > 0 && uplo_sel == fem::numeric::linear_algebra::Uplo::Upper) {
+    for (std::size_t j = 0; j < n; ++j)
+      for (std::size_t i = j + 1; i < n; ++i)
+        A(i, j) = conj_if_complex(A(j, i));
+  }
+
+  // Enable reference blocked two-sided update path (panel WY) by default when n is large
+  use_panel_update = (n >= FEM_EIGEN_TRIDIAG_BLOCK_THRESHOLD);
 
   Matrix<T, Storage, Order> Qtmp;
   Matrix<T, Storage, Order>* Q = nullptr;
@@ -176,7 +187,6 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
     if (m_full == 0) break;
     const std::size_t b = std::min<std::size_t>(block_size, m_full);
 
-#if defined(FEM_EIGEN_REF_BLOCKED_TRIDIAG)
     if (use_panel_update && b > 1) {
       // Build panel V and tau for columns k..k+b-1
       Matrix<T, Storage, Order> Vp(m_full, b, T{});
@@ -257,7 +267,6 @@ static inline void hermitian_to_tridiagonal(Matrix<T, Storage, Order>& A,
       k += b;
       continue;
     }
-#endif
 
     // Fallback unblocked per-column
     for (std::size_t kk = k; kk + 1 < n && kk < k + b; ++kk) {
@@ -461,11 +470,22 @@ struct EighOpts {
   bool destructive = false;
   bool compute_vectors = true;
   std::size_t max_iter = 80;
+  // Triangular storage selector for vendor backends and fallback pre-processing.
+  // Default Upper to match typical LAPACK usage. When using the reference
+  // fallback (no LAPACK), reduction is implemented over the lower triangle; if
+  // uplo==Upper, the routine mirrors the upper triangle into the lower prior to
+  // reduction (O(n^2)). For production use with one-triangle inputs, prefer
+  // enabling LAPACK so backends read exactly the specified triangle.
+  fem::numeric::linear_algebra::Uplo uplo = fem::numeric::linear_algebra::Uplo::Upper;
 };
 
 // Symmetric/Hermitian eigensolver. On success (info==0) eigenvalues are placed
 // in ascending order inside evals. If compute_vectors is true, eigenvectors is
 // resized to n x n with columns matching evals.
+// Triangle convention (uplo): backends read only the specified triangle.
+// Fallback reference reducer operates on the lower triangle; when uplo==Upper
+// it mirrors the upper triangle into the lower before reduction (O(n^2)). For
+// one-triangle inputs in production, prefer LAPACK-enabled builds.
 // Compute eigenvalues (ascending) and optionally eigenvectors of a symmetric/Hermitian matrix.
 // - Returns 0 on success; if QL failed to converge for eigenvalue l, returns l+1.
 // - If FEM_NUMERIC_ENABLE_LAPACK is defined and supported types are used, prefers LAPACK SYEVR/HEEVR (MRRR) or SYEVD/HEEVD.
@@ -477,7 +497,8 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
                     bool compute_vectors = true,
                     std::size_t max_iter = 80,
                     EighMethod method = EighMethod::Auto,
-                    EighRange<typename numeric_traits<T>::scalar_type> range = EighRange<typename numeric_traits<T>::scalar_type>::All())
+                    EighRange<typename numeric_traits<T>::scalar_type> range = EighRange<typename numeric_traits<T>::scalar_type>::All(),
+                    fem::numeric::linear_algebra::Uplo uplo_sel = fem::numeric::linear_algebra::Uplo::Upper)
 {
   using R = typename numeric_traits<T>::scalar_type;
   const std::size_t n = A_in.rows();
@@ -505,11 +526,11 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
       if (rsel == 'I') { il = static_cast<int>(range.il) + 1; iu = static_cast<int>(range.iu) + 1; }
       else { vl = range.vl; vu = range.vu; }
       int info = 0;
-      if (fem::numeric::backends::lapack::eigh_via_evr_range(A_in, evals, eigenvectors, compute_vectors, rsel, vl, vu, il, iu, info)) {
+      if (fem::numeric::backends::lapack::eigh_via_evr_range(A_in, evals, eigenvectors, compute_vectors, uplo_sel, rsel, vl, vu, il, iu, info)) {
         if (info == 0) return 0;
       }
     }
-    if (detail::lapack_eigh(A_in, evals, eigenvectors, compute_vectors)) {
+    if (detail::lapack_eigh(A_in, evals, eigenvectors, compute_vectors, uplo_sel)) {
       // If a range is requested, slice post hoc
       if (range.type != EighRange<R>::Type::All && compute_vectors && eigenvectors.rows() == n && eigenvectors.cols() == n) {
         std::vector<std::size_t> idx;
@@ -548,7 +569,7 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
 
   // Reduce A to Hermitian tridiagonal tri, optionally accumulating Q such that A = Q * tri * Q^H
   // Use light panel blocking with preallocated workspace
-  detail::hermitian_to_tridiagonal(tri, diag, off, Qptr, FEM_EIGEN_BLOCK_SIZE);
+  detail::hermitian_to_tridiagonal(tri, diag, off, Qptr, FEM_EIGEN_BLOCK_SIZE, /*use_panel_update=*/false, uplo_sel);
 
   // Realify tridiagonal: for complex Hermitian, make subdiagonals nonnegative real via a diagonal D.
   // Track phase only if computing eigenvectors (needed to reconstruct Q*D).
@@ -573,6 +594,8 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
   for (std::size_t i = 0; i < n; ++i) diag[i] = static_cast<R>(std::real(tri(i, i)));
 
   // Run QL on the real-symmetric tridiagonal (diag, off) with optional eigenvector accumulation
+  // tri no longer needed; free its storage to reduce peak memory
+  tri = Matrix<T, Storage, Order>(0, 0, T{});
   Matrix<T, Storage, Order> Z;
   Matrix<T, Storage, Order>* Zptr = nullptr;
   if (compute_vectors) {
@@ -639,37 +662,38 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
         Z(i, j) = phase[i] * Z(i, j);
   }
 
-  // Form eigenvectors E = Q * Z via GEMM
-  Matrix<T, Storage, Order> E(n, n, T{0});
+  // Form eigenvectors directly into output to avoid extra E allocation
+  Matrix<T, Storage, Order> E_dummy;
+  eigenvectors = Matrix<T, Storage, Order>(n, n, T{0});
   fem::numeric::linear_algebra::gemm(fem::numeric::linear_algebra::Trans::NoTrans,
                                      fem::numeric::linear_algebra::Trans::NoTrans,
-                                     T{1}, Q, Z, T{0}, E);
+                                     T{1}, Q, Z, T{0}, eigenvectors);
 
   for (std::size_t j = 0; j < n; ++j) {
     R norm = R{0};
     for (std::size_t i = 0; i < n; ++i) {
-      if constexpr (is_complex_number_v<T>) norm += static_cast<R>(std::norm(E(i, j)));
-      else norm += static_cast<R>(E(i, j) * E(i, j));
+      if constexpr (is_complex_number_v<T>) norm += static_cast<R>(std::norm(eigenvectors(i, j)));
+      else norm += static_cast<R>(eigenvectors(i, j) * eigenvectors(i, j));
     }
     norm = std::sqrt(norm);
     if (norm > R{0}) {
       T inv = static_cast<T>(R{1} / norm);
-      for (std::size_t i = 0; i < n; ++i) E(i, j) *= inv;
+      for (std::size_t i = 0; i < n; ++i) eigenvectors(i, j) *= inv;
     }
 
     std::size_t idx_max = 0;
     R max_abs = R{0};
     for (std::size_t i = 0; i < n; ++i) {
-      R mag = static_cast<R>(std::abs(E(i, j)));
+      R mag = static_cast<R>(std::abs(eigenvectors(i, j)));
       if (mag > max_abs) { max_abs = mag; idx_max = i; }
     }
     if (max_abs > R{0}) {
       if constexpr (is_complex_number_v<T>) {
-        T phase = E(idx_max, j) / static_cast<T>(max_abs);
+        T phase = eigenvectors(idx_max, j) / static_cast<T>(max_abs);
         T adj = detail::conj_if_complex(phase);
-        for (std::size_t i = 0; i < n; ++i) E(i, j) *= adj;
-      } else if (E(idx_max, j) < T{0}) {
-        for (std::size_t i = 0; i < n; ++i) E(i, j) = -E(i, j);
+        for (std::size_t i = 0; i < n; ++i) eigenvectors(i, j) *= adj;
+      } else if (eigenvectors(idx_max, j) < T{0}) {
+        for (std::size_t i = 0; i < n; ++i) eigenvectors(i, j) = -eigenvectors(i, j);
       }
     }
   }
@@ -688,12 +712,10 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
     Matrix<T, Storage, Order> vecs_sel(n, idx.size(), T{});
     for (std::size_t j = 0; j < idx.size(); ++j) {
       evals_sel[j] = evals[idx[j]];
-      for (std::size_t i = 0; i < n; ++i) vecs_sel(i, j) = E(i, idx[j]);
+      for (std::size_t i = 0; i < n; ++i) vecs_sel(i, j) = eigenvectors(i, idx[j]);
     }
     evals = std::move(evals_sel);
     eigenvectors = std::move(vecs_sel);
-  } else {
-    eigenvectors = std::move(E);
   }
   return 0;
 }
@@ -709,7 +731,8 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
                          /*compute_vectors=*/opts.compute_vectors,
                          /*max_iter=*/opts.max_iter,
                          /*method=*/opts.method,
-                         /*range=*/opts.range);
+                         /*range=*/opts.range,
+                         /*uplo=*/opts.uplo);
 }
 
 // Eigenvalues-only fast path (avoids accumulating Q/Z/vectors).
@@ -717,7 +740,8 @@ int eigen_symmetric(const Matrix<T, Storage, Order>& A_in,
 template <typename T, typename Storage, StorageOrder Order>
 int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
                            Vector<typename numeric_traits<T>::scalar_type>& evals,
-                           std::size_t max_iter = 80)
+                           std::size_t max_iter = 80,
+                           fem::numeric::linear_algebra::Uplo uplo_sel = fem::numeric::linear_algebra::Uplo::Upper)
 {
 #ifdef FEM_NUMERIC_ENABLE_LAPACK
   // Try LAPACK tridiagonal path (STEVR) for values-only
@@ -727,7 +751,7 @@ int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
   Matrix<T, Storage, Order> tri = A;
   std::vector<typename numeric_traits<T>::scalar_type> diag(n, typename numeric_traits<T>::scalar_type{0});
   std::vector<typename numeric_traits<T>::scalar_type> off((n > 1) ? n - 1 : 0, typename numeric_traits<T>::scalar_type{0});
-  detail::hermitian_to_tridiagonal(tri, diag, off, nullptr, FEM_EIGEN_BLOCK_SIZE);
+  detail::hermitian_to_tridiagonal(tri, diag, off, nullptr, FEM_EIGEN_BLOCK_SIZE, /*use_panel_update=*/false, uplo_sel);
   // Realify subdiagonal for complex case
   if constexpr (is_complex_number_v<T>) {
     for (std::size_t k = 0; k + 1 < n; ++k) {
@@ -744,7 +768,7 @@ int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
   }
 #endif
   Matrix<T, Storage, Order> dummy;
-  return eigen_symmetric(A, evals, dummy, false, max_iter);
+  return eigen_symmetric(A, evals, dummy, false, max_iter, EighMethod::Auto, EighRange<typename numeric_traits<T>::scalar_type>::All(), uplo_sel);
 }
 
 // Overload: values-only with range selection (index/value). Keeps defaults for method/iter by reusing STEVR or fallback QL.
@@ -752,7 +776,8 @@ template <typename T, typename Storage, StorageOrder Order>
 int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
                            Vector<typename numeric_traits<T>::scalar_type>& evals,
                            EighRange<typename numeric_traits<T>::scalar_type> range,
-                           std::size_t max_iter = 80)
+                           std::size_t max_iter = 80,
+                           fem::numeric::linear_algebra::Uplo uplo_sel = fem::numeric::linear_algebra::Uplo::Upper)
 {
   using R = typename numeric_traits<T>::scalar_type;
 #ifdef FEM_NUMERIC_ENABLE_LAPACK
@@ -762,7 +787,7 @@ int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
   Matrix<T, Storage, Order> tri = A;
   std::vector<R> diag(n, R{0});
   std::vector<R> off((n > 1) ? n - 1 : 0, R{0});
-  detail::hermitian_to_tridiagonal(tri, diag, off, nullptr, FEM_EIGEN_BLOCK_SIZE);
+  detail::hermitian_to_tridiagonal(tri, diag, off, nullptr, FEM_EIGEN_BLOCK_SIZE, /*use_panel_update=*/false, uplo_sel);
   if constexpr (is_complex_number_v<T>) {
     for (std::size_t k = 0; k + 1 < n; ++k) off[k] = static_cast<R>(std::abs(tri(k + 1, k)));
   } else {
@@ -779,7 +804,7 @@ int eigen_symmetric_values(const Matrix<T, Storage, Order>& A,
   // Fallback: compute all values using reference QL and select
   Vector<R> all_vals;
   Matrix<T, Storage, Order> dummy;
-  int r = eigen_symmetric(A, all_vals, dummy, false, max_iter);
+  int r = eigen_symmetric(A, all_vals, dummy, false, max_iter, EighMethod::Auto, EighRange<R>::All(), uplo_sel);
   if (r != 0) return r;
   std::vector<std::size_t> idx;
   if (range.type == EighRange<R>::Type::Index) {
@@ -807,19 +832,20 @@ int eigen_symmetric(Matrix<T, Storage, Order>& A_inout,
                     std::size_t max_iter = 80,
                     EighMethod method = EighMethod::Auto,
                     EighRange<typename numeric_traits<T>::scalar_type> range = EighRange<typename numeric_traits<T>::scalar_type>::All(),
-                    bool destructive = true)
+                    bool destructive = true,
+                    fem::numeric::linear_algebra::Uplo uplo_sel = fem::numeric::linear_algebra::Uplo::Upper)
 {
   using R = typename numeric_traits<T>::scalar_type;
   // If not destructive or range requested, defer to non-destructive API
   if (!destructive || range.type != EighRange<R>::Type::All) {
     const Matrix<T, Storage, Order>& A_const = A_inout;
-    return eigen_symmetric(A_const, evals, eigenvectors, compute_vectors, max_iter, method, range);
+    return eigen_symmetric(A_const, evals, eigenvectors, compute_vectors, max_iter, method, range, uplo_sel);
   }
 
 #ifdef FEM_NUMERIC_ENABLE_LAPACK
   if (method == EighMethod::Auto || method == EighMethod::LapackDC) {
     int info = 0;
-    if (fem::numeric::backends::lapack::eigh_via_evd_inplace(A_inout, evals, compute_vectors, info)) {
+    if (fem::numeric::backends::lapack::eigh_via_evd_inplace(A_inout, evals, compute_vectors, uplo_sel, info)) {
       if (info != 0) return info;
       if (compute_vectors) {
         eigenvectors = std::move(A_inout); // move ownership, avoids copy
@@ -832,7 +858,7 @@ int eigen_symmetric(Matrix<T, Storage, Order>& A_inout,
 #endif
   // Fallback to non-destructive solver
   const Matrix<T, Storage, Order>& A_const = A_inout;
-  return eigen_symmetric(A_const, evals, eigenvectors, compute_vectors, max_iter, method, range);
+  return eigen_symmetric(A_const, evals, eigenvectors, compute_vectors, max_iter, method, range, uplo_sel);
 }
 
 // Options-based overload (destructive-capable). If opts.destructive is true and range==All,
@@ -848,7 +874,8 @@ int eigen_symmetric(Matrix<T, Storage, Order>& A_inout,
                          /*max_iter=*/opts.max_iter,
                          /*method=*/opts.method,
                          /*range=*/opts.range,
-                         /*destructive=*/opts.destructive);
+                         /*destructive=*/opts.destructive,
+                         /*uplo=*/opts.uplo);
 }
 
 // Batched small-matrix eigen solve (n <= 32 recommended)

@@ -17,6 +17,11 @@ option (BUILD_PERFORMANCE_TESTS "Build micro-benchmarks"                    ON)
 option (FEM_NUMERIC_ENABLE_LAPACK "Enable LAPACK/MKL backend for numeric algorithms" OFF)
 option (FEM_NUMERIC_ENABLE_LAPACKE "Enable LAPACKE row-major interfaces (requires LAPACK)" OFF)
 
+# Numeric decomposition tunables (compile-time constants)
+set(FEM_EIGEN_BLOCK_SIZE 32 CACHE STRING "Block size for eigen tridiagonalization (fallback)")
+set(FEM_WY_TILE_SIZE 256 CACHE STRING "Tile size for WY two-sided updates")
+set(FEM_EIGEN_TRIDIAG_BLOCK_THRESHOLD 128 CACHE STRING "n-threshold to enable blocked tridiagonalization by default")
+
 # -----------------------------------------------------------------------------
 # ------------------------ Parallelism Options --------------------------------
 # -----------------------------------------------------------------------------
@@ -114,6 +119,12 @@ target_compile_options(femsolver_options INTERFACE -fPIC)
 target_include_directories(femsolver_options INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:include>)   # future install()
+
+# Propagate numeric tunables as preprocessor defines
+target_compile_definitions(femsolver_options INTERFACE
+        FEM_EIGEN_BLOCK_SIZE=${FEM_EIGEN_BLOCK_SIZE}
+        FEM_WY_TILE_SIZE=${FEM_WY_TILE_SIZE}
+        FEM_EIGEN_TRIDIAG_BLOCK_THRESHOLD=${FEM_EIGEN_TRIDIAG_BLOCK_THRESHOLD})
 
 # -----------------------------------------------------------------------------
 #  Load parallelism modules
