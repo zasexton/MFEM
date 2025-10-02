@@ -218,26 +218,40 @@ private:
             }
 
             // Execute task if found
-            if (found_task) {
+            if (found_task && task.func) {
                 execute_task(worker, std::move(task));
-            } else {
-                // Check if we should stop (and no more tasks)
-                if (stop_.load(std::memory_order_acquire)) {
-                    // Double-check no tasks remain
-                    if (!try_get_local_task(worker, task) &&
-                        !try_steal_task(worker_id, task) &&
-                        !try_get_global_task(task)) {
-                        break;  // Exit worker loop
+                continue;  // Look for more work immediately
+            }
+
+            // No task found - check if we should stop
+            if (stop_.load(std::memory_order_acquire)) {
+                // Triple-check no tasks remain before exiting
+                bool really_no_tasks = true;
+                for (int check = 0; check < 3; ++check) {
+                    if (try_get_local_task(worker, task) ||
+                        try_steal_task(worker_id, task) ||
+                        try_get_global_task(task)) {
+                        if (task.func) {
+                            execute_task(worker, std::move(task));
+                            really_no_tasks = false;
+                            break;
+                        }
                     }
-                    if (task.func) {
-                        execute_task(worker, std::move(task));
-                    }
-                } else {
-                    // No work available - spin then sleep
-                    idle_wait(worker);
+                    // Brief pause between checks
+                    std::this_thread::yield();
                 }
+
+                if (really_no_tasks) {
+                    break;  // Exit worker loop
+                }
+            } else {
+                // No work available - spin then sleep
+                idle_wait(worker);
             }
         }
+
+        // Mark worker as inactive before exiting
+        worker.active = false;
     }
 
     /**
@@ -363,47 +377,71 @@ private:
      */
     void idle_wait(Worker& worker) {
         // First: Spin for a while
-        if (spin_count_ > 0 && !worker.spinning.exchange(true)) {
-            stats_.spin_iterations++;
+        if (spin_count_ > 0) {
+            bool was_spinning = worker.spinning.exchange(true);
+            if (!was_spinning) {
+                stats_.spin_iterations++;
 
-            for (size_t i = 0; i < spin_count_; ++i) {
-                if (stop_.load(std::memory_order_acquire)) {
-                    worker.spinning = false;
-                    return;
-                }
-
-                // Yield to other threads
-                std::this_thread::yield();
-
-                // Check for new work periodically
-                if (i % 10 == 0) {
-                    Task task;
-                    if (try_get_local_task(worker, task) ||
-                        try_steal_task(worker.id, task) ||
-                        try_get_global_task(task)) {
+                for (size_t i = 0; i < spin_count_; ++i) {
+                    if (stop_.load(std::memory_order_acquire)) {
                         worker.spinning = false;
-                        execute_task(worker, std::move(task));
                         return;
                     }
+
+                    // Yield to other threads
+                    std::this_thread::yield();
+
+                    // Check for new work periodically
+                    if (i % 10 == 0) {
+                        Task task;
+                        if (try_get_local_task(worker, task) ||
+                            try_steal_task(worker.id, task) ||
+                            try_get_global_task(task)) {
+                            worker.spinning = false;
+                            execute_task(worker, std::move(task));
+                            return;
+                        }
+                    }
                 }
+
+                worker.spinning = false;
+            }
+        }
+
+        // Mark as sleeping before checking for work one more time
+        worker.sleeping = true;
+
+        // Final check for work before actually sleeping
+        Task task;
+        if (try_get_local_task(worker, task) ||
+            try_steal_task(worker.id, task) ||
+            try_get_global_task(task)) {
+            worker.sleeping = false;
+            execute_task(worker, std::move(task));
+            return;
+        }
+
+        // Now actually sleep
+        stats_.sleep_count++;
+
+        // Use global CV to wake up when ANY work is available
+        std::unique_lock<std::mutex> lock(global_mutex_);
+        global_cv_.wait_for(lock, sleep_duration_, [this, &worker] {
+            // Wake immediately if stop signal or work available anywhere
+            if (stop_.load(std::memory_order_acquire)) {
+                return true;
             }
 
-            worker.spinning = false;
-        }
+            // Check if we have work in global queue
+            if (!global_queue_.empty()) {
+                return true;
+            }
 
-        // Then: Sleep until woken
-        if (!worker.sleeping.exchange(true)) {
-            stats_.sleep_count++;
+            // Also wake up periodically to check for steal opportunities
+            return false;
+        });
 
-            // Use global CV to wake up when ANY work is available
-            std::unique_lock<std::mutex> lock(global_mutex_);
-            global_cv_.wait_for(lock, sleep_duration_, [this] {
-                // Wake immediately if stop signal or work in global queue
-                return stop_.load(std::memory_order_acquire) || !global_queue_.empty();
-            });
-
-            worker.sleeping = false;
-        }
+        worker.sleeping = false;
     }
 
     /**
@@ -676,48 +714,81 @@ public:
      * @brief Wait until all tasks are complete
      */
     void wait_idle() {
-        // More robust wait that avoids lock contention
-        size_t spin_count = 0;
-        const size_t max_spins = 1000;
+        // More robust wait that avoids deadlocks
+        const auto timeout = std::chrono::milliseconds(100);
+        const auto start_time = std::chrono::steady_clock::now();
+        size_t consecutive_idle_checks = 0;
+        const size_t required_idle_checks = 3;
 
         while (true) {
-            // First, check active workers
-            size_t active = active_workers_.load(std::memory_order_acquire);
-            if (active > 0) {
-                std::this_thread::yield();
-                spin_count = 0;  // Reset spin count when we see activity
-                continue;
-            }
-
-            // No active workers - verify no pending tasks
-            size_t total_tasks = total_queue_size();
-
-            if (total_tasks == 0) {
-                // Double-check after a brief delay
-                std::this_thread::sleep_for(std::chrono::microseconds(100));
-
-                // Final verification
-                if (active_workers_.load(std::memory_order_acquire) == 0 &&
-                    total_queue_size() == 0) {
-                    break;  // We're done
+            // Check for timeout to prevent infinite wait
+            auto elapsed = std::chrono::steady_clock::now() - start_time;
+            if (elapsed > std::chrono::seconds(30)) {
+                // Force wake all workers to unstick any deadlocks
+                for (int i = 0; i < 3; ++i) {
+                    global_cv_.notify_all();
+                    for (auto& worker : workers_) {
+                        worker->wake_cv.notify_all();
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 }
             }
 
-            // Increment spin count
-            spin_count++;
+            // Check if any workers are active
+            size_t active = active_workers_.load(std::memory_order_acquire);
 
-            // If we've been spinning too long, wake workers to process any stuck tasks
-            if (spin_count >= max_spins) {
-                // Wake all workers to ensure they process any tasks
+            // Check pending tasks more carefully
+            size_t pending_tasks = 0;
+            bool all_queues_checked = true;
+
+            // Try to check all queues without blocking too long
+            for (const auto& worker : workers_) {
+                std::unique_lock<std::mutex> lock(worker->queue_mutex, std::try_to_lock);
+                if (lock.owns_lock()) {
+                    pending_tasks += worker->local_queue.size();
+                    pending_tasks += worker->priority_queue.size();
+                } else {
+                    // Could not lock, assume there might be tasks
+                    all_queues_checked = false;
+                    pending_tasks = 1; // Force continue
+                    break;
+                }
+            }
+
+            // Check global queue if we checked all worker queues
+            if (all_queues_checked) {
+                std::unique_lock<std::mutex> lock(global_mutex_, std::try_to_lock);
+                if (lock.owns_lock()) {
+                    pending_tasks += global_queue_.size();
+                } else {
+                    all_queues_checked = false;
+                    pending_tasks = 1; // Force continue
+                }
+            }
+
+            // Check if we're idle
+            if (active == 0 && pending_tasks == 0 && all_queues_checked) {
+                consecutive_idle_checks++;
+                if (consecutive_idle_checks >= required_idle_checks) {
+                    // We've been idle for multiple checks, we're done
+                    break;
+                }
+                // Brief sleep before next check
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            } else {
+                consecutive_idle_checks = 0;
+
+                // Wake sleeping workers periodically to process tasks
                 global_cv_.notify_all();
                 for (auto& worker : workers_) {
-                    worker->wake_cv.notify_all();
+                    if (worker->sleeping.load()) {
+                        worker->wake_cv.notify_one();
+                    }
                 }
-                spin_count = 0;  // Reset counter
-            }
 
-            // Yield before next iteration
-            std::this_thread::yield();
+                // Yield CPU
+                std::this_thread::yield();
+            }
         }
     }
 

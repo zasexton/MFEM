@@ -462,6 +462,9 @@ TEST_F(WorkStealingPoolTest, GlobalPoolShutdown) {
     EXPECT_EQ(future.get(), 42);
 
     fcc::GlobalWorkStealingPool::instance().shutdown();
+
+    // Reset the global pool for subsequent tests
+    fcc::GlobalWorkStealingPool::instance().reset();
 }
 
 // ==================== Performance Tests ====================
