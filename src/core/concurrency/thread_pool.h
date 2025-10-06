@@ -266,8 +266,9 @@ public:
                     (*task)();
                     stats_.tasks_completed++;
                 } catch (...) {
+                    // packaged_task already captured the exception into the future
+                    // Do not rethrow here to avoid terminating the worker thread
                     stats_.tasks_failed++;
-                    throw; // Re-throw to preserve exception handling
                 }
             }, priority);
             stats_.tasks_submitted++;
