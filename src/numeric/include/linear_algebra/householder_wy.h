@@ -106,12 +106,8 @@ inline void apply_block_reflectors_left(const VMat& V,
   // Y = T * Y
   Matrix<T> TY(kb, B.cols(), T{});
   gemm(Trans::NoTrans, Trans::NoTrans, T{1}, Tmat, Y, T{0}, TY);
-  // B -= V * TY
-  Matrix<T> Delta(B.rows(), B.cols(), T{});
-  gemm(Trans::NoTrans, Trans::NoTrans, T{1}, V, TY, T{0}, Delta);
-  for (std::size_t i = 0; i < B.rows(); ++i)
-    for (std::size_t j = 0; j < B.cols(); ++j)
-      B(i, j) = static_cast<T>(B(i, j) - Delta(i, j));
+  // In-place accumulate: B := B - V * TY
+  gemm(Trans::NoTrans, Trans::NoTrans, T{-1}, V, TY, T{1}, B);
 }
 
 // ---------------------------------------------------------------------------
@@ -134,12 +130,8 @@ inline void apply_block_reflectors_right(const VMat& V,
   // Y = Y * T
   Matrix<T> YT(B.rows(), kb, T{});
   gemm(Trans::NoTrans, Trans::NoTrans, T{1}, Y, Tmat, T{0}, YT);
-  // B -= YT * V^H
-  Matrix<T> Delta(B.rows(), B.cols(), T{});
-  gemm(Trans::NoTrans, Trans::ConjTranspose, T{1}, YT, V, T{0}, Delta);
-  for (std::size_t i = 0; i < B.rows(); ++i)
-    for (std::size_t j = 0; j < B.cols(); ++j)
-      B(i, j) = static_cast<T>(B(i, j) - Delta(i, j));
+  // In-place accumulate: B := B - (YT * V^H)
+  gemm(Trans::NoTrans, Trans::ConjTranspose, T{-1}, YT, V, T{1}, B);
 }
 
 // Convenience wrapper matching legacy naming in some call-sites: apply left

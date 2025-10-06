@@ -138,6 +138,28 @@ inline int potrf_rm(char uplo, int n, T* a, int lda)
   else return -1;
 }
 
+#if defined(FEM_NUMERIC_ENABLE_LAPACKE)
+// Row-major SYTRF/SYTRS wrappers
+template <typename T>
+inline int sytrf_rm(char uplo, int n, T* a, int lda, int* ipiv)
+{
+  if constexpr (std::is_same_v<T, float>)      return LAPACKE_ssytrf(LAPACK_ROW_MAJOR, uplo, n, reinterpret_cast<float*>(a), lda, ipiv);
+  else if constexpr (std::is_same_v<T, double>) return LAPACKE_dsytrf(LAPACK_ROW_MAJOR, uplo, n, reinterpret_cast<double*>(a), lda, ipiv);
+  else if constexpr (std::is_same_v<T, std::complex<float>>)  return LAPACKE_chetrf(LAPACK_ROW_MAJOR, uplo, n, reinterpret_cast<lapack_complex_float*>(a), lda, ipiv);
+  else if constexpr (std::is_same_v<T, std::complex<double>>) return LAPACKE_zhetrf(LAPACK_ROW_MAJOR, uplo, n, reinterpret_cast<lapack_complex_double*>(a), lda, ipiv);
+  else return -1;
+}
+
+template <typename T>
+inline int sytrs_rm(char uplo, int n, int nrhs, const T* a, int lda, const int* ipiv, T* b, int ldb)
+{
+  if constexpr (std::is_same_v<T, float>)      return LAPACKE_ssytrs(LAPACK_ROW_MAJOR, uplo, n, nrhs, reinterpret_cast<const float*>(a), lda, ipiv, reinterpret_cast<float*>(b), ldb);
+  else if constexpr (std::is_same_v<T, double>) return LAPACKE_dsytrs(LAPACK_ROW_MAJOR, uplo, n, nrhs, reinterpret_cast<const double*>(a), lda, ipiv, reinterpret_cast<double*>(b), ldb);
+  else if constexpr (std::is_same_v<T, std::complex<float>>)  return LAPACKE_chetrs(LAPACK_ROW_MAJOR, uplo, n, nrhs, reinterpret_cast<const lapack_complex_float*>(a), lda, ipiv, reinterpret_cast<lapack_complex_float*>(b), ldb);
+  else if constexpr (std::is_same_v<T, std::complex<double>>) return LAPACKE_zhetrs(LAPACK_ROW_MAJOR, uplo, n, nrhs, reinterpret_cast<const lapack_complex_double*>(a), lda, ipiv, reinterpret_cast<lapack_complex_double*>(b), ldb);
+  else return -1;
+}
+#endif // FEM_NUMERIC_ENABLE_LAPACKE
 template <typename T>
 inline int getrf_rm(int m, int n, T* a, int lda, int* ipiv)
 {
