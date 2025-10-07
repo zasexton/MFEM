@@ -325,7 +325,8 @@ public:
     template<typename Iterator, typename F>
     void submit_range(Iterator begin, Iterator end, F&& f, Priority priority = Priority::Normal) {
         for (auto it = begin; it != end; ++it) {
-            submit_with_priority([func = f, value = *it]() { func(value); }, priority);
+            // Bind the current value as an argument to avoid any capture-order pitfalls
+            submit_with_priority(std::forward<F>(f), priority, *it);
         }
     }
 
