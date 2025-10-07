@@ -799,10 +799,8 @@ private:
             } // else: canceled with tasks still finishing; wait again
         }
 
-        // Wait for all active tasks to complete
-        while (active_tasks.load() > 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
+        // All tasks are complete when we break the loop above
+        // based on ready_queue empty and inflight_tasks == 0.
     }
 
     /**
