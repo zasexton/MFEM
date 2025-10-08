@@ -349,14 +349,18 @@ static inline int ldlt_factor_bk_rook(Matrix<T, Storage, Order>& A,
         W2[i] = A(k + 2 + i, k + 1);
       }
       // Compute inv(D) for the 2x2 Hermitian block
-      // invD = 1/den * [[D22, -D21], [-conj(D21), D11]]
+      // Let D = [[D11, D12]; [conj(D12), D22]] with D12 = conj(D21) stored implicitly.
+      // inv(D) = 1/den * [[ D22,      -D12        ],
+      //                   [ -conj(D12),  D11       ]],
+      // where den = D11*D22 - |D12|^2 = D11*D22 - D21*conj(D21).
       T denom = static_cast<T>(D11 * D22 - D21 * conj_if_complex(D21));
       if (static_cast<R>(std::abs(denom)) == R{0}) return static_cast<int>(k) + 1;
       // Compute L(i,[k,k+1]) = [W1 W2] * invD for i>k+1
       for (std::size_t i = 0; i < m; ++i) {
         T a1 = W1[i], a2 = W2[i];
-        T l1 = static_cast<T>(( a1 * D22 - a2 * D21) / denom);
-        T l2 = static_cast<T>((-a1 * conj_if_complex(D21) + a2 * D11) / denom);
+        // Use D12 = conj(D21) for upper-right element of D
+        T l1 = static_cast<T>(( a1 * D22 - a2 * conj_if_complex(D21)) / denom);
+        T l2 = static_cast<T>((-a1 * D21 + a2 * D11) / denom);
         A(k + 2 + i, k)     = l1;
         A(k + 2 + i, k + 1) = l2;
       }
@@ -403,6 +407,9 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
     return;
   }
   // Apply P to RHS (P is symmetric; same as P^T, but use standard LAPACK order)
+  // For a 2x2 pivot (ipiv[k] < 0), LAPACK encodes ipiv[k] = ipiv[k+1] = -p,
+  // meaning that row/col k+1 was swapped with p-1 prior to forming the block.
+  // Therefore we must swap b[k+1] with b[p-1] (not b[k]).
   for (std::size_t k = 0; k < n; ) {
     int piv = ipiv[k];
     if (piv > 0) {
@@ -411,7 +418,8 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
       k += 1;
     } else {
       std::size_t p = static_cast<std::size_t>(-piv - 1);
-      if (p != k) std::swap(b[k], b[p]);
+      std::size_t kp1 = k + 1; // partner row in the 2x2 block
+      if (p != kp1) std::swap(b[kp1], b[p]);
       k += 2; // skip partner index (ipiv[k] == ipiv[k+1])
     }
   }
@@ -419,8 +427,9 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
   for (std::size_t i = 0; i < n; ++i) {
     T sum = b[i];
     for (std::size_t k = 0; k < i; ++k) {
-      // For a 2x2 pivot at k (ipiv[k] < 0), L(i,k) is zero when i == k+1
-      if (ipiv[k] < 0 && i == k + 1) continue;
+      // For a 2x2 pivot starting at k (ipiv[k] < 0 and ipiv[k+1]==ipiv[k]),
+      // the entry L(k+1,k) is structurally zero (A_fact(k+1,k) stores D21).
+      if (k + 1 < n && ipiv[k] < 0 && ipiv[k + 1] == ipiv[k] && i == k + 1) continue;
       sum -= A_fact(i, k) * b[k];
     }
     b[i] = sum;
@@ -432,14 +441,15 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
       b[k] = static_cast<T>(b[k] / A_fact(k, k));
       k += 1;
     } else {
-      // 2x2 block at k,k+1
+      // 2x2 block at k,k+1. Form D12 = conj(D21) for clarity.
       T D11 = A_fact(k, k);
       T D21 = A_fact(k + 1, k);
+      T D12 = conj_if_complex(D21);
       T D22 = A_fact(k + 1, k + 1);
       T rhs1 = b[k], rhs2 = b[k + 1];
-      T denom = static_cast<T>(D11 * D22 - D21 * conj_if_complex(D21));
-      T xk  = static_cast<T>(( D22 * rhs1 - D21 * rhs2) / denom);
-      T xk1 = static_cast<T>((-conj_if_complex(D21) * rhs1 + D11 * rhs2) / denom);
+      T denom = static_cast<T>(D11 * D22 - D12 * conj_if_complex(D12));
+      T xk  = static_cast<T>(( D22 * rhs1 - D12 * rhs2) / denom);
+      T xk1 = static_cast<T>((-conj_if_complex(D12) * rhs1 + D11 * rhs2) / denom);
       b[k] = xk; b[k + 1] = xk1;
       k += 2;
     }
@@ -449,13 +459,15 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
     std::size_t i = n - 1 - ii;
     T sum = b[i];
     for (std::size_t k = i + 1; k < n; ++k) {
-      // For a 2x2 pivot at i (ipiv[i] < 0), L(k,i) is zero when k == i+1
-      if (ipiv[i] < 0 && k == i + 1) continue;
+      // Skip the non-existent L(i+1,i) when i is the start of a 2x2 block
+      if (i + 1 < n && ipiv[i] < 0 && ipiv[i + 1] == ipiv[i] && k == i + 1) continue;
       sum -= conj_if_complex(A_fact(k, i)) * b[k];
     }
     b[i] = sum;
   }
-  // Apply P^T to result (reverse order). For 2x2 block, handle pair and skip partner.
+  // Apply P^T to result (reverse order). For a 2x2 pivot stored at indices
+  // k-1 and k (ipiv[k] < 0), the swap was between row k and p-1, so we must
+  // undo that by swapping b[k] with b[p-1]. Then skip the partner index.
   for (std::size_t k = n; k-- > 0; ) {
     int piv = ipiv[k];
     if (piv > 0) {
@@ -463,10 +475,10 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
       if (p != k) std::swap(b[k], b[p]);
     } else {
       std::size_t p = static_cast<std::size_t>(-piv - 1);
-      if (k == 0) { if (p != 0) std::swap(b[0], b[p]); break; }
-      std::size_t k0 = k - 1; // partner index
-      if (p != k0) std::swap(b[k0], b[p]);
-      k = k0; // skip partner; for-loop will decrement again
+      // k is the second index of the 2x2 block; undo swap on row k
+      if (p != k) std::swap(b[k], b[p]);
+      if (k == 0) break; // safety
+      k -= 1; // skip partner (k-1)
     }
   }
 }
@@ -497,7 +509,8 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
       k += 1;
     } else {
       std::size_t p = static_cast<std::size_t>(-piv - 1);
-      if (p != k) for (std::size_t j = 0; j < nrhs; ++j) std::swap(B(k, j), B(p, j));
+      std::size_t kp1 = k + 1;
+      if (p != kp1) for (std::size_t j = 0; j < nrhs; ++j) std::swap(B(kp1, j), B(p, j));
       k += 2;
     }
   }
@@ -506,7 +519,7 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
     for (std::size_t j = 0; j < nrhs; ++j) {
       T sum = B(i, j);
       for (std::size_t k = 0; k < i; ++k) {
-        if (ipiv[k] < 0 && i == k + 1) continue;
+        if (k + 1 < n && ipiv[k] < 0 && ipiv[k + 1] == ipiv[k] && i == k + 1) continue;
         sum -= A_fact(i, k) * B(k, j);
       }
       B(i, j) = sum;
@@ -520,14 +533,16 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
       for (std::size_t j = 0; j < nrhs; ++j) B(k, j) = static_cast<T>(B(k, j) / dkk);
       k += 1;
     } else {
+      // 2x2 block. Use D12 = conj(D21) for correct Hermitian handling.
       T D11 = A_fact(k, k);
       T D21 = A_fact(k + 1, k);
+      T D12 = conj_if_complex(D21);
       T D22 = A_fact(k + 1, k + 1);
-      T denom = static_cast<T>(D11 * D22 - D21 * conj_if_complex(D21));
+      T denom = static_cast<T>(D11 * D22 - D12 * conj_if_complex(D12));
       for (std::size_t j = 0; j < nrhs; ++j) {
         T rhs1 = B(k, j), rhs2 = B(k + 1, j);
-        T xk  = static_cast<T>(( D22 * rhs1 - D21 * rhs2) / denom);
-        T xk1 = static_cast<T>((-conj_if_complex(D21) * rhs1 + D11 * rhs2) / denom);
+        T xk  = static_cast<T>(( D22 * rhs1 - D12 * rhs2) / denom);
+        T xk1 = static_cast<T>((-conj_if_complex(D12) * rhs1 + D11 * rhs2) / denom);
         B(k, j) = xk; B(k + 1, j) = xk1;
       }
       k += 2;
@@ -539,7 +554,7 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
     for (std::size_t j = 0; j < nrhs; ++j) {
       T sum = B(i, j);
       for (std::size_t k = i + 1; k < n; ++k) {
-        if (ipiv[i] < 0 && k == i + 1) continue;
+        if (i + 1 < n && ipiv[i] < 0 && ipiv[i + 1] == ipiv[i] && k == i + 1) continue;
         sum -= conj_if_complex(A_fact(k, i)) * B(k, j);
       }
       B(i, j) = sum;
@@ -552,11 +567,10 @@ static inline void ldlt_solve_bk_inplace(const Matrix<T>& A_fact,
       std::size_t p = static_cast<std::size_t>(piv - 1);
       if (p != k) for (std::size_t j = 0; j < nrhs; ++j) std::swap(B(k, j), B(p, j));
     } else {
-      if (k == 0) { std::size_t p = static_cast<std::size_t>(-piv - 1); if (p != 0) for (std::size_t j = 0; j < nrhs; ++j) std::swap(B(0, j), B(p, j)); break; }
       std::size_t p = static_cast<std::size_t>(-piv - 1);
-      std::size_t k0 = k - 1;
-      if (p != k0) for (std::size_t j = 0; j < nrhs; ++j) std::swap(B(k0, j), B(p, j));
-      k = k0;
+      if (p != k) for (std::size_t j = 0; j < nrhs; ++j) std::swap(B(k, j), B(p, j));
+      if (k == 0) break;
+      k -= 1; // skip partner
     }
   }
 }

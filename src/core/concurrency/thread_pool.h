@@ -147,22 +147,26 @@ private:
                     tasks_.pop();
                     task = std::move(wrapper.func);
                     stats_.queue_size = tasks_.size();
+
+                    // Increment active tasks while holding lock to prevent race in wait_idle()
+                    active_tasks_++;
+                    stats_.active_threads++;
                 }
             }
 
             // Execute task outside of lock
             if (task) {
-                stats_.active_threads++;
-                active_tasks_++;
-
                 task();
 
-                active_tasks_--;
-                stats_.active_threads--;
+                // Decrement and check idle under lock to prevent race
+                {
+                    std::lock_guard<std::mutex> lock(queue_mutex_);
+                    active_tasks_--;
+                    stats_.active_threads--;
 
-                // Notify if we're now idle
-                if (active_tasks_ == 0) {
-                    cv_idle_.notify_all();
+                    if (tasks_.empty() && active_tasks_ == 0) {
+                        cv_idle_.notify_all();
+                    }
                 }
             }
         }
@@ -275,7 +279,11 @@ public:
             stats_.queue_size = tasks_.size();
         }
 
-        cv_task_.notify_one();
+        // Notify outside the lock, but only if not paused
+        if (!paused_.load(std::memory_order_acquire)) {
+            cv_task_.notify_all();
+        }
+
         return result;
     }
 
@@ -334,14 +342,14 @@ public:
      * @brief Pause task execution (running tasks continue)
      */
     void pause() {
-        paused_ = true;
+        paused_.store(true, std::memory_order_release);
     }
 
     /**
      * @brief Resume task execution
      */
     void resume() {
-        paused_ = false;
+        paused_.store(false, std::memory_order_release);
         cv_task_.notify_all();
     }
 
@@ -416,8 +424,10 @@ public:
      * @return Optional task function if available
      */
     std::optional<std::function<void()>> try_steal() {
-        std::unique_lock<std::mutex> lock(queue_mutex_, std::try_to_lock);
-        if (!lock.owns_lock() || tasks_.empty()) {
+        // Use a regular lock since try_to_lock can fail due to spurious contention
+        std::unique_lock<std::mutex> lock(queue_mutex_);
+
+        if (tasks_.empty()) {
             return std::nullopt;
         }
 
