@@ -183,9 +183,11 @@ TEST_F(MemoryBarrierTest, SpinUntilSuccess) {
         }
     });
 
+    // Need enough spins to cover ~50μs + thread startup overhead + scheduling
+    // On a 4GHz CPU with ~20 cycles per iteration, 1M spins allows ~5ms
     bool result = spin_until([&counter]() {
         return counter.load(std::memory_order_relaxed) >= 5;
-    }, 100000);  // Increase max spins for reliability
+    }, 1000000);
 
     EXPECT_TRUE(result);
     EXPECT_GE(counter.load(), 5);
@@ -412,11 +414,13 @@ TEST_F(MemoryBarrierTest, SpinUntilComplexPredicate) {
     });
 
     // Spin until all three conditions are met
+    // Need enough spins to cover ~300μs + overhead + thread scheduling
+    // On a 4GHz CPU with ~20 cycles per iteration, this allows ~2.5ms
     bool result = spin_until([&state]() {
         return state.a.load(std::memory_order_relaxed) == 1 &&
                state.b.load(std::memory_order_relaxed) == 2 &&
                state.c.load(std::memory_order_relaxed) == 3;
-    }, 10000);
+    }, 500000);
 
     EXPECT_TRUE(result);
     EXPECT_EQ(state.a.load(), 1);
