@@ -24,6 +24,7 @@
 #include "../linear_algebra/blas_level3.h" // gemm/trmm helpers
 #include "../linear_algebra/householder_wy.h" // WY helpers
 #include "../backends/lapack_backend.h"
+#include "workspace.h"
 
 namespace fem::numeric::decompositions {
 
@@ -36,7 +37,7 @@ constexpr T conj_if_complex(const T& x) {
 
 // Forward declaration for blocked QR
 template <typename T, typename Storage, StorageOrder Order>
-int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 48);
+int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::size_t block = 0);
 
 // ---------------------------------------------------------------------------
 // Unblocked QR (Householder) – in-place compact storage (internal helper)
@@ -392,7 +393,9 @@ int qr_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<T>& tau, std::si
 #endif
 
   if (k == 0) return 0;
-  const std::size_t bs = std::max<std::size_t>(1, block);
+  // Adaptive block size: use provided value or auto-tune based on matrix size
+  const std::size_t auto_block = std::min<std::size_t>(256, std::max<std::size_t>(96, std::min(n, m)/4));
+  const std::size_t bs = (block > 0) ? std::max<std::size_t>(1, block) : auto_block;
 
   auto build_V_from_panel = [&](const Matrix<T>& P, Matrix<T>& V) {
     const std::size_t pm = P.rows();
@@ -627,7 +630,7 @@ int qr_factor(Matrix<T, Storage, Order>& A, std::vector<T>& tau)
     return qr_factor_unblocked(A, tau);
   }
 
-  return qr_factor_blocked(A, tau, /*block=*/48);
+  return qr_factor_blocked(A, tau, /*block=*/0);
 }
 
 } // namespace fem::numeric::decompositions

@@ -221,13 +221,6 @@ inline bool potrf_inplace(Matrix<T, Storage, Order>& A,
   int LDA = static_cast<int>(n);
   int info = 0;
 
-  extern "C" {
-    void spotrf_(const char*, const int*, float*, const int*, int*);
-    void dpotrf_(const char*, const int*, double*, const int*, int*);
-    void cpotrf_(const char*, const int*, std::complex<float>*, const int*, int*);
-    void zpotrf_(const char*, const int*, std::complex<double>*, const int*, int*);
-  }
-
   if constexpr (std::is_same_v<T, float>)      { spotrf_(&u, &N, reinterpret_cast<float*>(a_cm.data()), &LDA, &info); }
   else if constexpr (std::is_same_v<T, double>) { dpotrf_(&u, &N, reinterpret_cast<double*>(a_cm.data()), &LDA, &info); }
   else if constexpr (std::is_same_v<T, std::complex<float>>)  { cpotrf_(&u, &N, reinterpret_cast<std::complex<float>*>(a_cm.data()), &LDA, &info); }
@@ -343,13 +336,6 @@ inline bool getrf_inplace(Matrix<T, Storage, Order>& A, std::vector<int>& piv, i
   std::vector<int> ipiv(std::max(1, k));
   int info = 0;
 
-  extern "C" {
-    void sgetrf_(const int*, const int*, float*, const int*, int*, int*);
-    void dgetrf_(const int*, const int*, double*, const int*, int*, int*);
-    void cgetrf_(const int*, const int*, std::complex<float>*, const int*, int*, int*);
-    void zgetrf_(const int*, const int*, std::complex<double>*, const int*, int*, int*);
-  }
-
   if constexpr (std::is_same_v<T, float>)      { sgetrf_(&M, &N, reinterpret_cast<float*>(a_cm.data()), &LDA, ipiv.data(), &info); }
   else if constexpr (std::is_same_v<T, double>) { dgetrf_(&M, &N, reinterpret_cast<double*>(a_cm.data()), &LDA, ipiv.data(), &info); }
   else if constexpr (std::is_same_v<T, std::complex<float>>)  { cgetrf_(&M, &N, reinterpret_cast<std::complex<float>*>(a_cm.data()), &LDA, ipiv.data(), &info); }
@@ -407,13 +393,6 @@ inline bool geqrf_inplace(Matrix<T, Storage, Order>& A, std::vector<T>& tau, int
   int lwork = -1;
   // Work scalar of appropriate type
   T wkopt{};
-
-  extern "C" {
-    void sgeqrf_(const int*, const int*, float*, const int*, float*, float*, const int*, int*);
-    void dgeqrf_(const int*, const int*, double*, const int*, double*, double*, const int*, int*);
-    void cgeqrf_(const int*, const int*, std::complex<float>*, const int*, std::complex<float>*, std::complex<float>*, const int*, int*);
-    void zgeqrf_(const int*, const int*, std::complex<double>*, const int*, std::complex<double>*, std::complex<double>*, const int*, int*);
-  }
 
   if constexpr (std::is_same_v<T, float>) {
     sgeqrf_(&M, &N, reinterpret_cast<float*>(a_cm.data()), &LDA, reinterpret_cast<float*>(tau.data()), reinterpret_cast<float*>(&wkopt), &lwork, &info);

@@ -14,12 +14,13 @@
 #include "../base/traits_base.h"
 #include "../linear_algebra/blas_level3.h" // gemm
 #include "../backends/lapack_backend.h"
+#include "workspace.h"
 
 namespace fem::numeric::decompositions {
 
 // Forward declaration (blocked LU)
 template <typename T, typename Storage, StorageOrder Order>
-int lu_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<int>& piv, std::size_t block = 64);
+int lu_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<int>& piv, std::size_t block = 0);
 
 // LU factorization (best path)
 // - ColumnMajor + LAPACK: full GETRF on A (zero-copy), 0-based pivots returned
@@ -68,26 +69,24 @@ void lu_solve_inplace(const Matrix<T>& LU, Vector<T>& b)
         throw std::invalid_argument("lu_solve_inplace: dimension mismatch");
     }
 
-    // Forward solve Ly = Pb (but b already permuted)
+    // Convert vector to n×1 matrix for TRSM
+    Matrix<T> B(n, 1);
     for (std::size_t i = 0; i < n; ++i) {
-        T sum = b[i];
-        for (std::size_t j = 0; j < i; ++j) {
-            sum -= LU(i, j) * b[j];
-        }
-        b[i] = sum; // L has 1 on diagonal
+        B(i, 0) = b[i];
     }
 
-    // Backward solve Ux = y
-    for (std::size_t i = n; i-- > 0;) {
-        T sum = b[i];
-        for (std::size_t j = i + 1; j < n; ++j) {
-            sum -= LU(i, j) * b[j];
-        }
-        auto uii = LU(i, i);
-        if (uii == T{0}) {
-            throw std::runtime_error("lu_solve_inplace: singular matrix (zero on U diagonal)");
-        }
-        b[i] = sum / uii;
+    // Use TRSM for efficient triangular solves
+    using namespace fem::numeric::linear_algebra;
+
+    // Forward solve: L * Y = P * B (L is unit lower triangular)
+    trsm(Side::Left, Uplo::Lower, Trans::NoTrans, Diag::Unit, T{1}, LU, B);
+
+    // Backward solve: U * X = Y (U is upper triangular)
+    trsm(Side::Left, Uplo::Upper, Trans::NoTrans, Diag::NonUnit, T{1}, LU, B);
+
+    // Copy result back to vector
+    for (std::size_t i = 0; i < n; ++i) {
+        b[i] = B(i, 0);
     }
 }
 
@@ -124,26 +123,15 @@ void lu_solve_inplace(const Matrix<T>& LU, const std::vector<int>& piv, Matrix<T
             }
         }
     }
-    // Forward substitution for each RHS
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = 0; j < B.cols(); ++j) {
-            T sum = B(i, j);
-            for (std::size_t k = 0; k < i; ++k) sum -= LU(i, k) * B(k, j);
-            B(i, j) = sum;
-        }
-    }
-    // Backward substitution for each RHS
-    for (std::size_t i = n; i-- > 0;) {
-        auto uii = LU(i, i);
-        if (uii == T{0}) {
-            throw std::runtime_error("lu_solve_inplace (matrix): singular matrix");
-        }
-        for (std::size_t j = 0; j < B.cols(); ++j) {
-            T sum = B(i, j);
-            for (std::size_t k = i + 1; k < n; ++k) sum -= LU(i, k) * B(k, j);
-            B(i, j) = sum / uii;
-        }
-    }
+
+    // Use TRSM for efficient triangular solves when available
+    using namespace fem::numeric::linear_algebra;
+
+    // Forward solve: L * Y = P * B (L is unit lower triangular)
+    trsm(Side::Left, Uplo::Lower, Trans::NoTrans, Diag::Unit, T{1}, LU, B);
+
+    // Backward solve: U * X = Y (U is upper triangular)
+    trsm(Side::Left, Uplo::Upper, Trans::NoTrans, Diag::NonUnit, T{1}, LU, B);
 }
 
 // Convenience wrapper: returns a copy of B with the solution (does not modify input B)
@@ -198,7 +186,9 @@ int lu_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<int>& piv, std::
     }
 
     if (kmax == 0) return 0;
-    const std::size_t bs = std::max<std::size_t>(1, block);
+    // Adaptive block size: use provided value or auto-tune based on matrix size
+    const std::size_t auto_block = std::min<std::size_t>(256, std::max<std::size_t>(64, n/4));
+    const std::size_t bs = (block > 0) ? std::max<std::size_t>(1, block) : auto_block;
     int info = 0;
 
     for (std::size_t k = 0; k < kmax; k += bs) {
@@ -224,13 +214,14 @@ int lu_factor_blocked(Matrix<T, Storage, Order>& A, std::vector<int>& piv, std::
 #else
             else {
 #endif
-                // Copy panel to column-major buffer
-                std::vector<T> panel(pm * pn);
+                // Copy panel to column-major buffer using workspace
+                auto& workspace = get_thread_local_workspace<T>();
+                T* panel = workspace.get_buffer(pm * pn);
                 for (std::size_t j = 0; j < pn; ++j)
                     for (std::size_t i = 0; i < pm; ++i)
                         panel[j * pm + i] = A(k + i, k + j);
                 int M = static_cast<int>(pm), N = static_cast<int>(pn), lda = static_cast<int>(pm);
-                backends::lapack::getrf_cm<T>(M, N, panel.data(), lda, ipiv.data(), info_panel);
+                backends::lapack::getrf_cm<T>(M, N, panel, lda, ipiv.data(), info_panel);
                 // Copy panel back
                 for (std::size_t j = 0; j < pn; ++j)
                     for (std::size_t i = 0; i < pm; ++i)

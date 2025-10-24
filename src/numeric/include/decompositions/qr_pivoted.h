@@ -32,6 +32,7 @@
 #include "../core/matrix.h"
 #include "../core/vector.h"
 #include "../base/traits_base.h"
+#include "qr_pivoted_blocked.h"
 
 namespace fem::numeric::decompositions {
 
@@ -259,7 +260,14 @@ int qr_factor_pivoted(Matrix<T, Storage, Order>& A,
   rank_out = r;
   return 0;
 #else
-  return qr_factor_pivoted_unblocked(A, tau, jpiv, rank_out, tol);
+  // Use blocked algorithm for larger matrices
+  const std::size_t blocked_threshold = 128;
+  const std::size_t matrix_size = std::min(m, n);
+  if (matrix_size >= blocked_threshold) {
+    return qr_factor_pivoted_blocked(A, tau, jpiv, rank_out, tol);
+  } else {
+    return qr_factor_pivoted_unblocked(A, tau, jpiv, rank_out, tol);
+  }
 #endif
 }
 

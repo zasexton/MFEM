@@ -18,6 +18,7 @@
 #include "../core/vector.h"
 #include "../base/traits_base.h"
 #include "../linear_algebra/blas_level2.h" // for Uplo and conj helper pattern
+#include "workspace.h"
 #include "../linear_algebra/blas_level3.h" // for syrk/trsm/gemm
 #include "../backends/lapack_backend.h"
 
@@ -38,7 +39,7 @@ constexpr T conj_if_complex(const T& x) {
 template <typename T, typename Storage, StorageOrder Order>
 int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
                             fem::numeric::linear_algebra::Uplo uplo,
-                            std::size_t block = 64);
+                            std::size_t block = 0);
 
 // ---------------------------------------------------------------------------
 // Factorization: Cholesky (best path, in-place)
@@ -139,7 +140,9 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
   };
 
   if (n == 0) return 0;
-  const std::size_t bs = std::max<std::size_t>(1, block);
+  // Adaptive block size: use provided value or auto-tune based on matrix size
+  const std::size_t auto_block = std::min<std::size_t>(256, std::max<std::size_t>(64, n/4));
+  const std::size_t bs = (block > 0) ? std::max<std::size_t>(1, block) : auto_block;
 
   if (uplo == Uplo::Lower) {
     for (std::size_t k = 0; k < n; k += bs) {
@@ -161,13 +164,14 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
 #else
       else {
 #endif
-        // Copy kb x kb tile to column-major buffer
-        std::vector<T> tile(kb * kb);
+        // Copy kb x kb tile to column-major buffer using workspace
+        auto& workspace = get_thread_local_workspace<T>();
+        T* tile = workspace.get_buffer(kb * kb);
         for (std::size_t j = 0; j < kb; ++j)
           for (std::size_t i = 0; i < kb; ++i)
             tile[j * kb + i] = Akk(i, j);
         char u = 'L'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(kb);
-        backends::lapack::potrf_cm<T>(u, Nkb, tile.data(), lda, info_blk);
+        backends::lapack::potrf_cm<T>(u, Nkb, tile, lda, info_blk);
         if (info_blk == 0) {
           for (std::size_t i = 0; i < kb; ++i) {
             for (std::size_t j = 0; j < kb; ++j) Akk(i, j) = (j <= i) ? tile[j * kb + i] : T{};
@@ -218,12 +222,13 @@ int cholesky_factor_blocked(Matrix<T, Storage, Order>& A,
 #else
       else {
 #endif
-        std::vector<T> tile(kb * kb);
+        auto& workspace = get_thread_local_workspace<T>();
+        T* tile = workspace.get_buffer(kb * kb);
         for (std::size_t j = 0; j < kb; ++j)
           for (std::size_t i = 0; i < kb; ++i)
             tile[j * kb + i] = Akk(i, j);
         char u = 'U'; int Nkb = static_cast<int>(kb); int lda = static_cast<int>(kb);
-        backends::lapack::potrf_cm<T>(u, Nkb, tile.data(), lda, info_blk);
+        backends::lapack::potrf_cm<T>(u, Nkb, tile, lda, info_blk);
         if (info_blk == 0) {
           for (std::size_t i = 0; i < kb; ++i) {
             for (std::size_t j = 0; j < kb; ++j) Akk(i, j) = (j >= i) ? tile[j * kb + i] : T{};
@@ -271,39 +276,39 @@ void cholesky_solve_inplace(const Matrix<T>& chol,
                             fem::numeric::linear_algebra::Uplo uplo = fem::numeric::linear_algebra::Uplo::Lower)
 {
   using Uplo = fem::numeric::linear_algebra::Uplo;
+  using Side = fem::numeric::linear_algebra::Side;
+  using Trans = fem::numeric::linear_algebra::Trans;
+  using Diag = fem::numeric::linear_algebra::Diag;
+
   if (chol.rows() != chol.cols() || b.size() != chol.rows()) {
     throw std::invalid_argument("cholesky_solve_inplace(vector): dimension mismatch");
   }
   const std::size_t n = chol.rows();
 
+  // Convert vector to n×1 matrix for TRSM
+  Matrix<T> B(n, 1);
+  for (std::size_t i = 0; i < n; ++i) {
+    B(i, 0) = b[i];
+  }
+
+  // Use TRSM for efficient triangular solves
+  using namespace fem::numeric::linear_algebra;
+
   if (uplo == Uplo::Lower) {
-    // Forward solve: L y = b (overwrite b with y)
-    for (std::size_t i = 0; i < n; ++i) {
-      auto sum = b[i];
-      for (std::size_t k = 0; k < i; ++k) sum -= chol(i, k) * b[k];
-      b[i] = sum / chol(i, i);
-    }
+    // Forward solve: L y = b
+    trsm(Side::Left, Uplo::Lower, Trans::NoTrans, Diag::NonUnit, T{1}, chol, B);
     // Backward solve: L^H x = y
-    for (std::size_t ii = 0; ii < n; ++ii) {
-      std::size_t i = n - 1 - ii;
-      auto sum = b[i];
-      for (std::size_t k = i + 1; k < n; ++k) sum -= conj_if_complex(chol(k, i)) * b[k];
-      b[i] = sum / chol(i, i);
-    }
+    trsm(Side::Left, Uplo::Lower, Trans::ConjTranspose, Diag::NonUnit, T{1}, chol, B);
   } else { // Upper
-    // Forward solve: U^H y = b (U^H is lower)
-    for (std::size_t i = 0; i < n; ++i) {
-      auto sum = b[i];
-      for (std::size_t k = 0; k < i; ++k) sum -= conj_if_complex(chol(k, i)) * b[k];
-      b[i] = sum / chol(i, i);
-    }
-    // Backward solve: U x = y (U is upper)
-    for (std::size_t ii = 0; ii < n; ++ii) {
-      std::size_t i = n - 1 - ii;
-      auto sum = b[i];
-      for (std::size_t k = i + 1; k < n; ++k) sum -= chol(i, k) * b[k];
-      b[i] = sum / chol(i, i);
-    }
+    // Forward solve: U^H y = b
+    trsm(Side::Left, Uplo::Upper, Trans::ConjTranspose, Diag::NonUnit, T{1}, chol, B);
+    // Backward solve: U x = y
+    trsm(Side::Left, Uplo::Upper, Trans::NoTrans, Diag::NonUnit, T{1}, chol, B);
+  }
+
+  // Copy result back to vector
+  for (std::size_t i = 0; i < n; ++i) {
+    b[i] = B(i, 0);
   }
 }
 
@@ -313,48 +318,27 @@ void cholesky_solve_inplace(const Matrix<T>& chol,
                             fem::numeric::linear_algebra::Uplo uplo = fem::numeric::linear_algebra::Uplo::Lower)
 {
   using Uplo = fem::numeric::linear_algebra::Uplo;
+  using Side = fem::numeric::linear_algebra::Side;
+  using Trans = fem::numeric::linear_algebra::Trans;
+  using Diag = fem::numeric::linear_algebra::Diag;
+
   if (chol.rows() != chol.cols() || B.rows() != chol.rows()) {
     throw std::invalid_argument("cholesky_solve_inplace(matrix): dimension mismatch");
   }
-  const std::size_t n = chol.rows();
-  const std::size_t nrhs = B.cols();
+
+  // Use TRSM for efficient triangular solves
+  using namespace fem::numeric::linear_algebra;
 
   if (uplo == Uplo::Lower) {
-    // L y = B
-    for (std::size_t i = 0; i < n; ++i) {
-      for (std::size_t j = 0; j < nrhs; ++j) {
-        auto sum = B(i, j);
-        for (std::size_t k = 0; k < i; ++k) sum -= chol(i, k) * B(k, j);
-        B(i, j) = sum / chol(i, i);
-      }
-    }
-    // L^H x = y
-    for (std::size_t ii = 0; ii < n; ++ii) {
-      std::size_t i = n - 1 - ii;
-      for (std::size_t j = 0; j < nrhs; ++j) {
-        auto sum = B(i, j);
-        for (std::size_t k = i + 1; k < n; ++k) sum -= conj_if_complex(chol(k, i)) * B(k, j);
-        B(i, j) = sum / chol(i, i);
-      }
-    }
+    // Forward solve: L y = B
+    trsm(Side::Left, Uplo::Lower, Trans::NoTrans, Diag::NonUnit, T{1}, chol, B);
+    // Backward solve: L^H x = y
+    trsm(Side::Left, Uplo::Lower, Trans::ConjTranspose, Diag::NonUnit, T{1}, chol, B);
   } else { // Upper
-    // U^H y = B
-    for (std::size_t i = 0; i < n; ++i) {
-      for (std::size_t j = 0; j < nrhs; ++j) {
-        auto sum = B(i, j);
-        for (std::size_t k = 0; k < i; ++k) sum -= conj_if_complex(chol(k, i)) * B(k, j);
-        B(i, j) = sum / chol(i, i);
-      }
-    }
-    // U x = y
-    for (std::size_t ii = 0; ii < n; ++ii) {
-      std::size_t i = n - 1 - ii;
-      for (std::size_t j = 0; j < nrhs; ++j) {
-        auto sum = B(i, j);
-        for (std::size_t k = i + 1; k < n; ++k) sum -= chol(i, k) * B(k, j);
-        B(i, j) = sum / chol(i, i);
-      }
-    }
+    // Forward solve: U^H y = B
+    trsm(Side::Left, Uplo::Upper, Trans::ConjTranspose, Diag::NonUnit, T{1}, chol, B);
+    // Backward solve: U x = y
+    trsm(Side::Left, Uplo::Upper, Trans::NoTrans, Diag::NonUnit, T{1}, chol, B);
   }
 }
 

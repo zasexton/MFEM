@@ -31,6 +31,8 @@
 #include "../base/traits_base.h"
 #include "../linear_algebra/blas_level2.h" // Uplo
 #include "../linear_algebra/blas_level3.h" // (not required but consistent with others)
+#include "workspace.h"
+#include "ldlt_blocked_bk.h"
 
 namespace fem::numeric::decompositions {
 
@@ -166,7 +168,7 @@ static inline int ldlt_factor_unpivoted(Matrix<T, Storage, Order>& A,
 template <typename T, typename Storage, StorageOrder Order>
 static inline int ldlt_factor_unpivoted_blocked(Matrix<T, Storage, Order>& A,
                                                 fem::numeric::linear_algebra::Uplo uplo,
-                                                std::size_t block = 64)
+                                                std::size_t block = 0)
 {
   using namespace fem::numeric::linear_algebra;
   const std::size_t n = A.rows();
@@ -185,7 +187,9 @@ static inline int ldlt_factor_unpivoted_blocked(Matrix<T, Storage, Order>& A,
     return info;
   }
 
-  const std::size_t bs = std::max<std::size_t>(1, block);
+  // Adaptive block size: use provided value or auto-tune based on matrix size
+  const std::size_t auto_block = std::min<std::size_t>(256, std::max<std::size_t>(128, n/4));
+  const std::size_t bs = (block > 0) ? std::max<std::size_t>(1, block) : auto_block;
   for (std::size_t k = 0; k < n; k += bs) {
     const std::size_t kb = std::min(bs, n - k);
     // Factor diagonal block Akk in-place (unblocked)
@@ -343,7 +347,9 @@ static inline int ldlt_factor_bk_rook(Matrix<T, Storage, Order>& A,
       A(k, k) = D11; A(k + 1, k) = D21; A(k + 1, k + 1) = D22; if (k + 2 <= n) for (std::size_t j = k; j < k + 2; ++j) for (std::size_t i = 0; i < j; ++i) (void)0;
       // Pre-save A21 block below for update
       const std::size_t m = (k + 2 < n) ? (n - (k + 2)) : 0;
-      std::vector<T> W1(m), W2(m);
+      auto& workspace = get_thread_local_workspace<T>();
+      T* W1 = workspace.get_buffer(m);
+      T* W2 = workspace.get_secondary_buffer(m);
       for (std::size_t i = 0; i < m; ++i) {
         W1[i] = A(k + 2 + i, k);
         W2[i] = A(k + 2 + i, k + 1);
@@ -644,8 +650,13 @@ int ldlt_factor(Matrix<T, Storage, Order>& A,
       A(i, j) = a_cm[j * n + i];
   return 0;
 #else
-  // Fallback: robust unblocked BK-rook LDLT with pivoting
-  return ldlt_factor_bk_rook(A, piv, uplo);
+  // Fallback: Use blocked BK for larger matrices, unblocked for small
+  const std::size_t blocked_threshold = 128;
+  if (n >= blocked_threshold) {
+    return ldlt_factor_blocked_bk(A, piv, uplo);
+  } else {
+    return ldlt_factor_bk_rook(A, piv, uplo);
+  }
 #endif
 }
 
